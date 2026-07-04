@@ -189,6 +189,7 @@ function callTtsApi(text, ttsConfig) {
             req_params: {
                 text: text,                           // 待合成文本
                 speaker: ttsConfig.SPEAKER,           // 发音人音色
+                model: "",                            // 为空则使用默认模型 seed-tts-2.0-expressive
                 audio_params: {
                     format: "mp3",                    // 音频编码格式
                     sample_rate: 24000,               // 音频采样率
@@ -222,6 +223,9 @@ function callTtsApi(text, ttsConfig) {
             let audioBase64Buffer = "";
             // 收集字幕句子数据的列表
             let sentenceList = [];
+            // 记录 API 返回的第一个非零错误码（用于在 end 时明确报错）
+            let apiErrorCode = null;
+            let apiErrorMessage = null;
 
             console.log("[text_tts][callTtsApi] API 响应状态码: " + res.statusCode);
 
@@ -261,33 +265,59 @@ function callTtsApi(text, ttsConfig) {
                     try {
                         const json = JSON.parse(line);
 
-                        // 根据 code 字段判断响应类型
-                        if (json.code === 0) {
-                            // code 为 0 表示正常数据
+                        // 根据实际 API 返回格式判断事件类型：
+                        //   音频数据: {"data": "base64..."}  — 无 code 字段
+                        //   字幕事件: {"sentence": {...}}     — 无 code 字段
+                        //   附加信息: {"addition": {...}}     — 无 code 字段
+                        //   正常结束: {"code": 20000000, "message": "OK"}
+                        //   业务错误: {"reqid":"", "code": 55000000, "message": "..."}
 
-                            if (json.data) {
-                                // 有 data 字段 → 音频 base64 数据，追加到缓冲区
-                                audioBase64Buffer += json.data;
+                        // 错误条件：code 存在，且不是 0（数据事件）也不是 20000000（结束标记）
+                        if (json.code !== undefined && json.code !== 0 && json.code !== 20000000) {
+                            // 记录第一个非零错误码，用于在 end 时精准报错
+                            if (apiErrorCode === null) {
+                                apiErrorCode = json.code;
+                                apiErrorMessage = json.message || "未知错误";
                             }
+                            let errMsg = "[text_tts][callTtsApi] API 返回错误: code=" +
+                                json.code + ", message=" + json.message;
+                            console.error(errMsg);
+                            continue; // 跳过此行，继续处理后续数据（有利于容错）
+                        }
 
-                            if (json.sentence) {
-                                // 有 sentence 字段 → 字幕数据，收集到列表
-                                sentenceList.push(json.sentence);
-                                console.log("[text_tts][callTtsApi] 收到字幕数据: " +
-                                    json.sentence.text.substring(0, 30) + "...");
-                            }
-                        } else if (json.code === 20000000) {
-                            // code 20000000 → 合成结束，记录用量
+                        // 正常结束标记
+                        if (json.code === 20000000) {
                             if (json.usage) {
                                 console.log("[text_tts][callTtsApi] 合成完成，用量: " +
                                     JSON.stringify(json.usage));
                             }
-                        } else {
-                            // 其他非零 code → API 返回错误
-                            let errMsg = "[text_tts][callTtsApi] API 返回错误: code=" +
-                                json.code + ", message=" + json.message;
-                            console.error(errMsg);
+                            console.log("[text_tts][callTtsApi] 收到合成结束标记(code=20000000)。");
+                            continue;
                         }
+
+                        // 音频 base64 数据
+                        if (json.data) {
+                            audioBase64Buffer += json.data;
+                            continue;
+                        }
+
+                        // 字幕数据
+                        if (json.sentence) {
+                            sentenceList.push(json.sentence);
+                            console.log("[text_tts][callTtsApi] 收到字幕数据: " +
+                                json.sentence.text.substring(0, 30) + "...");
+                            continue;
+                        }
+
+                        // 附加信息（音频总时长等）
+                        if (json.addition) {
+                            console.log("[text_tts][callTtsApi] 收到附加信息: " +
+                                JSON.stringify(json.addition));
+                            continue;
+                        }
+
+                        // 无法识别的 JSON 格式，记录警告
+                        console.warn("[text_tts][callTtsApi] 收到未识别的响应行: " + line.substring(0, 100));
                     } catch (parseErr) {
                         // JSON 解析失败，记录警告但不中断处理
                         console.error("[text_tts][callTtsApi] JSON 解析失败: " +
@@ -302,11 +332,20 @@ function callTtsApi(text, ttsConfig) {
                 if (lineBuffer.trim() !== "") {
                     try {
                         const json = JSON.parse(lineBuffer);
-                        if (json.code === 0 && json.data) {
+                        // 残留行的数据也按实际格式处理（无 code 字段的数据直接按字段判断）
+                        if (json.data) {
                             audioBase64Buffer += json.data;
                         }
-                        if (json.code === 0 && json.sentence) {
+                        if (json.sentence) {
                             sentenceList.push(json.sentence);
+                        }
+                        if (json.code !== undefined && json.code !== 0 && json.code !== 20000000) {
+                            if (apiErrorCode === null) {
+                                apiErrorCode = json.code;
+                                apiErrorMessage = json.message || "未知错误";
+                            }
+                            console.error("[text_tts][callTtsApi] 残留行返回错误: code=" +
+                                json.code + ", message=" + json.message);
                         }
                     } catch (parseErr) {
                         console.error("[text_tts][callTtsApi] 最后一行 JSON 解析失败: " + parseErr.message);
@@ -314,6 +353,17 @@ function callTtsApi(text, ttsConfig) {
                 }
 
                 console.log("[text_tts][callTtsApi] 流式响应接收完成。");
+
+                // 优先检查 API 是否返回了业务错误码
+                if (apiErrorCode !== null) {
+                    let errMsg = "[text_tts][callTtsApi] 错误：API 返回业务错误码 " + apiErrorCode
+                        + "，消息: " + apiErrorMessage
+                        + "。请检查 config/volcengine_config.json 中的 RESOURCE_ID 是否与 SPEAKER 匹配。";
+                    console.error(errMsg);
+                    resolve({ code: 502, message: errMsg });
+                    return;
+                }
+
                 console.log("[text_tts][callTtsApi] 音频数据长度(base64): " + audioBase64Buffer.length + " 字符。");
                 console.log("[text_tts][callTtsApi] 字幕句子数量: " + sentenceList.length + " 个。");
 

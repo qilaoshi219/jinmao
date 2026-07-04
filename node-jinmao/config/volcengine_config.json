@@ -1,7 +1,7 @@
 {
     "VOLCENGINE_TTS": {
         "RESOURCE_ID": "seed-tts-2.0",
-        "SPEAKER": "zh_female_shuangkuaisisi_moon_bigtts",
+        "SPEAKER": "zh_female_yingyujiaoxue_uranus_bigtts",
         "API_URL": "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
     }
 }

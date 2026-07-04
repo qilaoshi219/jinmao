@@ -76,4 +76,4 @@ node-jinmao/
 | `utils/htmlppt.js` | 将 PPT 生成指引转换为互动式 HTML PPT，输入指引文本、教材原文、可选图片 URL 数组，返回 `{code, html?, message?}`。导出 `generateHtmlPpt()` 和 `validateInput()` | 2026-07-02 |
 | `utils/line_indexer.js` | 给 Markdown 文本每一行添加行号索引，支持输入安全校验（防注入/空值/类型检查），返回 `{code, text, message?}` | 2026-07-02 |
 | `utils/upload_minio.js` | 上传文件到 MinIO 对象存储，输入本地路径 + MinIO 目标路径，返回文件 URL | 2026-07-03 |
-| `utils/word2pdf.js` | 使用 libreoffice 命令行将 Word 文件（.docx / .doc）转换为 PDF，输入 Word 文件本地路径，返回 `{code, pdfPath?, message?}`。导出 `convert()` 和 `validateInput()` | 2026-07-03 |
+| `utils/word2pdf.js` | 将 Word 文件（.docx / .doc）转为 PDF。优先使用项目 `libreoffice-portable/` 目录下的便携版，不存在时回退到系统安装的 LibreOffice。导出 `convert()` 和 `validateInput()` | 2026-07-04 |
