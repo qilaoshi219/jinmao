@@ -1,0 +1,10 @@
+{
+    "DEEPSEEK_API_BIG": {
+        "DEEPSEEK_API_BASE": "https://api.deepseek.com",
+        "DEEPSEEK_API_MODEL": "deepseek-v4-pro"
+    },
+    "DEEPSEEK_API_SMALL": {
+        "DEEPSEEK_API_BASE": "https://api.deepseek.com",
+        "DEEPSEEK_API_MODEL": "deepseek-v4-flash"
+    }
+}
