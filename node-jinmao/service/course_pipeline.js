@@ -1,204 +1,660 @@
-// ========== 原始头脑风暴（请勿删除，便于追溯思路） ==========
-//课程生成流水线
-//接受一个数据库id，然后启动流水线
-//查询数据库id，获取minio的处理后文件路径（带有md文件的文件夹）
-//查询数据库中的course表，获取课程信息和原文的endline
-//调用/utils/extract_md.js，从endline开始向后提取1000行
-//更新数据库的生成状态（1000提取中、1000提取完成）
-//将输出发送给/utils/line_index.js进行编号
-//更新数据库的生成状态（1000编号中、1000编号完成）
-//将编号后的输出发送给/utils/get_line.js获取下一章的startline和endline
-//将新的endline更新到数据库中
-//更新数据库的生成状态（获取line中、获取line完成）
-//调用/utils/gen_course.js，生成课程文件的json
-//更新数据库的生成状态（生成课程中、生成课程完成）
-//将json保存为文件上传到minio对应的课程文件夹中，将url更新到数据库中
-//异步调用/utils/httpppt.js，job模式进行调用，轮询查询是否完成，异步队列为5个，将ppt提示词生成为html文件
-//将html文件保存为文件上传到minio对应的课程文件夹中，将url更新到数据库中
-//更新数据库的生成状态（生成ppt中、生成ppt完成）
-//异步调用/utils/text_tts.js，将课程文件的json转换为语音文件和srt字幕
-//更新数据库的生成状态（生成语音中、生成语音完成）
-//将语音文件和srt字幕保存为文件上传到minio对应的课程文件夹中，将url更新到数据库中
-//检查数据完整性，确保所有文件都已生成和上传
-//更新数据库的生成状态（生成课程中、生成课程完成）
-// ========== 原始头脑风暴结束 ==========
+// 本文件因流水线编排逻辑复杂且不可分割，特批允许超过 300 行限制
 
-//======================================================================
-//  正式设计文档：课程生成流水线 - Course Generation Pipeline
-//======================================================================
-//
-//  入口：外部调用 pipeline(courseId)，传入数据库中的课程 ID 即可启动整条流水线。
-//  每次调用处理一个章节（Chapter），一个章节包含多张 PPT 幻灯片（Slide），
-//  每张幻灯片会生成一个 HTML PPT 文件 + 一个 MP3 口播语音文件 + 一个 SRT 字幕文件。
-//  整个流水线分为 6 个阶段，阶段之间串行执行（前一阶段完成才进入下一阶段），
-//  每个阶段内部可能会产生多个异步子任务（如 PPT 生成和 TTS 合成），这些子任务
-//  通过任务队列（p-queue）进行并发控制，避免同时发起过多请求导致 API 超载。
-//
-//----------------------------------------------------------------------
-//  阶段一：数据获取（Data Fetching）
-//----------------------------------------------------------------------
-//  1. 根据 courseId 查询数据库中的 courses 表，获取以下字段：
-//     - minio_folder_path：MinIO 上存放 md 文件的文件夹路径
-//     - endline：当前已经处理到的行号（初始为 0，每完成一章会往后推进）
-//     - course_title：课程标题
-//     - status：当前流水线状态
-//  2. 根据 minio_folder_path 去 MinIO 中列出该文件夹下的所有文件，
-//     确认 md 原文文件确实存在且可读。
-//
-//----------------------------------------------------------------------
-//  阶段二：文本提取与行号处理（Text Extraction & Line Indexing）
-//----------------------------------------------------------------------
-//  1. 调用 /utils/extractor_md.js 中的 extractLines() 函数：
-//     - 输入：minio 中的 md 文件内容 + 当前 endline
-//     - 功能：从 endline 位置开始，向后提取 1000 行文本
-//     - 输出：{ code: 0, text: "提取到的文本内容" }
-//  2. 更新数据库 status = "1000_extracting"（提取中），
-//     提取完成后更新 status = "1000_extracted"（提取完成）。
-//  3. 将上一步的 text 发送给 /utils/line_indexer.js 中的 addLineIndex() 函数：
-//     - 功能：给每一行文本前面加上行号，格式如 "  1 | 这是第一行内容"
-//     - 输出：{ code: 0, text: "带行号的文本" }
-//  4. 更新数据库 status = "1000_indexing"（编号中），
-//     编号完成后更新 status = "1000_indexed"（编号完成）。
-//  5. 将带行号的文本发送给 /utils/get_line.js 中的 getLine() 函数：
-//     - 功能：调用 DeepSeek 小模型，分析文本内容，识别出下一章的起始行号
-//             （startline）和结束行号（endline）
-//     - 输出：{ code: 0, startline: 123, endline: 456 }
-//  6. 更新数据库 status = "getting_line"（获取行号中），
-//     获取完成后更新 status = "get_line_done"（获取行号完成）。
-//  7. 将新的 endline（即 get_line 返回的 endline）写回数据库 courses 表，
-//     这样下次调用流水线时就会从这个位置继续往后提取。
-//
-//----------------------------------------------------------------------
-//  阶段三：课程 JSON 生成（Course Generation）
-//----------------------------------------------------------------------
-//  1. 调用 /utils/gen_course.js（需实现）：
-//     - 输入：提取到的原文文本 + 章节的 startline/endline + 课程标题
-//     - 功能：调用 DeepSeek 大模型，将教材原文转换为结构化的课程 JSON，
-//             包含课程名称、章节标题、知识点列表、口播稿等内容
-//     - 输出：{ code: 0, course: { ... } }
-//  2. 更新数据库 status = "course_generating"（生成课程中），
-//     生成完成后更新 status = "course_generated"（生成课程完成）。
-//  3. 将生成的课程 JSON 序列化后上传到 MinIO：
-//     - 上传路径：{minio_folder_path}/course/course_{chapterIndex}.json
-//     - 上传成功后，将该文件的 MinIO 访问 url 更新到数据库 courses 表中。
-//
-//----------------------------------------------------------------------
-//  阶段四：PPT 生成（PPT Generation）—— 异步队列，并发上限 5
-//----------------------------------------------------------------------
-//  说明：阶段三（课程 JSON 生成完毕）之后，阶段四（PPT）和阶段五（TTS）会同时
-//        并行启动，互不等待，以最大程度节省总耗时。
-//        课程 JSON 中包含当前章节的所有幻灯片（slides 数组），每张幻灯片需要
-//        生成一个独立的 HTML PPT 文件。由于 DeepSeek API 有并发限制，不能一次
-//        性把所有请求都发出去，因此使用任务队列来控制同时进行的请求数量，
-//        最多同时跑 5 个。
-//
-//  1. 遍历课程 JSON 中的 slides 数组，对每张幻灯片执行以下操作：
-//     a. 提取该幻灯片的 PPT 生成指引（pptGuide）+ 教材原文，提交到 PPT 任务队列
-//     b. 队列内部调用 /utils/htmlppt.js 中的 generateHtmlPpt() 函数：
-//        - 功能：调用 DeepSeek 大模型，将幻灯片内容转换为互动式 HTML 格式的 PPT
-//        - 输出：{ code: 0, html: "<html>...</html>" }
-//     c. 将生成的 HTML 文件上传到 MinIO：
-//        - 上传路径：{minio_folder_path}/chapter_{chapterIndex}/slide_{slideIndex}.html
-//        - 上传成功后，将该文件的 MinIO 访问 url 更新到课程 JSON 中对应 slide 的数据里
-//  2. 状态管理：
-//     - 队列中第一个任务开始时，更新 status = "ppt_generating"
-//     - 队列中所有任务完成后，更新 status = "ppt_generated"
-//  3. 任务队列实现建议：
-//     - 使用 p-queue 库（npm install p-queue），设置 concurrency: 5
-//     - 每个任务包含：入队 → 生成 → 上传 → 更新 DB 四个步骤
-//     - 单个任务失败不应阻断队列，需 catch 异常并记录错误日志
-//
-//----------------------------------------------------------------------
-//  阶段五：语音合成（TTS & Subtitles）—— 异步队列，并发上限 3
-//----------------------------------------------------------------------
-//  说明：阶段五与阶段四（PPT 生成）在阶段三完成后同时并行启动，两者互不阻塞。
-//        遍历课程 JSON 中的 slides 数组，将每张幻灯片的口播稿文本（elaboration
-//        script）转换为 MP3 语音文件和 SRT 字幕文件。同一个 slide 的 PPT 和 TTS
-//        可以同时生成，互不依赖。
-//        与 PPT 生成类似，也使用任务队列进行并发控制，但并发数可以设低一些
-//        （建议 3），因为 TTS API 通常更慢且限制更严格。
-//
-//  1. 遍历课程 JSON 中的 slides 数组，对每张幻灯片执行以下操作：
-//     a. 提取该幻灯片的口播稿文本（elaboration script）
-//     b. 将口播稿文本提交到 TTS 任务队列中
-//     c. 队列内部调用 /service/text_tts.js 中的 synthesize() 函数：
-//        - 功能：调用火山引擎 TTS API，将文本转换为语音，
-//               同时生成对应时间轴的 SRT 字幕
-//        - 输出：{ mp3Path, srtPath } 本地临时文件路径
-//     d. 将生成的 MP3 和 SRT 文件上传到 MinIO：
-//        - MP3 路径：{minio_folder_path}/chapter_{chapterIndex}/slide_{slideIndex}.mp3
-//        - SRT 路径：{minio_folder_path}/chapter_{chapterIndex}/slide_{slideIndex}.srt
-//        - 上传成功后，将两个文件的 MinIO 访问 url 更新到课程 JSON 中对应 slide 数据里
-//     e. 清理本地临时文件（MP3 和 SRT）
-//  2. 状态管理：
-//     - 队列中第一个任务开始时，更新 status = "tts_generating"
-//     - 队列中所有任务完成后，更新 status = "tts_generated"
-//  3. 任务队列实现建议：
-//     - 使用 p-queue 库，设置 concurrency: 3
-//     - 注意：TTS 生成的音频文件可能较大，上传 MinIO 前需确保网络稳定
-//     - 如果某张幻灯片的 TTS 生成失败，记录错误但不影响其他幻灯片
-//
-//----------------------------------------------------------------------
-//  阶段六：数据完整性校验（Data Validation）
-//----------------------------------------------------------------------
-//  说明：在所有文件都生成并上传完毕后，进行最终的完整性检查，
-//        确保用户能够正常访问所有课程资源。
-//
-//  1. 遍历课程 JSON 中的 slides 数组，逐张幻灯片检查以下资源是否都已就绪：
-//     - HTML PPT 文件（每张幻灯片一个）
-//     - MP3 语音文件（每张幻灯片一个）
-//     - SRT 字幕文件（每张幻灯片一个）
-//  2. 同时检查课程级别的产物：
-//     - 课程 JSON 文件是否已上传且 url 已写入数据库
-//  3. 如果发现有缺失的文件，记录缺失列表到日志，标记 status = "partial_completed"
-//     （部分完成），并触发告警通知开发者手动补全。
-//  4. 如果全部文件完整：
-//     - 更新 status = "data_validating"（校验中）
-//     - 校验通过后更新 status = "completed"（全部完成）
-//
-//----------------------------------------------------------------------
-//  状态机流转图（数据库 status 字段的完整生命周期）：
-//----------------------------------------------------------------------
-//
-//  idle ──→ 1000_extracting ──→ 1000_extracted
-//                                    │
-//                                    ↓
-//                              1000_indexing ──→ 1000_indexed
-//                                                    │
-//                                                    ↓
-//                                              getting_line ──→ get_line_done
-//                                                                    │
-//                                                                    ↓
-//                                                            course_generating
-//                                                                    │
-//                                                                    ↓
-//                                                            course_generated
-//                                                              │         │
-//                                                     ┌────────┘         └────────┐
-//                                                     ↓  PPT 队列              ↓  TTS 队列
-//                                              ppt_generating          tts_generating
-//                                                     │                       │
-//                                                     ↓                       ↓
-//                                              ppt_generated           tts_generated
-//                                                     │                       │
-//                                                     └───────────┬───────────┘
-//                                                                 ↓  (等待双方都完成)
-//                                                          data_validating
-//                                                                 │
-//                                                         ┌───────┴───────┐
-//                                                         ↓               ↓
-//                                                    completed    partial_completed
-//
-//  失败分支：PPT 或 TTS 任一阶段中的个别章节任务失败，不影响同阶段其他章节继续执行，
-//  队列会 catch 异常继续消费下一个任务。如果全部章节都失败，则该阶段标记为失败状态：
-//    ppt_generating  ──→ (全部章节失败) ──→ ppt_failed
-//    tts_generating  ──→ (全部章节失败) ──→ tts_failed
-//  部分章节成功、部分章节失败的中间状态由阶段六的完整性校验去发现和报告。
-//
-//  补充说明：
-//  - 如果本课程还有下一章（get_line 返回的 endline 后面还有内容），
-//    可以在 Phase 6 完成后递归调用自身 pipeline(courseId)，
-//    从新的 endline 继续处理下一章，直到全文处理完毕。
-//  - 每次递归调用前应检查剩余行数是否小于某个阈值（如 50 行），
-//    如果剩余内容太少则直接结束，不再生成新课程。
-//======================================================================
+"use strict";
+
+// ==================== 依赖导入 ====================
+
+// Node.js 核心模块
+const fs = require("fs");            // 文件系统：读写临时文件、清理临时目录
+const os = require("os");            // 操作系统工具：获取临时目录路径
+const path = require("path");        // 路径处理：拼接临时文件路径
+
+// 第三方库
+const Minio = require("minio");      // MinIO 客户端：从对象存储下载/上传文件
+const PQueue = require("p-queue").default; // 并发队列：控制 PPT 和 TTS 任务的并行度
+
+// Repository 数据访问层
+const bookRepo = require("../utils/repo/book_repo");       // 课程 (Course) 表的 CRUD
+const chapterRepo = require("../utils/repo/chapter_repo"); // 章节 (Chapter) 表的 CRUD
+
+// 工具函数模块
+const { extractLines } = require("../utils/extractor_md");         // 从 MD 文件中提取指定行范围的文本
+const { addLineNumbers } = require("../utils/line_indexer");       // 给文本每行添加行号前缀
+const { getLine } = require("../utils/get_line");                  // 调用 AI 识别章节起止行号
+const { generateOutline } = require("../utils/generate_outline");  // 调用 AI 生成 PPT 大纲
+const { elaborateText } = require("../utils/elaboration");         // 调用 AI 扩写口播稿
+const { generateHtmlPpt } = require("../utils/htmlppt");           // 调用 AI 生成互动式 HTML PPT
+const { synthesize } = require("./text_tts");                      // 调用 TTS 合成语音 + SRT 字幕
+
+// MinIO 上传工具（用于上传 JSON / HTML / MP3 / SRT 文件）
+const uploadMinio = require("../utils/upload_minio");
+
+// ==================== MinIO 客户端初始化 ====================
+// 从环境变量读取 MinIO 连接配置，支持默认值用于本地开发
+
+const minioClient = new Minio.Client({
+  endPoint: process.env.MINIO_ENDPOINT || "127.0.0.1",          // MinIO 服务地址
+  port: parseInt(process.env.MINIO_PORT) || 9000,               // MinIO 端口（默认 9000）
+  useSSL: process.env.MINIO_USE_SSL === "true",                 // 是否启用 SSL
+  accessKey: process.env.MINIO_ACCESS_KEY,                      // 访问密钥
+  secretKey: process.env.MINIO_SECRET_KEY,                      // 私有密钥
+});
+
+// MinIO Bucket 名称（存放所有课程文件）
+const BUCKET = process.env.MINIO_BUCKET || "jinmao";
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 数字补零 —— 将数字格式化为两位数
+ * 如 pad(3) → "03"，用于文件名中的序号
+ * @param {number} n - 待格式化的数字
+ * @returns {string} 补零后的两位字符串
+ */
+const pad = (n) => String(n).padStart(2, "0");
+
+// ==================== 流水线各阶段函数 ====================
+
+/**
+ * 阶段一：数据获取
+ * 从数据库查询课程元信息，从 MinIO 下载归一化 MD 文件到本地临时目录
+ *
+ * @param {string|number} courseId - 课程 ID
+ * @returns {Promise<{ course: Object, tempMDPath: string }>}
+ *   成功时返回 course 对象和 MD 临时文件路径
+ *   失败时抛出异常（由上层 catch 统一处理）
+ */
+async function phase1_fetchData(courseId) {
+  const startTime = Date.now();
+  console.log("[course_pipeline][Phase1] ========== 阶段一：数据获取 ==========");
+
+  // 1.1 从数据库查询课程信息
+  const courseResult = await bookRepo.getCourseById(courseId);
+  if (courseResult.code !== 200) {
+    throw new Error("课程查询失败（courseId=" + courseId + "）: " + (courseResult.message || "未知错误"));
+  }
+  const course = courseResult.course;
+  console.log("[course_pipeline][Phase1] 课程信息获取成功: " + course.name + "（textbookPath=" + course.textbookPath + "）");
+
+  // 1.2 更新流水线状态为"提取中"
+  await bookRepo.updatePipelineStatus(courseId, "1000_extracting");
+
+  // 1.3 从 MinIO 下载归一化 MD 文件到本地临时目录
+  // 临时文件命名规则：jinmao-pipeline-{courseId}.md，存储在 OS 临时目录
+  const tempMDPath = path.join(os.tmpdir(), "jinmao-pipeline-" + courseId + ".md");
+  console.log("[course_pipeline][Phase1] 从 MinIO 下载 MD 文件: " + course.textbookPath + " → " + tempMDPath);
+
+  try {
+    // minioClient.fGetObject(bucket, objectName, localFilePath)：流式下载文件
+    await minioClient.fGetObject(BUCKET, course.textbookPath, tempMDPath);
+    console.log("[course_pipeline][Phase1] MD 文件下载完成，路径: " + tempMDPath);
+  } catch (minioErr) {
+    throw new Error("MinIO 文件下载失败: " + minioErr.message);
+  }
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log("[course_pipeline][Phase1] 阶段一完成，耗时: " + elapsed + " 秒");
+  return { course, tempMDPath };
+}
+
+/**
+ * 阶段二：文本提取与行号识别
+ * 从下载的 MD 文件中提取指定范围文本 → 添加行号 → AI 识别章节起止行号
+ *
+ * @param {string|number} courseId - 课程 ID
+ * @param {Object} course - 课程对象（包含 endline 字段）
+ * @param {string} tempMDPath - 已下载的 MD 临时文件路径
+ * @returns {Promise<{ chapterText: string, startline: number, endline: number }>}
+ */
+async function phase2_extractAndIndex(courseId, course, tempMDPath) {
+  const startTime = Date.now();
+  console.log("[course_pipeline][Phase2] ========== 阶段二：文本提取与行号识别 ==========");
+
+  // 2.1 从 MD 文件中提取文本（从当前 endline 开始，最多提取 1000 行）
+  // extractLines 参数：(mdFilePath, startLine, endLine)
+  const extractStart = (course.endline || 0) + 1;        // 起始行（数据库 endline 已处理到的行，+1 跳过已处理行）
+  const extractEnd = (course.endline || 0) + 1000;       // 结束行（最多提取 1000 行）
+  console.log("[course_pipeline][Phase2] 提取文本范围: [" + extractStart + ", " + extractEnd + "]");
+
+  const extractedResult = await extractLines(tempMDPath, extractStart, extractEnd);
+  // extractLines 成功码为 200 或 206（206 表示末尾截断，仍可继续）
+  if (extractedResult.code !== 200 && extractedResult.code !== 206) {
+    throw new Error("文本提取失败: " + (extractedResult.message || "未知错误"));
+  }
+  const extractedText = extractedResult.text;
+  console.log("[course_pipeline][Phase2] 文本提取成功，长度: " + extractedText.length + " 字符" +
+    (extractedResult.code === 206 ? "（已截断到文件末尾）" : ""));
+
+  // 2.2 更新状态：提取完成 → 编号中
+  await bookRepo.updatePipelineStatus(courseId, "1000_extracted");
+  await bookRepo.updatePipelineStatus(courseId, "1000_indexing");
+
+  // 2.3 给提取的文本添加行号前缀（如 "  27 | 内容..."）
+  const indexedResult = await addLineNumbers(extractedText);
+  if (indexedResult.code !== 200) {
+    throw new Error("行号添加失败: " + (indexedResult.message || "未知错误"));
+  }
+  const indexedText = indexedResult.text;
+  console.log("[course_pipeline][Phase2] 行号索引完成");
+
+  // 2.4 更新状态：编号完成 → 获取行号中
+  await bookRepo.updatePipelineStatus(courseId, "1000_indexed");
+  await bookRepo.updatePipelineStatus(courseId, "getting_line");
+
+  // 2.5 调用 AI 识别章节的起始行号和结束行号
+  const lineResult = await getLine(indexedText);
+  if (lineResult.code !== 200) {
+    throw new Error("行号识别失败: " + (lineResult.message || "未知错误"));
+  }
+  const { startline, endline } = lineResult;
+  console.log("[course_pipeline][Phase2] 行号识别完成: startline=" + startline + ", endline=" + endline);
+
+  // 2.6 更新状态：获取行号完成
+  await bookRepo.updatePipelineStatus(courseId, "get_line_done");
+
+  // 2.7 创建章节记录，写入数据库
+  // chapterRoot 使用 /usercourse/{userId}/{courseId}/chapter_01/ 格式
+  const chapterRoot = "/usercourse/" + course.userId + "/" + courseId + "/chapter_01/";
+  const chapterResult = await chapterRepo.createChapter({
+    courseId: courseId,
+    sequence: 1,
+    name: "第一章",
+    chapterRoot: chapterRoot,
+    startline: startline,
+    endline: endline,
+  });
+  if (chapterResult.code !== 200) {
+    throw new Error("章节创建失败: " + (chapterResult.message || "未知错误"));
+  }
+  const chapter = chapterResult.chapter;
+  console.log("[course_pipeline][Phase2] 章节已创建，ID: " + chapter.id + "，chapterRoot: " + chapterRoot);
+
+  // 2.8 更新课程的 endline（推进进度）
+  await bookRepo.updateEndline(courseId, endline);
+
+  // 2.9 提取用于阶段三的章节原文文本
+  // 从 indexed 文本中提取 startline 到 endline 之间的内容
+  // 行号格式示例: "  27 | 这是内容..."
+  const indexedLines = indexedText.split("\n");
+  const chapterLines = [];
+  for (const line of indexedLines) {
+    // 解析行号前缀（如 "  218 | ..."）
+    const match = line.match(/^\s*(\d+)\s*\|/);
+    if (match) {
+      const lineNum = parseInt(match[1], 10);
+      if (lineNum >= startline && lineNum <= endline) {
+        // 取 "|" 之后的内容
+        const contentIdx = line.indexOf("|");
+        chapterLines.push(line.substring(contentIdx + 1).trim());
+      }
+    }
+  }
+  const chapterText = chapterLines.join("\n");
+  console.log("[course_pipeline][Phase2] 章节原文提取完成，共 " + chapterLines.length + " 行");
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log("[course_pipeline][Phase2] 阶段二完成，耗时: " + elapsed + " 秒");
+  return { chapterText, startline, endline, chapter };
+}
+
+/**
+ * 阶段三：课程大纲生成 + 条件性口播稿扩写
+ * AI 生成 PPT 大纲 → 可选扩写口播稿 → 上传 outline.json 到 MinIO
+ *
+ * @param {string|number} courseId - 课程 ID
+ * @param {Object} course - 课程对象（含 elaborationEnabled 字段）
+ * @param {Object} chapter - 章节对象
+ * @param {string} chapterText - 章节原文文本
+ */
+async function phase3_generateCourse(courseId, course, chapter, chapterText) {
+  const startTime = Date.now();
+  console.log("[course_pipeline][Phase3] ========== 阶段三：课程大纲生成 ==========");
+
+  // 3.1 更新状态：课程生成中
+  await bookRepo.updatePipelineStatus(courseId, "course_generating");
+
+  // 3.2 调用 AI 生成 PPT 大纲
+  // generateOutline 参数：(yuanwen, pptother)，pptother 传课程名称
+  const outlineResult = await generateOutline(chapterText, course.name || "课程");
+  if (outlineResult.code !== 200) {
+    throw new Error("大纲生成失败: " + (outlineResult.message || "未知错误"));
+  }
+  let outline = outlineResult.outline;
+  console.log("[course_pipeline][Phase3] 大纲生成成功，共 " + (outline.slides ? outline.slides.length : 0) + " 张幻灯片");
+
+  // 3.3 条件性口播稿扩写
+  if (course.elaborationEnabled && outline.slides && outline.slides.length > 0) {
+    console.log("[course_pipeline][Phase3] 扩写功能已开启，开始逐页扩写口播稿...");
+    let enrichedCount = 0;
+    // elaborateText 参数：(elaboration, original, expectedWords)
+    for (let i = 0; i < outline.slides.length; i++) {
+      const slide = outline.slides[i];
+      const slideScript = slide.script || slide.elaboration || "";
+      if (!slideScript.trim()) {
+        continue; // 跳过空口播稿的 slide
+      }
+      try {
+        // 预期字数：根据现有脚本长度估算，范围 100~5000
+        const expectedWords = Math.max(100, Math.min(5000, slideScript.length * 3));
+        const elaborationResult = await elaborateText(slideScript, chapterText, expectedWords);
+        if (elaborationResult.code === 200 && elaborationResult.script) {
+          slide.script = elaborationResult.script; // 用扩写后的脚本替换原脚本
+          enrichedCount++;
+        } else {
+          console.warn("[course_pipeline][Phase3] 幻灯片 " + (i + 1) + " 扩写失败: " +
+            (elaborationResult.message || "未知错误") + "，保留原口播稿");
+        }
+      } catch (err) {
+        console.warn("[course_pipeline][Phase3] 幻灯片 " + (i + 1) + " 扩写异常: " + err.message + "，保留原口播稿");
+      }
+    }
+    console.log("[course_pipeline][Phase3] 口播稿扩写完成，成功扩写 " + enrichedCount + "/" + outline.slides.length + " 页");
+  } else {
+    console.log("[course_pipeline][Phase3] 扩写功能未开启，跳过口播稿扩写");
+  }
+
+  // 3.4 将大纲序列化并上传到 MinIO
+  const chapterRoot = chapter.chapterRoot;
+  const outlineJsonPath = chapterRoot + "chapter_01.json";
+  const outlineJsonStr = JSON.stringify(outline, null, 2);
+  // 写入本地临时文件再上传
+  const tempOutlinePath = path.join(os.tmpdir(), "jinmao-outline-" + courseId + ".json");
+  fs.writeFileSync(tempOutlinePath, outlineJsonStr, "utf-8");
+  console.log("[course_pipeline][Phase3] 临时大纲文件已写入: " + tempOutlinePath);
+
+  const uploadResult = await uploadMinio.upload(tempOutlinePath, outlineJsonPath);
+  if (uploadResult.code !== 200) {
+    throw new Error("大纲上传 MinIO 失败: " + (uploadResult.message || "未知错误"));
+  }
+  console.log("[course_pipeline][Phase3] 大纲已上传到 MinIO: " + outlineJsonPath);
+
+  // 3.5 清理临时文件
+  try { fs.unlinkSync(tempOutlinePath); } catch (_) { /* 忽略清理错误 */ }
+
+  // 3.6 更新章节信息：总页数 + 大纲路径
+  const totalSlides = outline.slides ? outline.slides.length : 0;
+  await chapterRepo.updateChapterTotalPages(chapter.id, totalSlides, outlineJsonPath);
+
+  // 3.7 更新流程状态
+  await bookRepo.updatePipelineStatus(courseId, "course_generated");
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log("[course_pipeline][Phase3] 阶段三完成，耗时: " + elapsed + " 秒");
+  return outline;
+}
+
+/**
+ * 阶段四：PPT 批量生成（并发上限 5）
+ * 遍历所有幻灯片，并行调用 AI 生成 HTML PPT 并上传 MinIO
+ *
+ * @param {string|number} courseId - 课程 ID
+ * @param {string} chapterRoot - 章节 MinIO 根路径
+ * @param {Object} outline - PPT 大纲对象（含 slides 数组）
+ * @returns {Promise<boolean>} 全部成功返回 true，部分失败返回 false
+ */
+async function phase4_generatePpt(courseId, chapterRoot, outline) {
+  const startTime = Date.now();
+  console.log("[course_pipeline][Phase4] ========== 阶段四：PPT 生成（并发5） ==========");
+
+  // 4.1 更新状态
+  await bookRepo.updatePipelineStatus(courseId, "ppt_generating");
+
+  const slides = outline.slides || [];
+  if (slides.length === 0) {
+    console.warn("[course_pipeline][Phase4] 无幻灯片，跳过 PPT 生成");
+    await bookRepo.updatePipelineStatus(courseId, "ppt_generated");
+    return true;
+  }
+
+  // 4.2 创建并发队列（并发上限 5）
+  const pptQueue = new PQueue({ concurrency: 5 });
+  let successCount = 0;
+  let failCount = 0;
+
+  // 4.3 为每张幻灯片创建任务并加入队列
+  const tasks = slides.map((slide, idx) => {
+    return pptQueue.add(async () => {
+      const slideNum = pad(idx + 1);
+      console.log("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 生成开始...");
+
+      try {
+        // 4.3a 调用 AI 生成 HTML PPT
+        // generateHtmlPpt 参数：(pptGuide, originalText, imageUrls)
+        const pptGuide = slide.pptGuide || slide.ppt_guide || "";
+        const slideText = slide.script || slide.content || "";
+        const htmlResult = await generateHtmlPpt(pptGuide, slideText, []);
+
+        if (htmlResult.code !== 200 || !htmlResult.html) {
+          console.error("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 生成失败: " +
+            (htmlResult.message || "未知错误"));
+          failCount++;
+          return;
+        }
+
+        // 4.3b 后处理 HTML：将转义的换行符还原
+        let htmlContent = htmlResult.html;
+        if (typeof htmlContent === "string") {
+          htmlContent = htmlContent.replace(/\\n/g, "\n");
+        }
+
+        // 4.3c 写入本地临时文件并上传 MinIO
+        const tempHtmlPath = path.join(os.tmpdir(), "jinmao-ppt-" + courseId + "-" + slideNum + ".html");
+        fs.writeFileSync(tempHtmlPath, htmlContent, "utf-8");
+
+        const minioPath = chapterRoot + "PPT/slide_" + slideNum + ".html";
+        const uploadResult = await uploadMinio.upload(tempHtmlPath, minioPath);
+
+        // 4.3d 清理临时文件
+        try { fs.unlinkSync(tempHtmlPath); } catch (_) { /* 忽略清理错误 */ }
+
+        if (uploadResult.code !== 200) {
+          console.error("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 上传失败: " +
+            (uploadResult.message || "未知错误"));
+          failCount++;
+          return;
+        }
+
+        console.log("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 完成: " + minioPath);
+        successCount++;
+      } catch (err) {
+        console.error("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 异常: " + err.message);
+        failCount++;
+      }
+    });
+  });
+
+  // 4.4 等待所有 PPT 任务完成
+  await Promise.all(tasks);
+
+  // 4.5 更新状态
+  await bookRepo.updatePipelineStatus(courseId, "ppt_generated");
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log("[course_pipeline][Phase4] 阶段四完成，成功 " + successCount + " / 失败 " + failCount +
+    "，总耗时: " + elapsed + " 秒");
+  return failCount === 0;
+}
+
+/**
+ * 阶段五：TTS 语音 + 字幕批量生成（并发上限 3）
+ * 遍历所有幻灯片，并行调用 TTS 合成 MP3 和 SRT 并上传 MinIO
+ *
+ * @param {string|number} courseId - 课程 ID
+ * @param {string} chapterRoot - 章节 MinIO 根路径
+ * @param {Object} outline - PPT 大纲对象（含 slides 数组）
+ * @returns {Promise<boolean>} 全部成功返回 true，部分失败返回 false
+ */
+async function phase5_generateTts(courseId, chapterRoot, outline) {
+  const startTime = Date.now();
+  console.log("[course_pipeline][Phase5] ========== 阶段五：TTS 生成（并发3） ==========");
+
+  // 5.1 更新状态
+  await bookRepo.updatePipelineStatus(courseId, "tts_generating");
+
+  const slides = outline.slides || [];
+  if (slides.length === 0) {
+    console.warn("[course_pipeline][Phase5] 无幻灯片，跳过 TTS 生成");
+    await bookRepo.updatePipelineStatus(courseId, "tts_generated");
+    return true;
+  }
+
+  // 5.2 创建并发队列（并发上限 3，TTS API 限制更严格）
+  const ttsQueue = new PQueue({ concurrency: 3 });
+  let successCount = 0;
+  let failCount = 0;
+
+  // 5.3 为每张幻灯片创建 TTS 任务并加入队列
+  const tasks = slides.map((slide, idx) => {
+    return ttsQueue.add(async () => {
+      const slideNum = pad(idx + 1);
+      const script = slide.script || slide.elaboration || "";
+
+      // 跳过空脚本
+      if (!script.trim()) {
+        console.log("[course_pipeline][Phase5] 幻灯片 " + slideNum + " 脚本为空，跳过 TTS");
+        return;
+      }
+
+      console.log("[course_pipeline][Phase5] 幻灯片 " + slideNum + " TTS 合成开始...");
+
+      try {
+        // 5.3a 调用 TTS 合成 API
+        const ttsResult = await synthesize(script);
+
+        if (ttsResult.code !== 200) {
+          console.error("[course_pipeline][Phase5] 幻灯片 " + slideNum + " TTS 合成失败: " +
+            (ttsResult.message || "未知错误"));
+          failCount++;
+          return;
+        }
+
+        const { mp3Path, srtPath } = ttsResult;
+
+        // 5.3b 上传 MP3 到 MinIO
+        const mp3MinioPath = chapterRoot + "Audio/slide_" + slideNum + ".mp3";
+        const mp3UploadResult = await uploadMinio.upload(mp3Path, mp3MinioPath);
+        if (mp3UploadResult.code !== 200) {
+          console.error("[course_pipeline][Phase5] 幻灯片 " + slideNum + " MP3 上传失败: " +
+            (mp3UploadResult.message || "未知错误"));
+        }
+
+        // 5.3c 上传 SRT 到 MinIO
+        const srtMinioPath = chapterRoot + "SRT/slide_" + slideNum + ".srt";
+        const srtUploadResult = await uploadMinio.upload(srtPath, srtMinioPath);
+        if (srtUploadResult.code !== 200) {
+          console.error("[course_pipeline][Phase5] 幻灯片 " + slideNum + " SRT 上传失败: " +
+            (srtUploadResult.message || "未知错误"));
+        }
+
+        // 5.3d 清理本地临时文件（TTS 生成的 MP3 和 SRT）
+        try { fs.unlinkSync(mp3Path); } catch (cleanErr) {
+          console.warn("[course_pipeline][Phase5] 清理 MP3 临时文件失败: " + cleanErr.message);
+        }
+        try { fs.unlinkSync(srtPath); } catch (cleanErr) {
+          console.warn("[course_pipeline][Phase5] 清理 SRT 临时文件失败: " + cleanErr.message);
+        }
+
+        if (mp3UploadResult.code === 200 && srtUploadResult.code === 200) {
+          console.log("[course_pipeline][Phase5] 幻灯片 " + slideNum + " TTS 完成（MP3 + SRT）");
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (err) {
+        console.error("[course_pipeline][Phase5] 幻灯片 " + slideNum + " TTS 异常: " + err.message);
+        failCount++;
+      }
+    });
+  });
+
+  // 5.4 等待所有 TTS 任务完成
+  await Promise.all(tasks);
+
+  // 5.5 更新状态
+  await bookRepo.updatePipelineStatus(courseId, "tts_generated");
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log("[course_pipeline][Phase5] 阶段五完成，成功 " + successCount + " / 失败 " + failCount +
+    "，总耗时: " + elapsed + " 秒");
+  return failCount === 0;
+}
+
+/**
+ * 阶段六：数据完整性校验
+ * 检查所有文件是否都已上传到 MinIO，更新课程和章节状态
+ *
+ * @param {string|number} courseId - 课程 ID
+ * @param {Object} chapter - 章节对象（含 chapterRoot）
+ * @param {Object} outline - PPT 大纲对象（含 slides 数组）
+ * @param {boolean} pptAllSuccess - PPT 生成是否全部成功
+ * @param {boolean} ttsAllSuccess - TTS 合成是否全部成功
+ */
+async function phase6_validate(courseId, chapter, outline, pptAllSuccess, ttsAllSuccess) {
+  const startTime = Date.now();
+  console.log("[course_pipeline][Phase6] ========== 阶段六：数据完整性校验 ==========");
+
+  // 6.1 更新状态：校验中
+  await bookRepo.updatePipelineStatus(courseId, "data_validating");
+
+  const slides = outline.slides || [];
+  const chapterRoot = chapter.chapterRoot;
+  const missingFiles = []; // 记录缺失文件列表
+
+  // 6.2 检查大纲 JSON 文件
+  const outlineKey = chapterRoot + "chapter_01.json";
+  try {
+    await minioClient.statObject(BUCKET, outlineKey.replace(/^\/+/, ""));
+    console.log("[course_pipeline][Phase6] 大纲 JSON 文件已确认: " + outlineKey);
+  } catch {
+    console.warn("[course_pipeline][Phase6] 缺失大纲 JSON: " + outlineKey);
+    missingFiles.push(outlineKey);
+  }
+
+  // 6.3 逐页检查 PPT /音频 / 字幕文件
+  if (slides.length > 0) {
+    console.log("[course_pipeline][Phase6] 开始逐页检查 " + slides.length + " 张幻灯片的文件...");
+  }
+
+  for (let i = 0; i < slides.length; i++) {
+    const slideNum = pad(i + 1);
+
+    // 6.3a 检查 HTML PPT 文件
+    const pptKey = (chapterRoot + "PPT/slide_" + slideNum + ".html").replace(/^\/+/, "");
+    try {
+      await minioClient.statObject(BUCKET, pptKey);
+    } catch {
+      console.warn("[course_pipeline][Phase6] 缺失 PPT 文件: " + pptKey);
+      missingFiles.push(pptKey);
+    }
+
+    // 6.3b 检查 MP3 文件（仅对非空脚本的 slide）
+    const slideScript = slides[i].script || slides[i].elaboration || "";
+    if (slideScript.trim()) {
+      const mp3Key = (chapterRoot + "Audio/slide_" + slideNum + ".mp3").replace(/^\/+/, "");
+      try {
+        await minioClient.statObject(BUCKET, mp3Key);
+      } catch {
+        console.warn("[course_pipeline][Phase6] 缺失 MP3 文件: " + mp3Key);
+        missingFiles.push(mp3Key);
+      }
+
+      // 6.3c 检查 SRT 文件
+      const srtKey = (chapterRoot + "SRT/slide_" + slideNum + ".srt").replace(/^\/+/, "");
+      try {
+        await minioClient.statObject(BUCKET, srtKey);
+      } catch {
+        console.warn("[course_pipeline][Phase6] 缺失 SRT 文件: " + srtKey);
+        missingFiles.push(srtKey);
+      }
+    }
+  }
+
+  // 6.4 根据校验结果设置最终状态
+  let finalStatus;
+  if (missingFiles.length === 0 && pptAllSuccess && ttsAllSuccess) {
+    // 全部文件完整且各阶段均成功
+    finalStatus = "completed";
+    console.log("[course_pipeline][Phase6] 校验通过，所有文件完整");
+  } else if (missingFiles.length > 0) {
+    // 有文件缺失
+    finalStatus = "partial_completed";
+    console.warn("[course_pipeline][Phase6] 校验未通过，缺失 " + missingFiles.length + " 个文件: " +
+      missingFiles.join(", "));
+  } else {
+    // 文件完整但部分阶段有失败
+    finalStatus = "partial_completed";
+    console.warn("[course_pipeline][Phase6] 文件完整但部分阶段有失败（PPT全部成功=" + pptAllSuccess +
+      ", TTS全部成功=" + ttsAllSuccess + "）");
+  }
+
+  // 6.5 更新课程最终状态
+  await bookRepo.updatePipelineStatus(courseId, finalStatus);
+
+  // 6.6 更新章节状态
+  await chapterRepo.updateChapter(chapter.id, { status: finalStatus });
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log("[course_pipeline][Phase6] 阶段六完成，最终状态: " + finalStatus + "，耗时: " + elapsed + " 秒");
+  return { finalStatus, missingFiles };
+}
+
+// ==================== 主流水线函数 ====================
+
+/**
+ * 课程生成流水线主入口
+ * 接收课程 ID，依次执行 6 个阶段完成课程生成全流程：
+ *   阶段一：数据获取（DB 查询 + MinIO 下载）
+ *   阶段二：文本提取与行号识别（extractLines → addLineNumbers → getLine）
+ *   阶段三：课程大纲生成 + 条件性口播稿扩写（generateOutline → elaborateText）
+ *   阶段四&五：PPT & TTS 并行生成（generateHtmlPpt + synthesize，各自队列并发）
+ *   阶段六：数据完整性校验（MinIO statObject 逐文件检查）
+ *
+ * @param {string|number} courseId - 课程数据库 ID
+ * @returns {Promise<{ code: number, status?: string, message?: string }>}
+ *   成功: { code: 200, status: "completed"|"partial_completed" }
+ *   失败: { code: 500, message: "错误描述" }
+ */
+async function pipeline(courseId) {
+  const pipelineStartTime = Date.now();
+  console.log("[course_pipeline][pipeline] ========== 流水线启动 ==========");
+  console.log("[course_pipeline][pipeline] 课程 ID: " + courseId);
+
+  // 输入参数校验
+  if (!courseId) {
+    console.error("[course_pipeline][pipeline] 错误：courseId 参数为空");
+    return { code: 400, message: "课程 ID 不能为空" };
+  }
+
+  try {
+    // ───── 阶段一：数据获取 ─────
+    const { course, tempMDPath } = await phase1_fetchData(courseId);
+
+    // ───── 阶段二：文本提取与行号识别 ─────
+    const { chapterText, chapter } = await phase2_extractAndIndex(courseId, course, tempMDPath);
+
+    // ───── 清理阶段一下载的临时 MD 文件 ─────
+    try { fs.unlinkSync(tempMDPath); } catch (_) { /* 忽略清理错误 */ }
+
+    // ───── 阶段三：课程大纲生成 + 扩写 ─────
+    const outline = await phase3_generateCourse(courseId, course, chapter, chapterText);
+
+    // ───── 阶段四 & 五：PPT 和 TTS 并行启动 ─────
+    console.log("[course_pipeline][pipeline] ========== 阶段四&五：PPT + TTS 并行启动 ==========");
+    const chapterRoot = chapter.chapterRoot;
+
+    // 两个阶段同时开始，互不等待
+    const pptPromise = phase4_generatePpt(courseId, chapterRoot, outline);
+    const ttsPromise = phase5_generateTts(courseId, chapterRoot, outline);
+
+    const [pptAllSuccess, ttsAllSuccess] = await Promise.all([pptPromise, ttsPromise]);
+
+    // ───── 阶段六：数据完整性校验 ─────
+    const { finalStatus } = await phase6_validate(courseId, chapter, outline, pptAllSuccess, ttsAllSuccess);
+
+    const totalElapsed = ((Date.now() - pipelineStartTime) / 1000).toFixed(1);
+    console.log("[course_pipeline][pipeline] ========== 流水线完成 ==========");
+    console.log("[course_pipeline][pipeline] 最终状态: " + finalStatus + "，总耗时: " + totalElapsed + " 秒");
+
+    return { code: 200, status: finalStatus };
+
+  } catch (err) {
+    // 捕获任意阶段的致命错误
+    const elapsed = ((Date.now() - pipelineStartTime) / 1000).toFixed(1);
+    console.error("[course_pipeline][pipeline] ========== 流水线致命错误 ==========");
+    console.error("[course_pipeline][pipeline] 错误信息: " + err.message);
+    console.error("[course_pipeline][pipeline] 错误堆栈: " + err.stack);
+    console.error("[course_pipeline][pipeline] 已耗时: " + elapsed + " 秒");
+
+    // 尝试将课程状态标记为失败
+    try {
+      await bookRepo.updatePipelineStatus(courseId, "failed");
+    } catch (statusErr) {
+      console.error("[course_pipeline][pipeline] 更新失败状态时出错: " + statusErr.message);
+    }
+
+    return { code: 500, message: "流水线执行失败: " + err.message };
+  }
+}
+
+// ==================== 模块导出 ====================
+module.exports = { pipeline };

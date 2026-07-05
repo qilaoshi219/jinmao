@@ -1,49 +1,410 @@
-//本脚本负责接受用户POST来的课程文件，文件格式包括pdf,docx,doc,md,zip,rar,7z
-//POST /api/v1/book/upload
-//本脚本返回是否成功接收文件
-//收到文件后将源文件保存到minio存储中(/utils/upload_minio.js脚本)
-//将返回的url增加到数据库(/utils/repo/update_repo.js脚本)
-//如果是md格式，就直接按照文件夹结构上传到minio存储中(/utils/upload_minio.js脚本)
-//如果是zip,rar,7z格式，就发送给解压脚本(/utils/extract_zip.js脚本)，解压完成后发送给上传脚本进行上传到minio存储中(/utils/upload_minio.js脚本)
-//如果是pdf格式，发送给doc2x脚本(/utils/doc2x.js脚本)，转换为md格式压缩包，发送给解压脚本(/utils/extract_zip.js脚本)，解压完成后发送给上传脚本进行上传到minio存储中(/utils/upload_minio.js脚本)
-//如果是docx，doc格式，先发送给word2pdf脚本(/utils/word2pdf.js脚本)，转换为pdf后发送给doc2x脚本转换为md格式压缩包，然后发送给解压脚本(/utils/extract_zip.js脚本)，解压完成后发送给上传脚本进行上传到minio存储中(/utils/upload_minio.js脚本)
-//文件上传完成后，进行格式审查和内容审查，确保 MinIO 上的文件夹结构符合以下规范：
-//
-// /{userid}/{bookid}/
-// │
-// ├── 源文件.pdf          ← 用户上传的原始文件（pdf/docx/doc/md/zip/rar/7z）
-// │
-// ├── {文件名}-{时间戳}/   ← 格式归一后的产物目录（doc2x 转换 + 解压后的结果）
-// │   ├── {文件名}.md      ← 归一化后的 Markdown 原文
-// │   └── image/           ← 教材中的插图（doc2x 转换时提取）
-// │       ├── image_001.jpg
-// │       ├── image_002.jpg
-// │       └── ...
-// │（以上为本脚本应该生成的，以下为其他脚本生成的）
-// └── {courseid}/          ← 课程目录（courseid = 章节编号，一个 book 可有多个章节）
-//     │
-//     ├── {courseid}.json  ← 课程结构化 JSON（/utils/generate_course.js 生成）
-//     │                       包含章节标题、slides 数组（每张幻灯片的口播稿、PPT 指引、助教提示等）
-//     │
-//     ├── PPT/             ← HTML 格式的 PPT 幻灯片
-//     │   ├── {pptid_1}.html
-//     │   ├── {pptid_2}.html
-//     │   └── ...          ← 每张幻灯片一个 HTML（/utils/htmlppt.js 生成）
-//     │
-//     ├── Audio/           ← MP3 口播语音
-//     │   ├── {audioid_1}.mp3
-//     │   ├── {audioid_2}.mp3
-//     │   └── ...          ← 每张幻灯片一个 MP3（/service/text_tts.js 生成）
-//     │
-//     └── SRT/             ← 字幕文件
-//         ├── {srtid_1}.srt
-//         ├── {srtid_2}.srt
-//         └── ...          ← 每张幻灯片一个 SRT（/service/text_tts.js 生成）
+// ==================== 教材路由模块（上传 + 状态查询） ====================
+// 职责：收发 HTTP 请求/响应，调用 Service 层执行业务逻辑
+// 使用 Express Router 管理路由，挂载到 /api/v1 前缀下
+// 端点列表：
+//   POST /api/v1/book/upload          — 上传教材文件
+//   GET  /api/v1/book/:book_id/status — 查询教材处理状态
 
+const express = require("express"); // Express 框架
+const router = express.Router(); // 创建路由实例
+const multer = require("multer"); // multipart/form-data 文件上传处理
+const os = require("os"); // 操作系统工具，用于获取临时目录
+const path = require("path"); // 路径工具，用于解析文件扩展名
 
-//需要编写的脚本有：
-// /utils/word2pdf.js(转换word文件为pdf格式脚本)
-// /utils/doc2x.js(转换docx文件为md格式脚本)
-// /utils/extract_zip.js(解压文件脚本)
-// /utils/upload_minio.js(上传文件到minio存储脚本)
-// /utils/repo/update_repo.js(数据库操作脚本)
+// 导入 Service 层：教材上传核心业务逻辑
+const { uploadBook } = require("../service/POSTbook");
+// 导入 Repository 层：教材数据库操作
+const bookRepo = require("../utils/repo/book_repo");
+// 导入 JWT 鉴权中间件
+const { authenticateToken } = require("../middleware/auth");
+
+// 日志前缀
+const TAG = "[API_POSTbook]";
+
+// ==================== Multer 文件上传配置 ====================
+
+// 允许上传的教材文件扩展名白名单
+const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".md", ".zip", ".rar", ".7z"];
+
+// 创建 multer 上传实例
+const upload = multer({
+  // 使用系统临时目录存储上传的文件（处理完成后由 Service 层清理）
+  dest: os.tmpdir(),
+  // 文件大小限制：最大 500MB
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 500MB
+  },
+  // 文件类型过滤器：仅允许白名单中的扩展名
+  fileFilter: (req, file, cb) => {
+    // 获取文件扩展名（统一转小写比较）
+    const ext = path.extname(file.originalname).toLowerCase();
+
+    if (ALLOWED_EXTENSIONS.includes(ext)) {
+      // 文件类型合法，接受上传
+      console.log(TAG + "[fileFilter] 接受文件: " + file.originalname + "（扩展名: " + ext + "）");
+      cb(null, true);
+    } else {
+      // 文件类型不合法，拒绝上传
+      console.log(TAG + "[fileFilter] 拒绝文件: " + file.originalname + "（不支持的扩展名: " + ext + "）");
+      // 创建 multer 错误对象，传入自定义错误消息
+      const error = new multer.MulterError("LIMIT_UNEXPECTED_FILE", "file");
+      error.message = "不支持的文件格式，仅支持 pdf/docx/doc/md/zip/rar/7z";
+      cb(error, false);
+    }
+  },
+});
+
+// ==================== Multer 错误处理辅助函数 ====================
+
+/**
+ * 将 multer 错误转换为统一的 HTTP 错误响应
+ * @param {Error} err - multer 抛出的错误对象
+ * @param {import('express').Response} res - Express 响应对象
+ * @returns {boolean} 如果错误已被处理返回 true，否则返回 false
+ */
+function handleMulterError(err, res) {
+  if (err instanceof multer.MulterError) {
+    // multer 标准错误（如文件过大、字段名错误）
+    if (err.code === "LIMIT_FILE_SIZE") {
+      console.log(TAG + "[handleMulterError] 文件大小超过限制");
+      return res.status(422).json({
+        code: 422,
+        message: "文件大小超过限制（最大 500MB）",
+        data: null,
+      });
+    }
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      // 我们的 fileFilter 中自定义的错误会走到这里
+      console.log(TAG + "[handleMulterError] 文件格式不支持: " + err.message);
+      return res.status(422).json({
+        code: 422,
+        message: err.message || "不支持的文件格式",
+        data: null,
+      });
+    }
+    // 其他 multer 错误
+    console.log(TAG + "[handleMulterError] Multer 错误: " + err.code + " - " + err.message);
+    return res.status(422).json({
+      code: 422,
+      message: "文件上传错误: " + err.message,
+      data: null,
+    });
+  }
+  // 不是 multer 错误，交给调用方处理
+  return false;
+}
+
+// ==================== 路由定义 ====================
+
+/**
+ * @openapi
+ * /api/v1/book/upload:
+ *   post:
+ *     tags: [教材]
+ *     summary: 上传教材文件
+ *     description: |
+ *       上传教材文件（PDF/DOCX/DOC/MD/ZIP/RAR/7Z），自动进行格式归一化处理并启动课程生成流水线。
+ *       上传完成后立即返回教材 ID，后续可通过 GET /api/v1/book/{book_id}/status 查询处理进度。
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: 教材文件（最大 500MB，支持 pdf/docx/doc/md/zip/rar/7z）
+ *               name:
+ *                 type: string
+ *                 description: 教材名称（可选，默认取文件名）
+ *               description:
+ *                 type: string
+ *                 description: 教材描述（可选）
+ *               elaboration:
+ *                 type: string
+ *                 enum: ["true", "false"]
+ *                 description: 是否开启文本细化（可选，默认 true）
+ *     responses:
+ *       200:
+ *         description: 上传成功，教材正在处理中
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code: { type: integer, example: 0 }
+ *                 message: { type: string, example: "上传成功，正在处理中" }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     book_id: { type: string, example: "42" }
+ *                     textbook_filename: { type: string, example: "高等数学.pdf" }
+ *                     status: { type: string, example: "processing" }
+ *       401:
+ *         description: 未认证 / Token 无效或已过期
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code: { type: integer, example: 401 }
+ *                 message: { type: string, example: "Token 无效，请重新登录。" }
+ *       422:
+ *         description: 文件上传参数错误（缺少文件、格式不支持、文件过大）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code: { type: integer, example: 422 }
+ *                 message: { type: string, example: "不支持的文件格式，仅支持 pdf/docx/doc/md/zip/rar/7z" }
+ *       500:
+ *         description: 服务器内部错误
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code: { type: integer, example: 500 }
+ *                 message: { type: string, example: "服务器内部错误，请稍后再试。" }
+ */
+
+/**
+ * POST /api/v1/book/upload — 上传教材文件
+ *
+ * 鉴权由 authenticateToken 中间件完成：
+ *   1. 提取并验证 Bearer Token
+ *   2. 将 userId 注入 req.userId
+ *
+ * 请求格式：multipart/form-data
+ * 字段：
+ *   - file: 教材文件（必传）
+ *   - name: 教材名称（可选）
+ *   - description: 教材描述（可选）
+ *   - elaboration: 是否开启文本细化（可选，默认 true）
+ *
+ * 响应：{ code: 0, message: "上传成功，正在处理中", data: { book_id, textbook_filename, status } }
+ */
+router.post(
+  "/book/upload",
+  authenticateToken, // 第一步：JWT 鉴权
+  (req, res, next) => {
+    // 第二步：使用 multer 处理文件上传（单文件，字段名为 "file"）
+    // 注意：这里不直接在 authenticateToken 后面链式调用 upload.single，
+    // 因为我们希望自定义 multer 错误处理逻辑
+    upload.single("file")(req, res, (err) => {
+      if (err) {
+        // multer 错误（文件过大/格式不支持等），交给专门的错误处理函数
+        const handled = handleMulterError(err, res);
+        if (!handled) {
+          // 未知错误，传递到 Express 全局错误处理
+          next(err);
+        }
+        return;
+      }
+
+      // 文件上传成功（或没有文件），继续到下一个处理函数
+      // 注意：如果 req.file 不存在，表示用户没有上传文件
+      if (!req.file) {
+        console.log(TAG + "[POST /book/upload] 未提供教材文件");
+        return res.status(422).json({
+          code: 422,
+          message: "请上传教材文件（字段名: file）",
+          data: null,
+        });
+      }
+
+      next();
+    });
+  },
+  // 第三步：核心业务逻辑
+  async (req, res) => {
+    console.log(TAG + "[POST /book/upload] 收到教材上传请求，userId: " + req.userId);
+
+    try {
+      // 从请求体中提取可选字段
+      const name = req.body.name || undefined; // 教材名称（未填则取文件名）
+      const description = req.body.description || undefined; // 教材描述
+
+      // 解析 elaboration 参数：multipart/form-data 中布尔值以字符串形式传递
+      // 默认值为 true（开启文本细化）
+      let elaborationEnabled = true;
+      if (req.body.elaboration !== undefined) {
+        // 支持 "true" / "false" / "1" / "0" 等常见表示
+        const elaborationStr = String(req.body.elaboration).toLowerCase().trim();
+        elaborationEnabled = elaborationStr !== "false" && elaborationStr !== "0";
+      }
+
+      console.log(TAG + "[POST /book/upload] 教材名称: " + (name || "（使用文件名）") +
+        "，文本细化: " + (elaborationEnabled ? "开启" : "关闭"));
+
+      // 调用 Service 层执行教材上传与格式归一化
+      const result = await uploadBook(
+        req.userId, // 用户 ID（由 authenticateToken 注入）
+        req.file, // multer 文件对象 { originalname, path, mimetype, size }
+        name, // 教材名称
+        description, // 教材描述
+        elaborationEnabled // 是否开启文本细化
+      );
+
+      // 根据业务结果返回对应的 HTTP 状态码
+      // uploadBook 可能的返回码：0（成功）、422（格式不支持/文件过大）、500（服务端错误）
+      const statusMap = { 0: 200, 422: 422, 500: 500 };
+      const httpStatus = statusMap[result.code] || 500;
+
+      console.log(TAG + "[POST /book/upload] 响应: code=" + result.code + ", message=" + result.message);
+      return res.status(httpStatus).json(result);
+
+    } catch (error) {
+      // 捕获 Service 层未处理的异常
+      console.error(TAG + "[POST /book/upload] 处理异常: " + error.message);
+      console.error(error.stack);
+      return res.status(500).json({
+        code: 500,
+        message: "服务器内部错误: " + error.message,
+        data: null,
+      });
+    }
+  }
+);
+
+/**
+ * @openapi
+ * /api/v1/book/{book_id}/status:
+ *   get:
+ *     tags: [教材]
+ *     summary: 查询教材处理状态
+ *     description: 根据教材 ID 查询教材的流水线处理状态和章节信息。
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: book_id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 教材 ID
+ *     responses:
+ *       200:
+ *         description: 查询成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code: { type: integer, example: 0 }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     book_id: { type: string, example: "42" }
+ *                     pipeline_status: { type: string, example: "idle" }
+ *                     elaboration_enabled: { type: boolean, example: true }
+ *                     chapter:
+ *                       nullable: true
+ *                       allOf:
+ *                         - type: object
+ *                           properties:
+ *                             chapter_id: { type: string, example: "1" }
+ *                             name: { type: string, example: "第一章 - 导数与微分" }
+ *                             status: { type: string, example: "completed" }
+ *                             total_pages: { type: integer, nullable: true, example: 25 }
+ *       401:
+ *         description: 未认证
+ *       404:
+ *         description: 教材不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
+
+/**
+ * GET /api/v1/book/:book_id/status — 查询教材处理状态
+ *
+ * 鉴权由 authenticateToken 中间件完成：
+ *   1. 提取并验证 Bearer Token
+ *   2. 将 userId 注入 req.userId
+ *
+ * 路径参数：
+ *   - book_id: 教材 ID
+ *
+ * 响应：{ code: 0, data: { book_id, pipeline_status, elaboration_enabled, chapter } }
+ *   - chapter: null（无章节时）或 { chapter_id, name, status, total_pages }
+ */
+router.get("/book/:book_id/status", authenticateToken, async (req, res) => {
+  const bookId = req.params.book_id; // 从 URL 路径参数提取教材 ID
+  console.log(TAG + "[GET /book/:book_id/status] 查询教材状态，bookId: " + bookId + "，userId: " + req.userId);
+
+  try {
+    // 调用 Repository 层查询课程信息（含章节列表）
+    const courseResult = await bookRepo.getCourseById(bookId);
+
+    // 课程不存在
+    if (courseResult.code === 404) {
+      console.log(TAG + "[GET /book/:book_id/status] 教材不存在，bookId: " + bookId);
+      return res.status(404).json({
+        code: 404,
+        message: "教材不存在。",
+        data: null,
+      });
+    }
+
+    // 数据库查询异常
+    if (courseResult.code !== 200) {
+      console.log(TAG + "[GET /book/:book_id/status] 查询失败: " + courseResult.message);
+      return res.status(500).json({
+        code: 500,
+        message: courseResult.message || "查询教材状态失败。",
+        data: null,
+      });
+    }
+
+    // 提取课程数据
+    const course = courseResult.course;
+
+    // 构建章节信息：取第一个章节（流水线按顺序处理，一次展示一个章节的状态）
+    let chapterInfo = null;
+    if (course.chapters && course.chapters.length > 0) {
+      const firstChapter = course.chapters[0];
+      chapterInfo = {
+        chapter_id: String(firstChapter.id), // BigInt 转 String 防止精度丢失
+        name: firstChapter.name,
+        status: firstChapter.status,
+        total_pages: firstChapter.totalPages, // 可为 null（流水线尚未生成 PPT）
+      };
+    }
+
+    // 构建响应数据
+    const responseData = {
+      book_id: String(course.id), // BigInt 转 String
+      pipeline_status: course.pipelineStatus, // 流水线状态：processing/idle/error
+      elaboration_enabled: course.elaborationEnabled, // 是否开启文本细化
+      chapter: chapterInfo, // 章节信息（无章节时为 null）
+    };
+
+    console.log(TAG + "[GET /book/:book_id/status] 查询成功，pipeline_status: " + course.pipelineStatus +
+      "，章节数: " + (course.chapters ? course.chapters.length : 0));
+
+    return res.status(200).json({
+      code: 0,
+      message: "查询成功",
+      data: responseData,
+    });
+
+  } catch (error) {
+    // 捕获未预期的异常
+    console.error(TAG + "[GET /book/:book_id/status] 处理异常: " + error.message);
+    console.error(error.stack);
+    return res.status(500).json({
+      code: 500,
+      message: "服务器内部错误: " + error.message,
+      data: null,
+    });
+  }
+});
+
+// 导出路由实例，供 app.js 挂载
+module.exports = router;

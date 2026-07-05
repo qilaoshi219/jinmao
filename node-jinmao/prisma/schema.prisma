@@ -28,5 +28,54 @@ model User {
   banReason   String?   @db.VarChar(255) @map("ban_reason")               // 禁用原因
   isDeleted   Boolean   @default(false) @map("is_deleted")                // 软删除标记
 
+  courses     Course[]                                                      // 课程列表（Prisma 虚拟关系，数据库中不产生列）
+
   @@map("User") // 映射数据库表名
+}
+
+// ==================== 课程表 Course ====================
+// 存储用户上传的教材元数据和流水线状态
+model Course {
+  id                 BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 课程ID，主键自增
+  userId             BigInt    @map("user_id") @db.UnsignedBigInt               // 用户ID，外键引用 User 表
+  name               String    @db.VarChar(100)                                 // 课程名称（用户自定义或 AI 识别）
+  description        String?   @db.Text                                         // 课程描述
+  textbookFilename   String    @map("textbook_filename") @db.VarChar(255)       // 教材原文件名
+  textbookPath       String    @map("textbook_path") @db.VarChar(500)           // 归一化 MD 在 MinIO 路径，如 /usercourse/1001/2001/教材名-20260705T120000-Ab3Xz9/教材名.md
+  sourcePath         String    @map("source_path") @db.VarChar(512)             // 源文件在 MinIO 路径，如 /usercourse/1001/2001/闸门运行工教材.pdf
+  coverPath          String?   @map("cover_path") @db.VarChar(512)              // 封面图片路径（暂不生成，预留字段）
+  elaborationEnabled Boolean   @default(true) @map("elaboration_enabled")       // 是否开启文本细化（用户上传时勾选，默认 true）
+  endline            Int       @default(0) @map("endline") @db.UnsignedInt      // 当前已处理到的行号（流水线从该位置继续提取文本）
+  pipelineStatus     String    @default("idle") @map("pipeline_status") @db.VarChar(30) // 流水线状态（idle/extracting/indexing/.../completed）
+  createTime         DateTime  @default(now()) @map("create_time")              // 创建时间
+  updateTime         DateTime  @updatedAt @map("update_time")                   // 更新时间
+  isDeleted          Boolean   @default(false) @map("is_deleted")               // 软删除标记
+
+  chapters           Chapter[]                                                    // 章节列表（Prisma 虚拟关系）
+  user               User     @relation(fields: [userId], references: [id])       // 所属用户
+
+  @@map("Course")
+}
+
+// ==================== 章节表 Chapter ====================
+// 存储每章元数据，PPT/语音/字幕文件通过 MinIO 目录结构关联
+model Chapter {
+  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 章节ID，主键自增
+  courseId      BigInt    @map("course_id") @db.UnsignedBigInt             // 课程ID，外键引用 Course 表
+  sequence      Int       @db.UnsignedInt                                  // 章节序号（1, 2, 3...）
+  name          String    @db.VarChar(100)                                 // 章节名称（AI 识别或手动指定）
+  description   String?   @db.Text                                         // 章节描述
+  chapterRoot   String    @map("chapter_root") @db.VarChar(500)            // MinIO 章节根目录，如 /usercourse/1001/2001/chapter_01/
+  startline     Int       @db.UnsignedInt                                  // 本章在原始文件中的起始行号
+  endline       Int       @db.UnsignedInt                                  // 本章在原始文件中的结束行号
+  totalPages    Int       @default(0) @map("total_pages") @db.UnsignedInt  // 本章 PPT 总页数
+  outlinePath   String?   @map("outline_path") @db.VarChar(512)            // 大纲 JSON 路径，如 /usercourse/1001/2001/chapter_01/chapter_01.json
+  status        String    @default("pending") @db.VarChar(20)              // 章节状态：pending/generating/completed/failed
+  createTime    DateTime  @default(now()) @map("create_time")              // 创建时间
+  updateTime    DateTime  @updatedAt @map("update_time")                   // 更新时间
+  isDeleted     Boolean   @default(false) @map("is_deleted")               // 软删除标记
+
+  course        Course    @relation(fields: [courseId], references: [id])  // 所属课程
+
+  @@map("Chapter")
 }

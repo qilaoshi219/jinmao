@@ -15,6 +15,10 @@ const swaggerSpec = require("./config/swagger"); // OpenAPI 3.0 规范对象
 // ==================== 导入路由模块 ====================
 // 认证路由：/api/v1/smtpcode、/api/v1/login
 const authRouter = require("./API/auth");
+// 教材上传路由：/api/v1/book/upload、/api/v1/book/:book_id/status
+const POSTbookRouter = require("./API/POSTbook");
+// 教材 CRUD 路由（待实现）：/api/v1/books
+const bookRouter = require("./API/book");
 
 // ==================== 创建 Express 应用 ====================
 const app = express();
@@ -90,6 +94,20 @@ app.use(
 //   POST /api/v1/login      — 验证码登录/注册
 app.use("/api/v1", authRouter);
 
+// 教材上传 + 状态查询路由挂载到 /api/v1 前缀
+// 实际端点：
+//   POST /api/v1/book/upload          — 上传教材文件
+//   GET  /api/v1/book/:book_id/status — 查询教材处理状态
+app.use("/api/v1", POSTbookRouter);
+
+// 教材 CRUD 路由挂载到 /api/v1 前缀（占位，待实现）
+// 实际端点：
+//   GET    /api/v1/books          — 获取教材列表
+//   GET    /api/v1/books/:id       — 获取教材详情
+//   PUT    /api/v1/books/:id       — 更新教材信息
+//   DELETE /api/v1/books/:id       — 删除教材
+app.use("/api/v1", bookRouter);
+
 // ==================== 404 处理中间件 ====================
 // 所有未匹配的路径返回 404 JSON
 app.use((req, res) => {
@@ -128,6 +146,9 @@ const server = app.listen(port, () => {
   console.log("  API 文档: http://localhost:" + port + "/api/v1/docs");
   console.log("    POST /api/v1/smtpcode  — 发送邮箱验证码");
   console.log("    POST /api/v1/login      — 验证码登录/注册");
+  console.log("    POST /api/v1/book/upload          — 上传教材文件");
+  console.log("    GET  /api/v1/book/:book_id/status — 查询教材处理状态");
+  console.log("    GET  /api/v1/books                — 教材列表（待实现）");
   console.log("========================================");
 });
 

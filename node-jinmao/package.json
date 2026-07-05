@@ -19,8 +19,10 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "minio": "^8.0.7",
+    "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
     "openai": "^6.45.0",
+    "p-queue": "^9.3.1",
     "swagger-jsdoc": "^6.3.0"
   },
   "devDependencies": {
