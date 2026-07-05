@@ -60,29 +60,27 @@
 
 ## 一、认证模块
 
-### 1.1 用户注册
+> **在线调试**: 访问 `http://localhost:8888/api/v1/docs` 使用 Scalar UI 交互式测试
+
+认证方式：邮箱验证码登录/注册，无需密码。登录后返回 JWT Token。
+
+### 1.1 【已实现】【测试通过】发送邮箱验证码
 
 ```
-POST /api/v1/auth/register
+POST /api/v1/smtpcode
 ```
+
+向指定邮箱发送 6 位数字验证码，有效期 **10 分钟**。同一邮箱 **5 分钟内最多发送 3 次**。
 
 **请求体：**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `username` | string | 是 | 用户名，4~50 字符 |
-| `password` | string | 是 | 密码，6~128 字符 |
-| `nickname` | string | 是 | 昵称，1~50 字符 |
-| `email` | string | 是 | 邮箱 |
-| `phone` | string | 否 | 手机号 |
+| `email` | string | 是 | 用户邮箱地址 |
 
 ```json
 {
-    "username": "zhangsan",
-    "password": "abc12345",
-    "nickname": "张三",
-    "email": "zhangsan@example.com",
-    "phone": "13800138000"
+    "email": "user@example.com"
 }
 ```
 
@@ -90,36 +88,34 @@ POST /api/v1/auth/register
 
 ```json
 {
-    "code": 0,
-    "message": "注册成功",
-    "data": {
-        "user_id": 1001,
-        "token": "eyJhbGciOiJIUzI1NiIs..."
-    }
+    "code": 200,
+    "message": "验证码已发送，请查收邮件。"
 }
 ```
 
-> 错误：`422` 邮箱已被注册 / 密码强度不足
+> 错误：`400` 邮箱格式不正确 / `429` 发送频率超限 / `500` SMTP 配置不完整或发送失败
 
 ---
 
-### 1.2 用户登录
+### 1.2 【已实现】【测试通过】验证码登录/注册
 
 ```
-POST /api/v1/auth/login
+POST /api/v1/login
 ```
+
+提交邮箱和验证码。后台自动判断：**用户不存在则自动注册**，**用户已存在则直接登录**。返回 JWT Token。
 
 **请求体：**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `account` | string | 是 | 邮箱或手机号 |
-| `password` | string | 是 | 密码 |
+| `email` | string | 是 | 用户邮箱地址 |
+| `code` | string | 是 | 6 位数字验证码 |
 
 ```json
 {
-    "account": "zhangsan@example.com",
-    "password": "abc12345"
+    "email": "user@example.com",
+    "code": "123456"
 }
 ```
 
@@ -127,21 +123,27 @@ POST /api/v1/auth/login
 
 ```json
 {
-    "code": 0,
+    "code": 200,
     "message": "登录成功",
     "data": {
-        "user_id": 1001,
+        "user_id": "1",
         "token": "eyJhbGciOiJIUzI1NiIs...",
-        "expires_at": "2026-07-10T12:00:00Z"
+        "is_new_user": false
     }
 }
 ```
 
-> 错误：`401` 账号或密码错误 / `403` 账号已被禁用（返回 `ban_reason`）
+| 字段 | 说明 |
+|------|------|
+| `user_id` | 用户 ID（字符串类型） |
+| `token` | JWT 访问令牌，有效期由 `JWT_EXPIRES_IN` 控制（默认 7 天） |
+| `is_new_user` | `true` = 新用户注册并登录；`false` = 老用户登录 |
+
+> 错误：`400` 参数不合法 / `401` 验证码错误或已过期 / `403` 账号已被禁用 / `500` 服务器错误
 
 ---
 
-### 1.3 获取当前用户信息
+### 1.3 【已实现】【测试通过】获取当前用户信息
 
 ```
 GET /api/v1/auth/profile
@@ -167,28 +169,70 @@ GET /api/v1/auth/profile
 
 ---
 
-### 1.4 更新用户信息
+### 1.4 更新用户信息【已实现】【测试通过】
 
 ```
 PUT /api/v1/auth/profile
 ```
 
-**请求体（所有字段均为可选）：**
+**说明**：通过邮箱验证码验证身份后，更新当前登录用户的个人信息。每次修改都需获取新的邮箱验证码。
+
+**请求头**：
+| 字段 | 说明 |
+|------|------|
+| `Authorization` | `Bearer {token}`，JWT Token |
+
+**请求体（所有字段均为可选，但 `code` 为必填）：**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `nickname` | string | 否 | 新昵称 |
-| `phone` | string | 否 | 新手机号 |
-| `password` | string | 否 | 新密码（需同时传 `old_password`） |
-| `old_password` | string | 否 | 旧密码，修改密码时必传 |
+| `phone` | string | 否 | 新手机号（11位中国大陆手机号码） |
+| `password` | string | 否 | 新密码 |
+| `code` | string | 是 | 邮箱验证码，通过 `POST /api/v1/smtpcode` 获取，有效期 10 分钟，一次性使用 |
 
 ```json
 {
     "nickname": "张三（新）",
-    "old_password": "abc12345",
-    "password": "newpassword123"
+    "phone": "13900139000",
+    "code": "123456"
 }
 ```
+
+**响应 `200 OK` — 更新成功：**
+
+```json
+{
+    "code": 200,
+    "message": "个人信息更新成功。",
+    "data": {
+        "id": "1",
+        "username": null,
+        "nickname": "张三（新）",
+        "email": "zhangsan@example.com",
+        "phone": "13900139000",
+        "role": "user",
+        "create_time": "2026-07-01T08:00:00.000Z",
+        "update_time": "2026-07-05T10:30:00.000Z"
+    }
+}
+```
+
+**错误响应：**
+
+| 状态码 | 说明 |
+|--------|------|
+| 400 | 缺少验证码 / 没有提供更新字段 / 手机号格式错误 |
+| 401 | 验证码无效或已过期 / Token 无效 |
+| 403 | 账号已被禁用 |
+| 404 | 用户不存在 |
+| 500 | 服务器内部错误 |
+
+**安全机制说明**：
+1. 用户需先通过 `POST /api/v1/smtpcode` 获取邮箱验证码（发到注册邮箱）
+2. 验证码有效期为 10 分钟，相同邮箱 5 分钟内最多发送 3 次
+3. 验证码使用后立即删除，防止重放攻击
+4. 仅允许更新 `nickname`、`phone`、`password`，`username` 和 `email` 不可通过此接口修改
 
 ---
 
@@ -1054,8 +1098,8 @@ DELETE /api/v1/admin/users/{user_id}
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/auth/register` | 用户注册 |
-| `POST` | `/auth/login` | 用户登录 |
+| `POST` | `/smtpcode` | 发送邮箱验证码 |
+| `POST` | `/login` | 验证码登录/注册 |
 | `GET` | `/auth/profile` | 获取个人信息 |
 | `PUT` | `/auth/profile` | 更新个人信息 |
 | `POST` | `/auth/logout` | 登出 |

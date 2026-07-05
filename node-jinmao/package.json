@@ -11,8 +11,19 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "@scalar/express-api-reference": "^0.10.8",
+    "cors": "^2.8.5",
     "dotenv": "^17.4.2",
+    "express": "^4.21.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
     "minio": "^8.0.7",
-    "openai": "^6.45.0"
+    "nodemailer": "^9.0.3",
+    "openai": "^6.45.0",
+    "swagger-jsdoc": "^6.3.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.0.0"
   }
 }

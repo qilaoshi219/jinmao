@@ -71,6 +71,29 @@ if (-not (Test-Path "node_modules")) {
     Write-Host "  Dependencies already installed." -ForegroundColor Green
 }
 
+# --- 2.3 Prisma 初始化 ---
+Write-Host "  Initializing Prisma..." -ForegroundColor Gray
+
+# 生成 Prisma Client（类型安全的数据库查询客户端）
+Write-Host "    Running prisma generate..." -ForegroundColor Gray
+npx prisma generate
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  prisma generate failed!" -ForegroundColor Yellow
+    Write-Host "  Please check DATABASE_URL in .env and ensure MySQL is running." -ForegroundColor Yellow
+    # 不退出，允许继续启动（Prisma 可能尚未初始化）
+}
+
+# 执行数据库迁移（确保数据库结构最新）
+Write-Host "    Running prisma migrate deploy..." -ForegroundColor Gray
+npx prisma migrate deploy
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  prisma migrate deploy failed!" -ForegroundColor Yellow
+    Write-Host "  First time setup: run 'npx prisma migrate dev --name init_auth' manually." -ForegroundColor Yellow
+    # 不退出，允许继续启动
+}
+
+Write-Host "  Prisma initialization completed." -ForegroundColor Green
+
 # --- 3. Start server ---
 Write-Host ""
 Write-Host "[3/3] Starting server..." -ForegroundColor Yellow
@@ -80,4 +103,7 @@ Write-Host ""
 
 node $entryFile
 
+Write-Host ""
 Write-Host "Server stopped." -ForegroundColor Yellow
+Write-Host ""
+Read-Host -Prompt "按 Enter 键退出..."

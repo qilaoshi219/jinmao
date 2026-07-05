@@ -1,0 +1,32 @@
+// ==================== Prisma 数据库 Schema 定义 ====================
+// 职责：集中定义数据库模型结构，是数据库的唯一来源
+// 使用 MySQL 8.0，字符集 utf8mb4，引擎 InnoDB
+// 运行 npx prisma migrate dev 自动生成迁移文件并建表
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 用户表 User ====================
+// 参照 数据库结构.md 的设计，与现有 MySQL User 表严格对应
+model User {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 用户ID，主键自增
+  username    String?   @db.VarChar(50)                                   // 用户名（验证码注册时为 NULL）
+  password    String?   @db.VarChar(255)                                  // bcrypt 哈希密码（无密码用户为 NULL）
+  nickname    String?   @db.VarChar(50)                                   // 昵称
+  email       String    @unique @db.VarChar(100)                          // 邮箱，唯一索引
+  phone       String?   @unique @db.VarChar(20)                           // 手机号，可选唯一
+  role        String    @default("user") @db.VarChar(10)                  // 角色：admin / user
+  createTime  DateTime  @default(now()) @map("create_time")               // 创建时间
+  updateTime  DateTime  @updatedAt @map("update_time")                    // 更新时间
+  isBanned    Boolean   @default(false) @map("is_banned")                 // 是否被禁用
+  banReason   String?   @db.VarChar(255) @map("ban_reason")               // 禁用原因
+  isDeleted   Boolean   @default(false) @map("is_deleted")                // 软删除标记
+
+  @@map("User") // 映射数据库表名
+}
