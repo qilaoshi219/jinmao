@@ -148,7 +148,7 @@ const server = app.listen(port, () => {
   console.log("    POST /api/v1/login      — 验证码登录/注册");
   console.log("    POST /api/v1/book/upload          — 上传教材文件");
   console.log("    GET  /api/v1/book/:book_id/status — 查询教材处理状态");
-  console.log("    GET  /api/v1/books                — 教材列表（待实现）");
+  console.log("    GET  /api/v1/books                — 教材列表（分页+搜索）");
   console.log("========================================");
 });
 

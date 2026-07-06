@@ -1,6 +1,6 @@
 # FILE.md - node-jinmao 项目文件索引
 
-> 最后更新：2026-07-05
+> 最后更新：2026-07-06
 
 ## 项目目录结构
 
@@ -15,7 +15,12 @@ node-jinmao/
 ├── start.ps1                       # 快速启动脚本（Windows PowerShell）
 ├── API/                            # API 路由层
 │   ├── POSTbook.js                 # 教材上传与状态查询路由：POST /api/v1/book/upload、GET /api/v1/book/:book_id/status（multer 文件处理 + JWT 鉴权）
-│   ├── book.js                     # 教材 CRUD 路由（占位）：GET/PUT/DELETE /api/v1/books（待实现）
+│   ├── book/                       # 教材 CRUD 路由模块（已拆分为 5 个文件）
+│   │   ├── index.js                # 统一入口，组合各子路由模块
+│   │   ├── list.js                 # GET /api/v1/books — 教材列表（分页+关键词搜索）
+│   │   ├── detail.js               # GET /api/v1/books/:id — 教材详情（含完整章节列表+权限校验）
+│   │   ├── update.js               # PUT /api/v1/books/:id — 更新教材信息（待实现）
+│   │   └── delete.js               # DELETE /api/v1/books/:id — 软删除教材（所有者校验）
 │   └── auth.js                     # 认证路由（Express Router）：POST /api/v1/smtpcode、/api/v1/login
 ├── config/                         # 配置目录
 │   ├── index.js                    # 统一配置加载入口（合并 JSON + .env 敏感字段）
@@ -71,7 +76,7 @@ node-jinmao/
 | `app.js` | Express HTTP 服务器，监听 8888 端口，挂载 /api/v1 路由，集成 helmet/cors/JSON 解析中间件 | 2026-07-05 |
 | `package.json` | 定义项目名、依赖（express、multer、nodemailer、Prisma 等）、启动脚本 | 2026-07-05 |
 | `API/POSTbook.js` | 教材上传与状态查询路由：POST /api/v1/book/upload（multer 文件上传 + JWT 鉴权 → Service 层上传） + GET /api/v1/book/:book_id/status（查询流水线状态与章节信息），含完整 OpenAPI 注解 | 2026-07-05 |
-| `API/book.js` | 教材 CRUD 路由（占位）：GET /api/v1/books（列表）、GET /api/v1/books/:id（详情）、PUT /api/v1/books/:id（更新）、DELETE /api/v1/books/:id（删除），均返回 "待实现"，含 OpenAPI 注解 | 2026-07-05 |
+| `API/book/` | 教材 CRUD 路由模块（已拆分）：`index.js` 统一入口，`list.js` 列表（分页+搜索），`detail.js` 详情（含章节+权限校验），`update.js` 更新（待实现），`delete.js` 软删除（所有者校验），全部含完整 OpenAPI 注解 | 2026-07-06 |
 | `API/auth.js` | 认证路由（Express Router），4 个端点：POST /api/v1/smtpcode（发送验证码）、POST /api/v1/login（验证码登录/注册）、GET /api/v1/auth/profile（获取当前用户信息，需 Token）、PUT /api/v1/auth/profile（更新用户信息，需 Token + 邮箱验证码） | 2026-07-05 |
 | `middleware/auth.js` | JWT 鉴权 Express 中间件，验证 Bearer Token 并注入 req.userId（不检查用户状态） | 2026-07-04 |
 | `prisma/schema.prisma` | Prisma ORM 数据库 Schema 定义，包含 User、Course、Chapter 模型，映射 MySQL 表 | 2026-07-05 |

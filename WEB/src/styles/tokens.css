@@ -53,6 +53,6 @@
 /* 为所有颜色变化添加平滑过渡，提升主题切换体验 */
 /* 注意：transition 不应过大影响性能，200ms 是平衡值 */
 html {
-  /* 页面级颜色过渡 */
-  transition: background-color 0.2s ease, color 0.2s ease;
+  /* 页面级颜色过渡（500ms 符合设计规范规则3） */
+  transition: background-color 500ms ease, color 500ms ease;
 }

@@ -46,7 +46,7 @@ const options = {
   },
   // 扫描路径：API 目录下所有 JS 文件
   // swagger-jsdoc 会解析这些文件中的 /** @openapi ... */ 注释
-  apis: ["./API/*.js"],
+  apis: ["./API/*.js", "./API/book/*.js"],
 };
 
 // 生成 OpenAPI 规范对象

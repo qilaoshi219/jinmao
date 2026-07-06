@@ -79,12 +79,12 @@
 
           <!-- ========== 标题区 ========== -->
           <h1 class="text-2xl font-bold text-black dark:text-white text-center">
-            金茂教材处理系统
+            金毛教你学
           </h1>
           <!-- 蓝色装饰分割线 -->
           <div class="w-10 h-0.5 bg-blue-500 dark:bg-blue-400 mx-auto my-3 rounded-full" />
           <p class="text-neutral-800 dark:text-neutral-300 text-center mb-6 text-sm">
-            使用邮箱验证码登录或注册
+            使用邮箱验证码登录或注册 — 金毛教你学
           </p>
 
           <!-- ============================================================
