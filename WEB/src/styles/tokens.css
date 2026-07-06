@@ -1,0 +1,58 @@
+/* ==================== 主题 CSS 变量（Tokens） ==================== */
+/* 职责：定义亮色/暗黑两套 CSS 自定义变量，作为 Tailwind 覆盖不到的场景的基础层 */
+/* 配合 Tailwind dark: 变体使用，用于处理 body 背景、自定义动画等全局样式 */
+/* 注意：大部分组件颜色应使用 Tailwind 的 dark: 前缀，本文件仅处理全局级别样式 */
+
+/* ========== 亮色模式（默认） ========== */
+:root {
+  /* 页面背景色 */
+  --color-bg-primary: #f9fafb; /* gray-50 */
+  --color-bg-secondary: #ffffff; /* white */
+
+  /* 文字颜色 */
+  --color-text-primary: #1f2937; /* gray-800 */
+  --color-text-secondary: #6b7280; /* gray-500 */
+
+  /* 边框颜色 */
+  --color-border: #e5e7eb; /* gray-200 */
+
+  /* 阴影 */
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+/* ========== 暗黑模式 ========== */
+.dark {
+  /* 页面背景色 */
+  --color-bg-primary: #111827; /* gray-900 */
+  --color-bg-secondary: #1f2937; /* gray-800 */
+
+  /* 文字颜色 */
+  --color-text-primary: #f3f4f6; /* gray-100 */
+  --color-text-secondary: #9ca3af; /* gray-400 */
+
+  /* 边框颜色 */
+  --color-border: #374151; /* gray-700 */
+
+  /* 阴影（暗黑模式下减弱阴影） */
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+}
+
+/* ========== 系统偏好 Fallback ========== */
+/* 当用户从未手动设置主题时，自动跟随操作系统偏好 */
+/* 只有当 html 上没有 .dark class 时才生效（useDark 未初始化时） */
+@media (prefers-color-scheme: dark) {
+  html:not(.dark) {
+    /* 注意：这里仅做基础 fallback，实际主题由 useDark + Tailwind dark: 控制 */
+    /* 如果 useDark 未加载（如浏览器不支持 JS），这里提供最基本的暗色兜底 */
+    background-color: #111827;
+    color: #f3f4f6;
+  }
+}
+
+/* ========== 全局过渡动画 ========== */
+/* 为所有颜色变化添加平滑过渡，提升主题切换体验 */
+/* 注意：transition 不应过大影响性能，200ms 是平衡值 */
+html {
+  /* 页面级颜色过渡 */
+  transition: background-color 0.2s ease, color 0.2s ease;
+}

@@ -1,0 +1,22 @@
+/* ==================== 全局样式入口 ==================== */
+/* 职责：引入 Tailwind CSS，配置暗黑模式策略，定义全局 CSS 变量和基础样式 */
+
+/* Tailwind CSS v4 - 通过 @import 引入，替代 v3 的 @tailwind 指令 */
+@import "tailwindcss";
+
+/* ========== Tailwind 暗黑模式：class 策略 ========== */
+/* 使用 class 策略而非默认的 media 策略，允许用户手动切换暗黑模式 */
+/* 当 <html class="dark"> 时，所有 dark: 前缀的工具类自动生效 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ========== 导入主题 CSS 变量 ========== */
+/* 亮暗两套 CSS 自定义变量，处理 Tailwind 覆盖不到的场景（如 body 背景） */
+@import "./tokens.css";
+
+/* ========== 全局基础样式 ========== */
+/* body 使用 CSS 变量而非硬编码颜色，支持主题切换 */
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+}
