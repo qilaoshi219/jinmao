@@ -50,7 +50,7 @@ WEB/
 | `src/main.js` | Vue 应用入口：createApp → 安装 Pinia → 导入样式 + Element Plus 暗黑 CSS → 挂载 #app | 2026-07-06 |
 | `src/App.vue` | 根组件，根据 isLoggedIn 状态切换 LoginPage 和主页，包含登出功能，暗黑模式切换按钮 | 2026-07-06 |
 | `src/composables/useTheme.js` | 主题切换 Composable：封装 VueUse useDark，导出 isDark 和 toggleTheme | 2026-07-06 |
-| `src/pages/login/index.vue` | 登录注册页面入口：纯模板(HTML)，通过 src 引用同目录 script.js | 2026-07-06 |
+| `src/pages/login/index.vue` | 登录注册页面（美化版）：背景光晕、Logo区、卡片装饰条、输入框图标、入场动画、响应式布局 | 2026-07-06 |
 | `src/pages/login/script.js` | 登录注册页面逻辑：export default { setup() }，含完整 JSDoc 注释 | 2026-07-06 |
 | `src/styles/index.css` | 全局样式入口：导入 Tailwind CSS，配置暗黑模式 class 策略，导入 tokens.css | 2026-07-06 |
 | `src/styles/tokens.css` | 主题 CSS 变量：定义 :root 和 .dark 两套变量 + prefers-color-scheme fallback | 2026-07-06 |
