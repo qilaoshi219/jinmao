@@ -96,3 +96,24 @@ export async function getBookStatus(bookId) {
 
   return response.data;
 }
+
+/**
+ * 获取教材文件列表（临时测试功能，未来会删除）
+ * GET /api/v1/books/:id/files
+ * @param {string|number} bookId - 教材 ID
+ * @returns {Promise} 后端返回 { code, message, data: { courseId, courseName, directoryPrefix, totalFiles, files } }
+ */
+export async function getBookFiles(bookId) {
+  console.log(TAG + "[getBookFiles] 请求教材文件列表，bookId: " + bookId);
+
+  const response = await apiClient.get("/books/" + bookId + "/files");
+  console.log(
+    TAG +
+      "[getBookFiles] 响应: code=" +
+      response.data.code +
+      ", totalFiles=" +
+      (response.data?.data?.totalFiles || 0)
+  );
+
+  return response.data;
+}

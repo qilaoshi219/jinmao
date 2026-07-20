@@ -31,6 +31,9 @@ const doc2xConfig = require("./doc2x_config.json");
 // volcengine_config.json：不含 APP_ID 和 ACCESS_KEY，只保留其余字段
 const volcengineConfig = require("./volcengine_config.json");
 
+// grsai_config.json：不含 API_KEY，只保留 BASE、MODEL、轮询参数等
+const grsaiConfig = require("./grsai_config.json");
+
 // ==================== 注入敏感字段（从 process.env 读取） ====================
 // 注意：这里的赋值在每个模块首次 require("../config") 时执行一次
 // 由于 dotenv 已在 app.js 顶部加载，此时 process.env 已包含 .env 中的所有值
@@ -45,6 +48,9 @@ doc2xConfig.DOC2X_API_KEY = process.env.DOC2X_API_KEY;
 // 火山引擎 TTS
 volcengineConfig.VOLCENGINE_TTS.APP_ID = process.env.VOLCENGINE_TTS_APP_ID;
 volcengineConfig.VOLCENGINE_TTS.ACCESS_KEY = process.env.VOLCENGINE_TTS_ACCESS_KEY;
+
+// Grsai 文生图 API
+grsaiConfig.GRSAI_API_KEY = process.env.GRSAI_API_KEY;
 
 // ==================== API Key 格式校验 ====================
 // HTTP 头部（如 Authorization: Bearer <key>）仅允许 ASCII 字符，
@@ -81,6 +87,7 @@ const keyChecks = [
   { key: process.env.DOC2X_API_KEY, name: "DOC2X_API_KEY" },
   { key: process.env.VOLCENGINE_TTS_APP_ID, name: "VOLCENGINE_TTS_APP_ID" },
   { key: process.env.VOLCENGINE_TTS_ACCESS_KEY, name: "VOLCENGINE_TTS_ACCESS_KEY" },
+  { key: process.env.GRSAI_API_KEY, name: "GRSAI_API_KEY" },
 ];
 let keyCheckFailed = false;
 keyChecks.forEach(({ key, name }) => {
@@ -101,10 +108,12 @@ console.log("[config/index] DeepSeek API_KEY 已注入: " + (process.env.DEEPSEE
 console.log("[config/index] Doc2x API_KEY 已注入: " + (process.env.DOC2X_API_KEY ? "是" : "否"));
 console.log("[config/index] 火山引擎 APP_ID 已注入: " + (process.env.VOLCENGINE_TTS_APP_ID ? "是" : "否 (空值)"));
 console.log("[config/index] 火山引擎 ACCESS_KEY 已注入: " + (process.env.VOLCENGINE_TTS_ACCESS_KEY ? "是" : "否 (空值)"));
+console.log("[config/index] Grsai API_KEY 已注入: " + (process.env.GRSAI_API_KEY ? "是 (长度 " + process.env.GRSAI_API_KEY.length + ")" : "否"));
 
 // ==================== 导出统一配置对象 ====================
 module.exports = {
     deepseek: deepseekConfig,       // { DEEPSEEK_API_BIG: {...}, DEEPSEEK_API_SMALL: {...} }
     doc2x: doc2xConfig,             // { DOC2X_API_KEY: "...", DOC2X_API_BASE: "..." }
     volcengine: volcengineConfig,   // { VOLCENGINE_TTS: { APP_ID, ACCESS_KEY, RESOURCE_ID, SPEAKER, API_URL } }
+    grsai: grsaiConfig,             // { GRSAI_API_KEY, GRSAI_API_BASE, GRSAI_MODEL, ... }
 };

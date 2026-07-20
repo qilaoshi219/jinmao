@@ -3,29 +3,119 @@
 文件名：UploadBookDialog.vue（上传教材弹窗组件）
 文件作用：用户点击"上传教材"后弹出的模态框，支持选择文件、填写名称和描述
         调用 uploadBook API 上传，成功后通知父组件刷新列表
+        布局参考老项目：左右两栏（模式选择 + 上传区），宽度扩大至 860px
         遵守设计规范（10px圆角、500ms过渡、暗黑双轨适配、按钮防重复点击）
 ============================================================================
 -->
 
 <template>
-  <!-- Element Plus 对话框 -->
+  <!-- Element Plus 对话框：宽度参考老项目 min(860px, calc(100vw - 32px)) -->
   <el-dialog
     :model-value="visible"
     @update:model-value="$emit('update:visible', $event)"
-    title="上传教材"
-    width="520px"
+    :width="dialogWidth"
     :close-on-click-modal="false"
     destroy-on-close
+    class="upload-book-dialog"
   >
-    <!-- ========== 表单区域 ========== -->
-    <el-form
-      ref="formRef"
-      :model="form"
-      label-position="top"
-      class="transition-colors duration-500"
-    >
-      <!-- 文件上传区域 -->
-      <el-form-item label="选择文件" required>
+    <!-- ========== 自定义 Header（参考老项目 .upload-modal-header） ========== -->
+    <template #header>
+      <div class="flex items-start justify-between gap-4 w-full">
+        <div>
+          <h2 class="text-black dark:text-white text-xl font-extrabold tracking-wide
+                     transition-colors duration-500">
+            上传教材
+          </h2>
+          <p class="text-gray-500 dark:text-gray-400 text-[13px] mt-1.5
+                    transition-colors duration-500">
+            上传教学资料，AI 自动生成课程内容
+          </p>
+        </div>
+      </div>
+    </template>
+
+    <!-- ========== Body：左右两栏（参考老项目 .upload-modal-body） ========== -->
+    <div class="flex gap-4 -mt-2 max-md:flex-col">
+      <!-- ===== 左栏：模式选择（w-[268px]，参考老项目 .upload-modal-left） ===== -->
+      <div class="w-[268px] flex-shrink-0 max-md:w-full">
+        <p class="text-[13px] font-extrabold text-gray-600 dark:text-gray-400
+                  mb-2.5 transition-colors duration-500">
+          选择备课模式
+        </p>
+
+        <!-- 模式卡片列表 -->
+        <div class="space-y-3">
+          <!-- 互动式PPT -->
+          <button
+            type="button"
+            class="upload-mode-card w-full text-left
+                   rounded-[10px] p-3.5
+                   border transition-all duration-500
+                   bg-white dark:bg-gray-800
+                   hover:-translate-y-px hover:shadow-md
+                   border-blue-400/60 dark:border-blue-500/40
+                   shadow-[0_16px_34px_rgba(30,144,255,0.12)]
+                   dark:shadow-[0_16px_34px_rgba(96,165,250,0.08)]
+                   bg-blue-50/60 dark:bg-blue-900/20"
+            @click=""
+          >
+            <div class="text-sm font-extrabold text-black dark:text-white
+                        transition-colors duration-500">
+              互动式PPT模式
+            </div>
+            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400
+                        leading-[1.5] transition-colors duration-500">
+              更省token，效果更好的ppt讲解
+            </div>
+          </button>
+
+          <!-- 讲义精讲 -->
+          <button
+            type="button"
+            disabled
+            class="upload-mode-card w-full text-left
+                   rounded-[10px] p-3.5
+                   border border-gray-200 dark:border-gray-700
+                   bg-white dark:bg-gray-800
+                   transition-all duration-500
+                   opacity-60 cursor-not-allowed"
+          >
+            <div class="text-sm font-extrabold text-black dark:text-white
+                        transition-colors duration-500">
+              讲义精讲模式
+            </div>
+            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400
+                        leading-[1.5] transition-colors duration-500">
+              深入解析知识点，适合理论学习
+            </div>
+          </button>
+
+          <!-- 习题模式 -->
+          <button
+            type="button"
+            disabled
+            class="upload-mode-card w-full text-left
+                   rounded-[10px] p-3.5
+                   border border-gray-200 dark:border-gray-700
+                   bg-white dark:bg-gray-800
+                   transition-all duration-500
+                   opacity-60 cursor-not-allowed"
+          >
+            <div class="text-sm font-extrabold text-black dark:text-white
+                        transition-colors duration-500">
+              习题模式
+            </div>
+            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400
+                        leading-[1.5] transition-colors duration-500">
+              自动生成练习题，巩固知识点
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== 右栏：上传区域（flex-1，参考老项目 .upload-modal-right） ===== -->
+      <div class="flex-1 min-w-0 flex flex-col gap-3">
+        <!-- 拖拽上传区（参考老项目 .upload-drop，h-[200px]） -->
         <el-upload
           ref="uploadRef"
           :auto-upload="false"
@@ -36,91 +126,140 @@
           drag
           class="w-full"
         >
-          <!-- 拖拽区域内容 -->
-          <div class="py-6 text-center">
-            <!-- 上传图标 -->
-            <svg class="w-10 h-10 mx-auto mb-3 text-gray-400 dark:text-gray-500
-                        transition-colors duration-500"
-                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-            </svg>
+          <!-- 拖拽区域内容（高度参考老项目 200px） -->
+          <div class="py-8 text-center">
+            <!-- 上传图标（+ 号风格，参考老项目 .upload-drop-plus） -->
+            <div class="w-[46px] h-[46px] mx-auto mb-3 rounded-full
+                        bg-white dark:bg-gray-700
+                        border border-gray-200 dark:border-gray-600
+                        flex items-center justify-center
+                        text-blue-500 dark:text-blue-400 text-[22px]
+                        transition-colors duration-500">
+              +
+            </div>
 
-            <p class="text-black dark:text-white text-sm font-medium mb-1
+            <p class="text-black dark:text-white text-sm font-extrabold mb-1
                       transition-colors duration-500">
-              点击或拖拽文件到此处
+              选择文件
             </p>
             <p class="text-gray-500 dark:text-gray-400 text-xs
                       transition-colors duration-500">
               支持 PDF、DOCX、DOC、MD、ZIP、RAR、7Z（最大 500MB）
             </p>
+
+            <!-- 文件选择状态 -->
+            <p v-if="selectedFile"
+               class="mt-3 text-xs font-bold text-green-500 dark:text-green-400
+                      transition-colors duration-500">
+              {{ selectedFile.name }}
+            </p>
           </div>
         </el-upload>
 
         <!-- 文件选择错误提示 -->
-        <p v-if="fileError" class="text-red-500 dark:text-red-400 text-xs mt-2
-                                   transition-colors duration-500">
+        <p v-if="fileError"
+           class="text-red-500 dark:text-red-400 text-xs
+                  transition-colors duration-500">
           {{ fileError }}
         </p>
-      </el-form-item>
 
-      <!-- 教材名称（选填） -->
-      <el-form-item label="教材名称（选填，默认取文件名）">
-        <el-input
-          v-model="form.name"
-          placeholder="请输入教材名称"
-          maxlength="100"
-          show-word-limit
-          clearable
-        />
-      </el-form-item>
-
-      <!-- 教材描述（选填） -->
-      <el-form-item label="教材描述（选填）">
-        <el-input
-          v-model="form.description"
-          type="textarea"
-          :rows="3"
-          placeholder="请输入教材描述"
-          maxlength="500"
-          show-word-limit
-        />
-      </el-form-item>
-
-      <!-- 启用文本细化开关 -->
-      <el-form-item label="文本细化">
-        <div class="flex items-center justify-between w-full">
-          <div>
-            <p class="text-black dark:text-white text-sm font-medium
-                      transition-colors duration-500">
-              启用文本细化
-            </p>
-            <p class="text-gray-500 dark:text-gray-400 text-xs
-                      transition-colors duration-500">
-              AI 自动扩写口播稿，生成更详细的讲解内容
-            </p>
+        <!-- 表单区（参考老项目 .upload-form） -->
+        <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
+                    bg-white dark:bg-gray-800
+                    p-3.5 transition-colors duration-500">
+          <!-- 教材名称 -->
+          <div class="flex items-center gap-3 mb-3">
+            <label class="text-[13px] font-extrabold text-gray-600 dark:text-gray-400
+                         flex items-center gap-2 flex-shrink-0
+                         transition-colors duration-500">
+              教材名称
+              <span class="h-[18px] px-2 rounded-full
+                          bg-blue-50 dark:bg-blue-900/20
+                          border border-blue-200/40 dark:border-blue-800/30
+                          text-[11px] text-gray-500 dark:text-gray-400
+                          flex items-center transition-colors duration-500">
+                选填
+              </span>
+            </label>
+            <el-input
+              v-model="form.name"
+              placeholder="请输入教材名称（默认取文件名）"
+              maxlength="100"
+              show-word-limit
+              clearable
+              size="default"
+              class="flex-1"
+            />
           </div>
-          <el-switch
-            v-model="form.elaboration"
-            active-text="开启"
-            inactive-text="关闭"
-            class="ml-4 flex-shrink-0"
-          />
+
+          <!-- 教材描述 -->
+          <div class="flex items-start gap-3 mb-3">
+            <label class="text-[13px] font-extrabold text-gray-600 dark:text-gray-400
+                         flex items-center gap-2 flex-shrink-0 pt-1
+                         transition-colors duration-500">
+              教材描述
+            </label>
+            <el-input
+              v-model="form.description"
+              type="textarea"
+              :rows="3"
+              placeholder="请输入教材描述"
+              maxlength="500"
+              show-word-limit
+              class="flex-1"
+            />
+          </div>
+
+          <!-- AI 模型选择（参考老项目的 model selector） -->
+          <div class="flex items-center gap-3 mb-3">
+            <label class="text-[13px] font-extrabold text-gray-600 dark:text-gray-400
+                         flex-shrink-0 transition-colors duration-500">
+              AI 模型
+            </label>
+            <el-select
+              v-model="form.model"
+              placeholder="选择 AI 模型"
+              size="default"
+              class="flex-1"
+            >
+              <el-option label="DeepSeek V4 Pro" value="deepseek-v4-pro" />
+              <el-option label="DeepSeek V4 Flash" value="deepseek-v4-flash" />
+            </el-select>
+          </div>
+
+          <!-- 文本细化开关 -->
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-black dark:text-white text-sm font-medium
+                        transition-colors duration-500">
+                启用文本细化
+              </p>
+              <p class="text-gray-500 dark:text-gray-400 text-xs
+                        transition-colors duration-500">
+                AI 自动扩写口播稿，生成更详细的讲解内容
+              </p>
+            </div>
+            <el-switch
+              v-model="form.elaboration"
+              active-text="开启"
+              inactive-text="关闭"
+              class="ml-4 flex-shrink-0"
+            />
+          </div>
         </div>
-      </el-form-item>
 
-      <!-- 上传状态提示 -->
-      <el-alert
-        v-if="uploadStatus"
-        :type="uploadStatusType"
-        :title="uploadStatus"
-        :closable="false"
-        show-icon
-        class="mt-2"
-      />
-    </el-form>
+        <!-- 上传状态提示 -->
+        <el-alert
+          v-if="uploadStatus"
+          :type="uploadStatusType"
+          :title="uploadStatus"
+          :closable="false"
+          show-icon
+        />
+      </div>
+    </div>
 
-    <!-- ========== 底部按钮 ========== -->
+    <!-- ========== Footer（参考老项目 .upload-modal-footer） ========== -->
     <template #footer>
       <div class="flex justify-end gap-3">
         <el-button
@@ -130,14 +269,14 @@
           取消
         </el-button>
 
-        <!-- 上传按钮：使用 :loading 防重复点击 -->
+        <!-- 上传按钮：使用 :loading 防重复点击（设计规范规则4） -->
         <el-button
           type="primary"
           :loading="isUploading"
           :disabled="!selectedFile || isUploading"
           @click="handleUpload"
         >
-          {{ isUploading ? '上传中...' : '开始上传' }}
+          {{ isUploading ? '上传中...' : '上传' }}
         </el-button>
       </div>
     </template>
@@ -147,6 +286,7 @@
 <script setup>
 // ==================== UploadBookDialog 逻辑 ====================
 // 职责：管理文件选择、参数校验、调用 uploadBook API、成功/失败处理
+// 布局参考老项目 UploadCourseModal：左右两栏（268px 模式选择 + 上传区）
 
 import { ref, reactive, computed } from "vue";
 import { ElMessage } from "element-plus";
@@ -166,6 +306,9 @@ defineProps({
 const emit = defineEmits(["update:visible", "success"]);
 
 // ========== 响应式数据 ==========
+
+/** 弹窗宽度（参考老项目 min(860px, calc(100vw - 32px))） */
+const dialogWidth = "min(860px, calc(100vw - 40px))";
 
 /** 允许上传的文件格式 */
 const acceptFormats = ".pdf,.docx,.doc,.md,.zip,.rar,.7z";
@@ -194,13 +337,11 @@ const form = reactive({
   name: "",
   description: "",
   elaboration: true, // 默认启用文本细化（AI 口播稿扩写）
+  model: "deepseek-v4-pro", // AI 模型选择（参考老项目）
 });
 
 /** el-upload 组件引用 */
 const uploadRef = ref(null);
-
-/** el-form 组件引用 */
-const formRef = ref(null);
 
 // ========== 方法 ==========
 
@@ -288,10 +429,12 @@ async function handleUpload() {
     if (form.name) options.name = form.name;
     if (form.description) options.description = form.description;
     options.elaboration = form.elaboration; // 是否启用文本细化
+    options.model = form.model; // AI 模型选择
 
     console.log(
       TAG + " 上传参数: name=" + (options.name || "无") +
-      ", elaboration=" + options.elaboration
+      ", elaboration=" + options.elaboration +
+      ", model=" + options.model
     );
 
     // 调用 API
@@ -351,6 +494,7 @@ function resetForm() {
   form.name = "";
   form.description = "";
   form.elaboration = true; // 重置为默认值
+  form.model = "deepseek-v4-pro"; // 重置模型选择
   // 清除 el-upload 中的文件列表
   if (uploadRef.value) {
     uploadRef.value.clearFiles();

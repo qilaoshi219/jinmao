@@ -39,6 +39,7 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8888", // 后端地址
         changeOrigin: true, // 修改请求头中的 origin 为目标地址
+        timeout: 5 * 60 * 1000, // 5 分钟超时（覆盖大文件 MinIO 上传场景）
       },
     },
   },

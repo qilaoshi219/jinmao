@@ -6,7 +6,8 @@
          Template 定义页面 HTML 结构（纯视图层，无业务逻辑）
          Script 通过 <script src="./script.js"> 引用同目录下的独立逻辑文件
 
-页面布局：参考金毛教你学的"侧边栏 + 顶部栏 + 内容区"三块式布局
+页面布局：参考老项目"侧边栏 + 顶部栏 + 内容区"三块式布局
+        新增：排序下拉、添加教材卡片、4个统计卡片
 设计规范：纯黑纯白文字、10px圆角、500ms过渡、Element Plus优先、暗黑双轨适配
 ============================================================================
 -->
@@ -14,7 +15,7 @@
 <template>
   <!--
   ============================================================
-  全屏 flex 行布局
+  全屏 flex 行布局（参考老项目 .home-shell）
     - 左侧：HomeSidebar（固定宽度侧边栏）
     - 右侧：flex-1 填充剩余空间的主区域
     - 不使用 max-w 限制宽度（遵守设计规范规则5）
@@ -30,7 +31,7 @@
       @upload="openUploadDialog"
     />
 
-    <!-- ========== 右侧主区域 ========== -->
+    <!-- ========== 右侧主区域（参考老项目 .home-main） ========== -->
     <div class="flex-1 flex flex-col min-w-0">
 
       <!-- ========== 顶部栏 ========== -->
@@ -41,35 +42,178 @@
         @logout="handleLogout"
       />
 
-      <!-- ========== 主内容区 ========== -->
-      <main class="flex-1 overflow-auto p-6">
+      <!-- ========== 主内容区（参考老项目 .home-content） ========== -->
+      <main class="flex-1 overflow-auto p-5 lg:px-8">
+
+        <!-- ============================================================
+        统计卡片区（参考老项目 .home-stats，4个统计卡片）
+        ============================================================ -->
+        <section class="mb-6">
+          <div class="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
+            <!-- 累计学习时长 -->
+            <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
+                        bg-white dark:bg-gray-800
+                        shadow-sm
+                        p-4 transition-colors duration-500">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[13px] font-bold text-gray-500 dark:text-gray-400
+                             transition-colors duration-500">
+                  累计学习时长
+                </span>
+                <!-- 图标 -->
+                <div class="w-7 h-7 rounded-[10px]
+                            bg-blue-50 dark:bg-blue-900/20
+                            border border-blue-200/40 dark:border-blue-800/30
+                            flex items-center justify-center
+                            transition-colors duration-500">
+                  <svg class="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </div>
+              </div>
+              <p class="mt-2.5 text-[22px] font-black text-black dark:text-white
+                        transition-colors duration-500">
+                --
+              </p>
+              <p class="mt-2 text-xs font-semibold text-green-500 dark:text-green-400
+                        transition-colors duration-500">
+                即将上线
+              </p>
+            </div>
+
+            <!-- 已完成章节 -->
+            <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
+                        bg-white dark:bg-gray-800
+                        shadow-sm
+                        p-4 transition-colors duration-500">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[13px] font-bold text-gray-500 dark:text-gray-400
+                             transition-colors duration-500">
+                  已完成章节
+                </span>
+                <div class="w-7 h-7 rounded-[10px]
+                            bg-blue-50 dark:bg-blue-900/20
+                            border border-blue-200/40 dark:border-blue-800/30
+                            flex items-center justify-center
+                            transition-colors duration-500">
+                  <svg class="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </div>
+              </div>
+              <p class="mt-2.5 text-[22px] font-black text-black dark:text-white
+                        transition-colors duration-500">
+                --
+              </p>
+              <p class="mt-2 text-xs font-semibold text-green-500 dark:text-green-400
+                        transition-colors duration-500">
+                即将上线
+              </p>
+            </div>
+
+            <!-- 习题正确率 -->
+            <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
+                        bg-white dark:bg-gray-800
+                        shadow-sm
+                        p-4 transition-colors duration-500">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[13px] font-bold text-gray-500 dark:text-gray-400
+                             transition-colors duration-500">
+                  习题正确率
+                </span>
+                <div class="w-7 h-7 rounded-[10px]
+                            bg-blue-50 dark:bg-blue-900/20
+                            border border-blue-200/40 dark:border-blue-800/30
+                            flex items-center justify-center
+                            transition-colors duration-500">
+                  <svg class="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                  </svg>
+                </div>
+              </div>
+              <p class="mt-2.5 text-[22px] font-black text-black dark:text-white
+                        transition-colors duration-500">
+                --
+              </p>
+              <p class="mt-2 text-xs font-semibold text-green-500 dark:text-green-400
+                        transition-colors duration-500">
+                即将上线
+              </p>
+            </div>
+
+            <!-- 连续学习天数 -->
+            <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
+                        bg-white dark:bg-gray-800
+                        shadow-sm
+                        p-4 transition-colors duration-500">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[13px] font-bold text-gray-500 dark:text-gray-400
+                             transition-colors duration-500">
+                  连续学习天数
+                </span>
+                <div class="w-7 h-7 rounded-[10px]
+                            bg-blue-50 dark:bg-blue-900/20
+                            border border-blue-200/40 dark:border-blue-800/30
+                            flex items-center justify-center
+                            transition-colors duration-500">
+                  <svg class="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/>
+                  </svg>
+                </div>
+              </div>
+              <p class="mt-2.5 text-[22px] font-black text-black dark:text-white
+                        transition-colors duration-500">
+                --
+              </p>
+              <p class="mt-2 text-xs font-semibold text-amber-500 dark:text-amber-400
+                        transition-colors duration-500">
+                即将上线
+              </p>
+            </div>
+          </div>
+        </section>
 
         <!--
         ============================================================
         教材列表区域
-          - 标题栏 + 上传按钮
+          - 标题栏 + 排序 + 上传按钮
           - 骨架屏（加载态）
-          - 教材卡片网格（有数据时）
+          - 教材卡片网格（有数据时）+ 添加卡片
           - 空状态（无数据时）
           - 分页组件
         ============================================================
         -->
-        <section class="mb-8">
-          <!-- 标题栏 -->
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-black dark:text-white text-xl font-bold
-                       transition-colors duration-500">
+        <section>
+          <!-- 标题栏（参考老项目 .home-section-head） -->
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-black dark:text-white text-lg font-extrabold
+                       tracking-wide transition-colors duration-500">
               我的教材
             </h2>
 
-            <!-- 上传按钮：:loading 防重复点击（设计规范规则4） -->
-            <el-button
-              type="primary"
-              :loading="isUploading"
-              @click="openUploadDialog"
-            >
-              {{ isUploading ? '上传中...' : '上传教材' }}
-            </el-button>
+            <!-- 右侧：排序下拉 + 上传按钮 -->
+            <div class="flex items-center gap-3">
+              <!-- 排序下拉（参考老项目 .home-sort） -->
+              <el-select
+                v-model="sortBy"
+                placeholder="排序"
+                size="default"
+                class="w-[120px]"
+              >
+                <el-option label="默认排序" value="default" />
+                <el-option label="最近上传" value="newest" />
+                <el-option label="最早上传" value="oldest" />
+              </el-select>
+
+              <!-- 上传按钮：:loading 防重复点击（设计规范规则4） -->
+              <el-button
+                type="primary"
+                :loading="isUploading"
+                @click="openUploadDialog"
+              >
+                {{ isUploading ? '上传中...' : '上传教材' }}
+              </el-button>
+            </div>
           </div>
 
           <!-- 加载骨架屏（共6个占位卡片） -->
@@ -85,8 +229,8 @@
                      rounded-[10px] overflow-hidden
                      transition-colors duration-500 animate-pulse"
             >
-              <!-- 封面占位 -->
-              <div class="h-32 bg-gray-200 dark:bg-gray-700 transition-colors duration-500" />
+              <!-- 封面占位 16:9 -->
+              <div class="aspect-[16/9] bg-gray-200 dark:bg-gray-700 transition-colors duration-500" />
               <!-- 内容占位 -->
               <div class="p-4 space-y-3">
                 <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4
@@ -104,7 +248,7 @@
             </div>
           </div>
 
-          <!-- 教材卡片网格（有数据） -->
+          <!-- 教材卡片网格（有数据）+ 添加卡片 -->
           <div
             v-else-if="courses.length > 0"
             class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4"
@@ -116,12 +260,43 @@
               @open="onOpenCourse"
               @delete="onDeleteCourse"
             />
+
+            <!-- ===== 添加教材卡片（参考老项目 .home-add-card） ===== -->
+            <div
+              class="border border-dashed border-gray-300 dark:border-gray-600
+                     rounded-[10px] bg-white/80 dark:bg-gray-800/80
+                     min-h-[300px]
+                     flex flex-col items-center justify-center gap-2
+                     cursor-pointer
+                     hover:-translate-y-0.5 hover:shadow-lg
+                     hover:border-blue-400/50 dark:hover:border-blue-500/40
+                     transition-all duration-500"
+              @click="openUploadDialog"
+            >
+              <!-- + 号图标 -->
+              <div class="w-[46px] h-[46px] rounded-full
+                          bg-blue-50 dark:bg-blue-900/20
+                          border border-blue-200/40 dark:border-blue-800/30
+                          flex items-center justify-center
+                          text-blue-500 dark:text-blue-400 text-[22px]
+                          transition-colors duration-500">
+                +
+              </div>
+              <p class="font-extrabold text-sm text-black dark:text-white
+                        transition-colors duration-500">
+                添加教材
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 text-center
+                        transition-colors duration-500">
+                上传教学资料，AI 自动生成课程
+              </p>
+            </div>
           </div>
 
           <!-- 空状态 -->
           <div
             v-else
-            class="text-center py-16
+            class="text-center py-20 min-h-[200px] flex flex-col items-center justify-center
                    border border-dashed border-gray-300 dark:border-gray-600
                    rounded-[10px]
                    transition-colors duration-500"
@@ -139,7 +314,7 @@
             </p>
             <p class="text-gray-500 dark:text-gray-400 text-sm
                       transition-colors duration-500">
-              点击右上角"上传教材"按钮上传你的第一份教材
+              点击"上传教材"按钮上传你的第一份教材
             </p>
           </div>
 
@@ -155,57 +330,6 @@
             @current-change="onPageChange"
           />
         </section>
-
-        <!--
-        ============================================================
-        功能占位区（骨架，等待后续开发）
-          - 学习概览统计卡片
-          - 学习图表
-        ============================================================
-        -->
-        <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <!-- 学习概览占位 -->
-          <div class="border border-dashed border-gray-200 dark:border-gray-700
-                      rounded-[10px] p-8 text-center
-                      bg-white dark:bg-gray-800
-                      transition-colors duration-500">
-            <svg class="w-10 h-10 mx-auto mb-3 text-gray-400 dark:text-gray-600
-                        transition-colors duration-500"
-                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-            </svg>
-            <p class="text-black dark:text-white font-medium mb-1
-                      transition-colors duration-500">
-              学习概览
-            </p>
-            <p class="text-gray-500 dark:text-gray-400 text-sm
-                      transition-colors duration-500">
-              即将上线，敬请期待
-            </p>
-          </div>
-
-          <!-- 学习图表占位 -->
-          <div class="border border-dashed border-gray-200 dark:border-gray-700
-                      rounded-[10px] p-8 text-center
-                      bg-white dark:bg-gray-800
-                      transition-colors duration-500">
-            <svg class="w-10 h-10 mx-auto mb-3 text-gray-400 dark:text-gray-600
-                        transition-colors duration-500"
-                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                    d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-            </svg>
-            <p class="text-black dark:text-white font-medium mb-1
-                      transition-colors duration-500">
-              学习统计
-            </p>
-            <p class="text-gray-500 dark:text-gray-400 text-sm
-                      transition-colors duration-500">
-              即将上线，敬请期待
-            </p>
-          </div>
-        </section>
       </main>
     </div>
 
@@ -213,6 +337,13 @@
     <UploadBookDialog
       v-model:visible="uploadDialogVisible"
       @success="onUploadSuccess"
+    />
+
+    <!-- ========== 【临时】教材文件列表弹窗（未来会删除） ========== -->
+    <CourseFilesDialog
+      v-model:visible="courseFilesDialogVisible"
+      :course-id="currentCourseId"
+      :course-name="currentCourseName"
     />
   </div>
 </template>

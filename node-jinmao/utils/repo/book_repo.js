@@ -17,6 +17,7 @@ const prisma = require("../prisma");
  * @param {string} data.textbookFilename - 教材原文件名
  * @param {string} data.textbookPath - 归一化 MD 在 MinIO 路径
  * @param {string} data.sourcePath - 源文件在 MinIO 路径
+ * @param {string|null} data.subtitle - 课程副标题（可选）
  * @param {boolean} data.elaborationEnabled - 是否开启文本细化
  * @returns {Promise<{ code: number, course?: Object, message?: string }>}
  */
@@ -32,6 +33,7 @@ async function createCourse(data) {
         textbookFilename: data.textbookFilename,
         textbookPath: data.textbookPath,
         sourcePath: data.sourcePath,
+        subtitle: data.subtitle || null,
         elaborationEnabled: data.elaborationEnabled !== undefined ? data.elaborationEnabled : true,
         pipelineStatus: "processing", // 初始状态为处理中（正在格式归一化）
       },

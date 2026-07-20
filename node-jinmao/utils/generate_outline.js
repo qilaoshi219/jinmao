@@ -6,18 +6,28 @@
 //   code 502 — DeepSeek 返回内容不是合法 JSON，解析失败
 // Please install OpenAI SDK first: `npm install openai`
 
-const OpenAI = require("openai");
+// 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
 const { deepseek: config } = require("../config");
 const prompt = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
 const { validateFields } = require("./input_validator");
 
-// 初始化OpenAI客户端
-const openai = new OpenAI({
-        baseURL: config.DEEPSEEK_API_BIG.DEEPSEEK_API_BASE,
-        apiKey: config.DEEPSEEK_API_BIG.DEEPSEEK_API_KEY,
-});
+// ==================== 惰性初始化 OpenAI 客户端 ====================
+// openai v6+ 是 ESM-only 模块，在 CommonJS 中无法 require，必须使用动态 import()
+// 使用惰性初始化模式：首次调用时 import 并缓存，后续复用
+let _openai = null;
+async function getOpenAI() {
+    if (!_openai) {
+        const OpenAI = (await import("openai")).default;
+        _openai = new OpenAI({
+            baseURL: config.DEEPSEEK_API_BIG.DEEPSEEK_API_BASE,
+            apiKey: config.DEEPSEEK_API_BIG.DEEPSEEK_API_KEY,
+        });
+        console.log("[generate_outline] OpenAI 客户端已初始化（惰性加载）");
+    }
+    return _openai;
+}
 
 // validateInput 已迁移至公共验证模块 input_validator.js，通过 validateFields 统一调用
 
@@ -62,6 +72,9 @@ async function main(yuanwen, pptother) {
   }
   console.log("[main] 输入验证通过，开始执行大纲生成流程。");
 
+  // ========== 惰性获取 OpenAI 客户端（ESM 动态 import） ==========
+  const openai = await getOpenAI();
+
   // ========== 读取 Prompt 模板并替换占位符 ==========
   const outlinePromptPath = path.resolve(__dirname, prompt.outline_prompt);
   const outlinePrompt = fs.readFileSync(outlinePromptPath, "utf8");
@@ -71,17 +84,25 @@ async function main(yuanwen, pptother) {
   console.log("[main] Prompt 模板已加载并替换占位符，准备调用 DeepSeek API。");
 
   // ========== 调用 DeepSeek API 生成大纲 ==========
+  // 启动心跳定时器：每 2 秒输出一次状态，确保用户知道程序仍在等待大模型响应
+  const heartbeatInterval = setInterval(() => {
+    console.log("[generate_outline] 心跳 — 仍在等待 DeepSeek 大模型响应...");
+  }, 2000);
+
   let completion;
   try {
     completion = await openai.chat.completions.create({
       messages: [{ role: "system", content: formattedPrompt }],// 系统提示词
       model: config.DEEPSEEK_API_BIG.DEEPSEEK_API_MODEL,// 模型名称
       thinking: {"type": "enabled"},//思考模式
-      response_format: {"type": "json_object"},//json格式优化
+      // 注意：不使用 json_object 模式，因为 prompt 要求输出 JSON 数组 [...]
+      // json_object 模式会强制 {...} 格式，与数组输出冲突，已改为 text 模式
       reasoning_effort: "max",//最大思考努力
       stream: false,
     });
   } catch (apiError) {
+    // API 调用失败，清除心跳定时器
+    clearInterval(heartbeatInterval);
     // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
     console.error("[main] DeepSeek API 调用失败：" + apiError.message);
     return {
@@ -89,6 +110,9 @@ async function main(yuanwen, pptother) {
       message: "DeepSeek API 调用失败：" + apiError.message
     };
   }
+
+  // API 调用成功返回，清除心跳定时器
+  clearInterval(heartbeatInterval);
 
   // ========== 校验 API 返回结构的完整性 ==========
   // 确保 choices 数组存在且不为空
@@ -116,8 +140,18 @@ async function main(yuanwen, pptother) {
     };
   }
 
+  // ========== 兜底处理：数组 → 对象包装 ==========
+  // 原因：prompt 要求输出 JSON 数组 [...]，但 course_pipeline.js 通过 outline.slides 消费
+  // 如果模型返回了纯数组（而非 {slides: [...]}），outline.slides 会是 undefined
+  // 此处自动检测并包装，确保上下游格式兼容
+  if (Array.isArray(outline)) {
+    console.log("[main] 检测到返回结果为纯数组，自动包装为 {slides: [...]}，共 " + outline.length + " 张幻灯片");
+    outline = { slides: outline };
+  }
+
   // ========== 成功：返回大纲数据 ==========
-  console.log("[main] 大纲生成成功，已解析为 JSON 对象。");
+  const slideCount = outline.slides ? outline.slides.length : 0;
+  console.log("[main] 大纲生成成功，共 " + slideCount + " 张幻灯片");
   return {
     code: 200,
     outline: outline

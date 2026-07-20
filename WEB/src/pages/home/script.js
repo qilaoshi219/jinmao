@@ -16,6 +16,7 @@ import HomeSidebar from "../../components/HomeSidebar.vue";
 import HomeTopbar from "../../components/HomeTopbar.vue";
 import CourseCard from "../../components/CourseCard.vue";
 import UploadBookDialog from "../../components/UploadBookDialog.vue";
+import CourseFilesDialog from "../../components/CourseFilesDialog.vue"; // 【临时】教材文件列表弹窗，未来会删除
 
 // 日志前缀
 const TAG = "[HomePage]";
@@ -30,6 +31,7 @@ export default {
     HomeTopbar,
     CourseCard,
     UploadBookDialog,
+    CourseFilesDialog, // 【临时】教材文件列表弹窗，未来会删除
   },
 
   setup() {
@@ -69,6 +71,19 @@ export default {
     /** 当前激活菜单 */
     const activeMenu = ref("courses");
 
+    /** 排序方式 */
+    const sortBy = ref("default");
+
+    // ===== 【临时】教材文件列表弹窗状态（未来会删除） =====
+    /** 文件列表弹窗可见性 */
+    const courseFilesDialogVisible = ref(false);
+
+    /** 当前选中教材的 ID */
+    const currentCourseId = ref(null);
+
+    /** 当前选中教材的名称 */
+    const currentCourseName = ref("");
+
     /** 教材状态轮询定时器 */
     let pollTimer = null;
 
@@ -79,8 +94,10 @@ export default {
 
     /** 是否有教材处于处理中状态（需要轮询） */
     const hasProcessingCourses = computed(() => {
+      // 终端状态白名单：凡不在此列表内的状态均视为"处理中"
+      const TERMINAL = ["completed", "partial_completed", "failed", "error"];
       return courses.value.some(
-        (c) => c.pipelineStatus === "processing" || c.pipelineStatus === "pending" || c.pipelineStatus === "idle"
+        (c) => c.pipelineStatus && !TERMINAL.includes(c.pipelineStatus)
       );
     });
 
@@ -237,13 +254,17 @@ export default {
     }
 
     /**
-     * 查看教材详情
+     * 查看教材详情 — 【临时】改为打开文件列表弹窗
      * @param {string|number} courseId - 教材 ID
      */
     function onOpenCourse(courseId) {
-      console.log(TAG + " 查看教材详情，id: " + courseId);
-      // TODO: 后续实现教材详情页（路由跳转或弹窗展示）
-      ElMessage.info("教材详情功能即将上线（教材 ID: " + courseId + "）");
+      console.log(TAG + " 查看教材文件列表，id: " + courseId);
+
+      // 从 courses 数组中查找教材名称
+      const course = courses.value.find((c) => String(c.id) === String(courseId));
+      currentCourseName.value = course ? (course.name || "未命名教材") : "教材 #" + courseId;
+      currentCourseId.value = courseId;
+      courseFilesDialogVisible.value = true;
     }
 
     /**
@@ -334,6 +355,12 @@ export default {
       isUploading,
       activeMenu,
       isDark,
+      sortBy,
+
+      // ===== 【临时】教材文件列表弹窗状态（未来会删除） =====
+      courseFilesDialogVisible,
+      currentCourseId,
+      currentCourseName,
 
       // 方法
       toggleTheme,

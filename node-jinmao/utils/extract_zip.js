@@ -13,14 +13,12 @@
 
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const crypto = require("crypto");
-const { exec } = require("child_process");
+const { exec, execSync } = require("child_process");
 const { validateString } = require("./input_validator");
 
 // ==================== 常量配置 ====================
-
-// 7z 命令行工具路径（项目内置）
-const SZ_EXE_PATH = path.join(__dirname, "..", "tools", "7z", "7za.exe");
 
 // 支持的压缩包扩展名（大小写不敏感）
 const SUPPORTED_EXTENSIONS = [".zip", ".rar", ".7z"];
@@ -28,11 +26,103 @@ const SUPPORTED_EXTENSIONS = [".zip", ".rar", ".7z"];
 // 主文档扩展名（要寻找的文档格式）
 const MAIN_DOC_EXTENSION = ".md";
 
-// 临时目录根路径
-const TEMP_ROOT = path.resolve("/data/temp");
+// 临时目录根路径：使用系统临时目录（兼容所有平台，避免权限问题）
+// Linux: /tmp，Windows: C:\Users\xxx\AppData\Local\Temp
+const TEMP_ROOT = path.join(os.tmpdir(), "jinmao-extract");
 
 // 默认超时自动清理时间（毫秒），默认30分钟
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+
+// ==================== 7z 可执行文件路径查找（跨平台） ====================
+
+// 模块级缓存：避免每次解压都重新扫描文件系统
+let _cached7zPath = null;
+let _cacheChecked = false;
+
+/**
+ * 查找可用的 7z 命令行工具路径（带缓存，跨平台）
+ *
+ * 查找优先级（按平台不同）：
+ *
+ * 【Windows 平台】：
+ *   1. 项目内置 tools/7z/7za.exe（最高优先级，免安装部署）
+ *   2. 系统 PATH 中的 7z / 7za 命令（如果用户自行安装了 7-Zip）
+ *
+ * 【Linux/WSL 平台】：
+ *   1. 系统 PATH 中的 7z 命令（通过 apt install p7zip-full 安装，原生 Linux 二进制）
+ *   2. 系统 PATH 中的 7za 命令
+ *   3. 项目内置 tools/7z/7za.exe（WSL 可通过 binfmt_misc 运行 Windows exe，作为最终回退）
+ *
+ * @returns {string|null} 找到的 7z 可执行文件路径，未找到返回 null
+ */
+function find7zBinary() {
+  if (_cacheChecked) {
+    return _cached7zPath;
+  }
+  _cacheChecked = true;
+
+  console.log("[extract_zip][find7zBinary] ========== 查找 7z 可执行文件 ==========");
+  console.log("[extract_zip][find7zBinary] 当前平台: " + process.platform);
+
+  // 收集所有候选路径
+  const candidates = [];
+
+  if (process.platform === "win32") {
+    // Windows: 优先使用项目内置的 7za.exe
+    const builtinPath = path.join(__dirname, "..", "tools", "7z", "7za.exe");
+    if (fs.existsSync(builtinPath)) {
+      candidates.push({ label: "项目内置 7za.exe", path: builtinPath });
+    } else {
+      console.log("[extract_zip][find7zBinary] 项目内置 7za.exe 不存在: " + builtinPath);
+    }
+    // Windows 系统 PATH 回退
+    candidates.push({ label: "系统 PATH 中的 7z", path: "7z" });
+    candidates.push({ label: "系统 PATH 中的 7za", path: "7za" });
+  } else {
+    // Linux/WSL: 优先使用系统安装的原生 7z（通过 apt install p7zip-full）
+    candidates.push({ label: "系统 PATH 中的 7z（apt install p7zip-full）", path: "7z" });
+    candidates.push({ label: "系统 PATH 中的 7za", path: "7za" });
+
+    // 回退：项目内置的 Windows 7za.exe（WSL 可通过 binfmt_misc 运行）
+    const builtinPath = path.join(__dirname, "..", "tools", "7z", "7za.exe");
+    if (fs.existsSync(builtinPath)) {
+      candidates.push({ label: "项目内置 7za.exe（WSL binfmt_misc 回退）", path: builtinPath });
+    } else {
+      console.log("[extract_zip][find7zBinary] 项目内置 7za.exe 不存在: " + builtinPath);
+    }
+  }
+
+  // 逐个验证候选
+  for (const candidate of candidates) {
+    // 系统命令：通过 which 验证是否可用
+    if (candidate.path === "7z" || candidate.path === "7za") {
+      try {
+        const whichResult = execSync("which " + candidate.path, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+        if (whichResult) {
+          console.log("[extract_zip][find7zBinary] 已选择: " + candidate.label + "（" + whichResult + "）");
+          _cached7zPath = whichResult;
+          return _cached7zPath;
+        }
+      } catch (_) {
+        console.log("[extract_zip][find7zBinary] " + candidate.label + " 未安装。");
+      }
+      continue;
+    }
+
+    // 文件路径：检查文件是否存在
+    if (fs.existsSync(candidate.path)) {
+      console.log("[extract_zip][find7zBinary] 已选择: " + candidate.label + "（" + candidate.path + "）");
+      _cached7zPath = candidate.path;
+      return _cached7zPath;
+    }
+    console.log("[extract_zip][find7zBinary] " + candidate.label + " 未找到(" + candidate.path + ")。");
+  }
+
+  console.error("[extract_zip][find7zBinary] 错误：未找到任何可用的 7z 解压工具！");
+  console.error("[extract_zip][find7zBinary] 请执行: sudo apt install p7zip-full unrar（Linux）或安装 7-Zip（Windows）。");
+  _cached7zPath = null;
+  return null;
+}
 
 // ==================== 超时自动清理管理器 ====================
 
@@ -125,8 +215,9 @@ function generateTempDir() {
 // ==================== 7z 解压执行函数 ====================
 
 /**
- * 使用 7za.exe 执行实际解压操作
+ * 使用 7z 执行实际解压操作
  * 使用 child_process.exec 异步调用，返回 Promise
+ * 跨平台：Windows 使用项目内置 7za.exe，Linux/WSL 优先使用系统 7z
  * @param {string} filePath - 压缩包绝对路径
  * @param {string} extractDir - 解压目标目录绝对路径
  * @returns {Promise<{ success: boolean, errorCode?: number, error?: string }>}
@@ -137,9 +228,11 @@ function executeExtract(filePath, extractDir) {
     console.log("[extract_zip][executeExtract] 源文件: " + filePath);
     console.log("[extract_zip][executeExtract] 目标目录: " + extractDir);
 
-    // 检查 7za.exe 是否存在
-    if (!fs.existsSync(SZ_EXE_PATH)) {
-      let errMsg = "[extract_zip][executeExtract] 错误：7z 工具不存在，路径: " + SZ_EXE_PATH;
+    // 动态查找 7z 可执行文件路径（跨平台，带缓存）
+    const szExePath = find7zBinary();
+    if (!szExePath) {
+      let errMsg = "[extract_zip][executeExtract] 错误：未找到可用的 7z 解压工具！" +
+        "请执行 sudo apt install p7zip-full unrar（Linux/WSL）或安装 7-Zip（Windows）。";
       console.error(errMsg);
       resolve({ success: false, errorCode: 500, error: errMsg });
       return;
@@ -148,7 +241,7 @@ function executeExtract(filePath, extractDir) {
     // 构建解压命令
     // 7z x <archive> -o<dir> -y : x = 解压并保留目录结构, -o = 输出目录, -y = 自动确认覆盖
     // 注意：-o 与目录路径之间不能有空格
-    const command = '"' + SZ_EXE_PATH + '" x "' + filePath + '" -o"' + extractDir + '" -y';
+    const command = '"' + szExePath + '" x "' + filePath + '" -o"' + extractDir + '" -y';
     console.log("[extract_zip][executeExtract] 执行命令: " + command);
 
     // 设置较长的超时时间（大文件解压可能需要更久，设为5分钟）

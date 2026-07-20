@@ -12,19 +12,27 @@
 //   { "code": 502, "message": "API 返回内容解析失败..." }      — 响应解析失败
 //   { "code": 503, "message": "API 返回内容格式不符合预期..." } — 响应格式异常
 
-const OpenAI = require("openai");
+// 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
 const { deepseek: config } = require("../config");
 const promptConfig = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
 const { validateString } = require("./input_validator");
 
-// ==================== 初始化 OpenAI 客户端（使用小模型 DEEPSEEK_API_SMALL） ====================
-// 配置 DeepSeek API 连接：baseURL 指向 DeepSeek 服务地址，apiKey 用于身份认证
-const openai = new OpenAI({
-    baseURL: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_BASE,
-    apiKey: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_KEY,
-});
+// ==================== 惰性初始化 OpenAI 客户端（使用小模型 DEEPSEEK_API_SMALL） ====================
+// openai v6+ 是 ESM-only 模块，在 CommonJS 中无法 require，必须使用动态 import()
+let _openai = null;
+async function getOpenAI() {
+    if (!_openai) {
+        const OpenAI = (await import("openai")).default;
+        _openai = new OpenAI({
+            baseURL: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_BASE,
+            apiKey: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_KEY,
+        });
+        console.log("[get_line] OpenAI 客户端已初始化（惰性加载）");
+    }
+    return _openai;
+}
 
 // ==================== 读取提示词模板（模块加载时一次性读取，避免每次调用重复 IO） ====================
 // 从 prompt.json 中读取 getline_prompt 的路径，再读取对应的提示词文本文件
@@ -42,14 +50,14 @@ console.log("[get_line] 提示词模板已加载，路径：" + getlinePromptPat
  *   2. 将提示词模板与编号后的文本拼接
  *   3. 调用 DeepSeek API（小模型 + 关闭思考模式）
  *   4. 解析 API 返回的 JSON，提取 firstnum（startline）和 endnum（endline）
- *   5. 返回 JSON 字符串
+ *   5. 返回结果对象
  *
- * 返回值：JSON 字符串
- *   - 成功：{ "code": 200, "startline": number, "endline": number }
- *   - 失败：{ "code": xxx, "message": "错误描述" }
+ * 返回值：对象
+ *   - 成功：{ code: 200, startline: number, endline: number }
+ *   - 失败：{ code: xxx, message: "错误描述" }
  *
  * @param {string} indexedMarkdown - 已通过 line_indexer.js 添加行号索引的 Markdown 文本
- * @returns {Promise<string>} JSON 字符串，始终可被 JSON.parse() 解析
+ * @returns {Promise<{code: number, startline?: number, endline?: number, message?: string}>}
  */
 async function getLine(indexedMarkdown) {
     // ========== 步骤 1：前置输入验证（使用公共验证模块） ==========
@@ -60,12 +68,15 @@ async function getLine(indexedMarkdown) {
     });
     if (!validationResult.valid) {
         console.error("[get_line] 输入验证未通过（code=" + validationResult.errorCode + "），拒绝执行：" + validationResult.error);
-        return JSON.stringify({
+        return {
             code: validationResult.errorCode,
             message: validationResult.error
-        });
+        };
     }
     console.log("[get_line] 输入验证通过，开始执行行号识别流程。");
+
+    // ========== 惰性获取 OpenAI 客户端（ESM 动态 import） ==========
+    const openai = await getOpenAI();
 
     // ========== 步骤 2：拼接提示词与待分析文本 ==========
     // 提示词模板 + 换行分隔 + 编号后 Markdown 文本
@@ -84,20 +95,20 @@ async function getLine(indexedMarkdown) {
     } catch (apiError) {
         // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
         console.error("[get_line] DeepSeek API 调用失败：" + apiError.message);
-        return JSON.stringify({
+        return {
             code: 500,
             message: "DeepSeek API 调用失败：" + apiError.message
-        });
+        };
     }
 
     // ========== 步骤 4：校验 API 返回结构的完整性 ==========
     // 确保 choices 数组存在且不为空
     if (!completion || !completion.choices || completion.choices.length === 0) {
         console.error("[get_line] DeepSeek API 返回内容为空或缺少 choices 字段。");
-        return JSON.stringify({
+        return {
             code: 500,
             message: "DeepSeek API 返回内容为空，未能获取有效的行号识别数据。"
-        });
+        };
     }
 
     // ========== 步骤 5：解析 API 返回的 JSON 结果 ==========
@@ -119,10 +130,10 @@ async function getLine(indexedMarkdown) {
     } catch (parseError) {
         // 解析失败 —— 可能 API 返回了非 JSON 格式的内容
         console.error("[get_line] API 返回内容 JSON 解析失败：" + parseError.message);
-        return JSON.stringify({
+        return {
             code: 502,
             message: "DeepSeek 返回的内容不是合法的 JSON 格式，解析失败：" + parseError.message
-        });
+        };
     }
 
     // ========== 步骤 6：校验解析结果的结构是否符合预期 ==========
@@ -130,27 +141,27 @@ async function getLine(indexedMarkdown) {
     // 校验是否为数组、数组是否非空、第一个元素是否包含 firstnum 和 endnum 字段
     if (!Array.isArray(parsedResult)) {
         console.error("[get_line] API 返回结果不是数组格式，实际类型：" + typeof parsedResult);
-        return JSON.stringify({
+        return {
             code: 503,
             message: "API 返回结果格式不符合预期：期望 JSON 数组，实际为 " + typeof parsedResult + "。"
-        });
+        };
     }
     if (parsedResult.length === 0) {
         console.error("[get_line] API 返回数组为空，未识别到任何可用章节。");
-        return JSON.stringify({
+        return {
             code: 503,
             message: "API 返回数组为空，未识别到任何可用章节。"
-        });
+        };
     }
 
     const firstItem = parsedResult[0];
     // 校验 firstnum 和 endnum 字段是否存在且为数字
     if (typeof firstItem.firstnum !== "number" || typeof firstItem.endnum !== "number") {
         console.error("[get_line] API 返回结果缺少 firstnum 或 endnum 字段，或字段类型不是 number。实际内容：" + JSON.stringify(firstItem));
-        return JSON.stringify({
+        return {
             code: 503,
             message: "API 返回结果字段不完整：期望包含 firstnum（数字）和 endnum（数字），实际内容：" + JSON.stringify(firstItem) + "。"
-        });
+        };
     }
 
     // ========== 步骤 7：成功 —— 返回 startline 和 endline ==========
@@ -158,11 +169,11 @@ async function getLine(indexedMarkdown) {
     const endline = firstItem.endnum;
     console.log("[get_line] 行号识别成功：startline=" + startline + "，endline=" + endline + "。");
 
-    return JSON.stringify({
+    return {
         code: 200,
         startline: startline,
         endline: endline
-    });
+    };
 }
 
 // 导出 getLine 和 validateInput，供其他模块通过 require 调用

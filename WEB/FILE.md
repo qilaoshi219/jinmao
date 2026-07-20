@@ -1,6 +1,6 @@
 # FILE.md - WEB 前端项目文件索引
 
-> 最后更新：2026-07-06
+> 最后更新：2026-07-09
 
 ## 项目目录结构
 
@@ -40,7 +40,6 @@ WEB/
 ├── package.json                     # 项目依赖与脚本
 ├── vite.config.js                   # Vite 构建配置（端口30000、API代理、Element Plus按需导入）
 ├── start.ps1                        # 前端快速启动脚本
-├── 开发日志.md                       # 前端开发日志
 ├── FILE.md                          # 本文件：文件索引
 ├── .gitignore
 └── .vscode/
@@ -62,13 +61,13 @@ WEB/
 | `src/utils/storage.js` | localStorage 封装：getToken/setToken/removeToken | - | 2026-07-06 |
 | `src/styles/index.css` | 全局样式入口：Tailwind + 暗黑模式 + tokens | `tokens.css` | 2026-07-06 |
 | `src/styles/tokens.css` | 主题 CSS 变量：亮/暗两套 + fallback | - | 2026-07-06 |
-| `src/pages/login/index.vue` | 登录页模板：Element Plus + Tailwind 美化版 | `script.js` | 2026-07-06 |
+| `src/pages/login/index.vue` | 登录页模板：左右两栏卡片布局（Hero + 登录表单） | `script.js` | **2026-07-09 重构** |
 | `src/pages/login/script.js` | 登录页逻辑：验证码发送、登录、表单校验 | `api/auth.js`, `stores/auth.js` | 2026-07-06 |
-| `src/pages/home/index.vue` | **首页模板**：侧边栏+顶部栏+内容区三块式布局 | `script.js` | **2026-07-06 新建** |
-| `src/pages/home/script.js` | **首页逻辑**：教材列表、上传/删除、状态轮询、用户信息 | `api/books.js`, `api/auth.js`, `stores/auth.js` | **2026-07-06 新建** |
-| `src/components/HomeSidebar.vue` | **首页侧边栏**：品牌LOGO、导航菜单（骨架）、用户信息 | - | **2026-07-06 新建** |
-| `src/components/HomeTopbar.vue` | **首页顶部栏**：搜索框（占位）、主题切换、用户头像 | `composables/useTheme.js` | **2026-07-06 新建** |
-| `src/components/CourseCard.vue` | **教材卡片**：封面、状态标签、操作按钮 | - | **2026-07-06 新建** |
-| `src/components/UploadBookDialog.vue` | **上传弹窗**：el-upload拖拽、格式校验、loading防重复 | `api/books.js` | **2026-07-06 新建** |
+| `src/pages/home/index.vue` | **首页模板**：统计卡片+教材列表+排序+添加卡片 | `script.js` | **2026-07-09 重构** |
+| `src/pages/home/script.js` | **首页逻辑**：教材列表、上传/删除、状态轮询、用户信息、排序 | `api/books.js`, `api/auth.js`, `stores/auth.js` | **2026-07-09 修改** |
+| `src/components/HomeSidebar.vue` | **首页侧边栏**：品牌LOGO+徽章+上传按钮+分隔线+主次菜单+用户 | - | **2026-07-09 重构** |
+| `src/components/HomeTopbar.vue` | **首页顶部栏**：搜索框+通知铃铛+主题切换+用户下拉菜单 | `composables/useTheme.js` | **2026-07-09 重构** |
+| `src/components/CourseCard.vue` | **教材卡片**：16:9封面+遮罩层+进度条+三点操作菜单 | - | **2026-07-09 重构** |
+| `src/components/UploadBookDialog.vue` | **上传弹窗**：左右两栏（模式选择+上传区）+AI模型选择+860px宽 | `api/books.js` | **2026-07-09 重构** |
 | `vite.config.js` | Vite 配置：端口30000、API代理8888、Element Plus自动导入 | - | 2026-07-06 |
 | `start.ps1` | 快速启动脚本：检查端口、安装依赖、启动 Vite | - | 2026-07-06 |

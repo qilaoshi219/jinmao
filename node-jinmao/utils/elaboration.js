@@ -11,18 +11,28 @@
 //   code 503 — DeepSeek 返回 JSON 不包含 script 字段
 // Please install OpenAI SDK first: `npm install openai`
 
-const OpenAI = require("openai");
+// 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
 const { deepseek: config } = require("../config");
 const prompt = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
 const { validateFields } = require("./input_validator");
 
-// ==================== 初始化 OpenAI 客户端（使用 DEEPSEEK_API_BIG 大模型） ====================
-const openai = new OpenAI({
-    baseURL: config.DEEPSEEK_API_BIG.DEEPSEEK_API_BASE,
-    apiKey: config.DEEPSEEK_API_BIG.DEEPSEEK_API_KEY,
-});
+// ==================== 惰性初始化 OpenAI 客户端 ====================
+// openai v6+ 是 ESM-only 模块，在 CommonJS 中无法 require，必须使用动态 import()
+// 使用惰性初始化模式：首次调用时 import 并缓存，后续复用
+let _openai = null;
+async function getOpenAI() {
+    if (!_openai) {
+        const OpenAI = (await import("openai")).default;
+        _openai = new OpenAI({
+            baseURL: config.DEEPSEEK_API_BIG.DEEPSEEK_API_BASE,
+            apiKey: config.DEEPSEEK_API_BIG.DEEPSEEK_API_KEY,
+        });
+        console.log("[elaboration] OpenAI 客户端已初始化（惰性加载）");
+    }
+    return _openai;
+}
 
 // validateInput 已迁移至公共验证模块 input_validator.js，通过 validateFields 统一调用
 
@@ -75,6 +85,9 @@ async function main(elaboration, original, expectedWords) {
     const { expectedWords: parsedWords } = validationResult.parsedValues;
     console.log("[elaboration][main] 输入验证通过，预期字数: " + parsedWords + "。开始执行口播稿扩写流程。");
 
+    // ========== 惰性获取 OpenAI 客户端（ESM 动态 import） ==========
+    const openai = await getOpenAI();
+
     // ========== 读取 Prompt 模板并替换占位符 ==========
     console.log("[elaboration][main] 正在加载提示词模板：" + prompt.elaboration_prompt);
     const elaborationPromptPath = path.resolve(__dirname, prompt.elaboration_prompt);
@@ -86,6 +99,11 @@ async function main(elaboration, original, expectedWords) {
     console.log("[elaboration][main] 提示词模板已加载并替换占位符，准备调用 DeepSeek API。");
 
     // ========== 调用 DeepSeek API 生成扩写后的口播稿 ==========
+    // 启动心跳定时器：每 2 秒输出一次状态，确保用户知道程序仍在等待大模型响应
+    const heartbeatInterval = setInterval(() => {
+        console.log("[elaboration] 心跳 — 仍在等待 DeepSeek 大模型响应...");
+    }, 2000);
+
     let completion;
     try {
         completion = await openai.chat.completions.create({
@@ -97,6 +115,8 @@ async function main(elaboration, original, expectedWords) {
             stream: false,
         });
     } catch (apiError) {
+        // API 调用失败，清除心跳定时器
+        clearInterval(heartbeatInterval);
         // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
         console.error("[elaboration][main] DeepSeek API 调用失败：" + apiError.message);
         return {
@@ -104,6 +124,9 @@ async function main(elaboration, original, expectedWords) {
             message: "DeepSeek API 调用失败：" + apiError.message
         };
     }
+
+    // API 调用成功返回，清除心跳定时器
+    clearInterval(heartbeatInterval);
 
     // ========== 校验 API 返回结构的完整性 ==========
     // 确保 choices 数组存在且不为空

@@ -9,20 +9,28 @@
 //   code 500 — DeepSeek API 调用失败（网络错误、服务端错误、返回空内容）
 //   code 502 — API 返回内容不是有效 HTML（缺少必要的 HTML 标记）
 
-const OpenAI = require("openai");
+// 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
 const { deepseek: config } = require("../config");
 const prompt = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
 const { validateString } = require("./input_validator");
 
-// 初始化 OpenAI 客户端（使用 DEEPSEEK_API_BIG 大模型，因为 HTML 生成为复杂任务）
-const openai = new OpenAI({
-    baseURL: config.DEEPSEEK_API_BIG.DEEPSEEK_API_BASE,
-    apiKey: config.DEEPSEEK_API_BIG.DEEPSEEK_API_KEY,
-});
-
-console.log("[htmlppt] OpenAI 客户端已初始化，模型：" + config.DEEPSEEK_API_BIG.DEEPSEEK_API_MODEL + "。");
+// ==================== 惰性初始化 OpenAI 客户端 ====================
+// openai v6+ 是 ESM-only 模块，在 CommonJS 中无法 require，必须使用动态 import()
+// 使用惰性初始化模式：首次调用时 import 并缓存，后续复用
+let _openai = null;
+async function getOpenAI() {
+    if (!_openai) {
+        const OpenAI = (await import("openai")).default;
+        _openai = new OpenAI({
+            baseURL: config.DEEPSEEK_API_BIG.DEEPSEEK_API_BASE,
+            apiKey: config.DEEPSEEK_API_BIG.DEEPSEEK_API_KEY,
+        });
+        console.log("[htmlppt] OpenAI 客户端已初始化（惰性加载）");
+    }
+    return _openai;
+}
 
 // validateInput 已迁移至公共验证模块 input_validator.js，字符串校验通过 validateString 统一调用，数组校验保留在 main 中
 
@@ -80,6 +88,9 @@ async function main(pptGuide, originalText, imageUrls) {
     }
 
     console.log("[htmlppt] 输入验证通过，开始执行 HTML PPT 生成流程。");
+
+    // ========== 惰性获取 OpenAI 客户端（ESM 动态 import） ==========
+    const openai = await getOpenAI();
 
     // ========== 读取 Prompt 模板并替换占位符 ==========
     const htmlPptPromptPath = path.resolve(__dirname, prompt.html_ppt_prompt);

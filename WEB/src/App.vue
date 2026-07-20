@@ -9,6 +9,12 @@
 
   <!-- 已登录状态：显示首页 -->
   <HomePage v-else />
+
+  <!-- ========== 前端版本号（页面底部小字，方便确认版本） ========== -->
+  <div class="fixed bottom-2 right-3 z-50 text-[11px] text-gray-400 dark:text-gray-600
+              select-none pointer-events-none transition-colors duration-500">
+    v{{ appVersion }}
+  </div>
 </template>
 
 <script setup>
@@ -21,12 +27,17 @@ import HomePage from "./pages/home/index.vue"; // 首页组件
 // 日志前缀
 const TAG = "[App]";
 
+// ========== 前端版本号（从 package.json 读取，方便部署确认） ==========
+import pkg from "../package.json";
+const appVersion = pkg.version;
+
 // ========== 认证 Store ==========
 const authStore = useAuthStore();
 
 console.log(
   TAG +
-    " Vue 3 应用已挂载，登录状态: " +
+    " Vue 3 应用已挂载 v" + appVersion +
+    "，登录状态: " +
     (authStore.isLoggedIn ? "已登录" : "未登录")
 );
 </script>

@@ -1,0 +1,7 @@
+{
+  "GRSAI_API_BASE": "https://grsai.dakka.com.cn",
+  "GRSAI_MODEL": "gpt-image-2",
+  "GRSAI_DEFAULT_ASPECT_RATIO": "1024x1024",
+  "GRSAI_POLL_INTERVAL_MS": 3000,
+  "GRSAI_POLL_MAX_RETRIES": 60
+}

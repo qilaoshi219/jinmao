@@ -11,7 +11,15 @@ const path = require("path");        // 路径处理：拼接临时文件路径
 
 // 第三方库
 const Minio = require("minio");      // MinIO 客户端：从对象存储下载/上传文件
-const PQueue = require("p-queue").default; // 并发队列：控制 PPT 和 TTS 任务的并行度
+// 注意：p-queue v9+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
+let _PQueue = null;
+async function getPQueue() {
+    if (!_PQueue) {
+        _PQueue = (await import("p-queue")).default;
+        console.log("[course_pipeline] p-queue 已加载（惰性加载）");
+    }
+    return _PQueue;
+}
 
 // Repository 数据访问层
 const bookRepo = require("../utils/repo/book_repo");       // 课程 (Course) 表的 CRUD
@@ -28,6 +36,10 @@ const { synthesize } = require("./text_tts");                      // 调用 TTS
 
 // MinIO 上传工具（用于上传 JSON / HTML / MP3 / SRT 文件）
 const uploadMinio = require("../utils/upload_minio");
+
+// 异步服务模块（Phase 1 后触发，后台执行不阻塞流水线）
+const { startTitleGeneration } = require("./create_title");       // 异步生成课程标题和副标题
+const { startCoverGeneration } = require("./create_cover_image"); // 异步生成课程封面图片并上传 MinIO
 
 // ==================== MinIO 客户端初始化 ====================
 // 从环境变量读取 MinIO 连接配置，支持默认值用于本地开发
@@ -222,17 +234,30 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
   let outline = outlineResult.outline;
   console.log("[course_pipeline][Phase3] 大纲生成成功，共 " + (outline.slides ? outline.slides.length : 0) + " 张幻灯片");
 
+  // 防御性诊断：当 slides 为空时，输出 outline 的类型和结构便于排查
+  if (!outline.slides || outline.slides.length === 0) {
+    console.warn("[course_pipeline][Phase3] 警告：outline.slides 为空！outline 类型: " +
+      (Array.isArray(outline) ? "Array(长度=" + outline.length + ")" : typeof outline) +
+      "，keys: " + (outline && typeof outline === "object" && !Array.isArray(outline)
+        ? Object.keys(outline).join(", ") : "N/A") +
+      "，内容摘要: " + JSON.stringify(outline).substring(0, 500));
+  }
+
   // 3.3 条件性口播稿扩写
   if (course.elaborationEnabled && outline.slides && outline.slides.length > 0) {
     console.log("[course_pipeline][Phase3] 扩写功能已开启，开始逐页扩写口播稿...");
     let enrichedCount = 0;
     // elaborateText 参数：(elaboration, original, expectedWords)
+    const totalSlidesCount = outline.slides.length;
     for (let i = 0; i < outline.slides.length; i++) {
       const slide = outline.slides[i];
       const slideScript = slide.script || slide.elaboration || "";
       if (!slideScript.trim()) {
+        console.log("[course_pipeline][Phase3] 扩写进度 " + (i + 1) + "/" + totalSlidesCount + " — 跳过空口播稿");
         continue; // 跳过空口播稿的 slide
       }
+      // 输出当前扩写进度，让用户知道程序仍在运行
+      console.log("[course_pipeline][Phase3] 扩写进度 " + (i + 1) + "/" + totalSlidesCount + " — 正在调用大模型扩写幻灯片...");
       try {
         // 预期字数：根据现有脚本长度估算，范围 100~5000
         const expectedWords = Math.max(100, Math.min(5000, slideScript.length * 3));
@@ -307,6 +332,7 @@ async function phase4_generatePpt(courseId, chapterRoot, outline) {
   }
 
   // 4.2 创建并发队列（并发上限 5）
+  const PQueue = await getPQueue(); // p-queue v9+ 是 ESM，惰性动态 import
   const pptQueue = new PQueue({ concurrency: 5 });
   let successCount = 0;
   let failCount = 0;
@@ -399,6 +425,7 @@ async function phase5_generateTts(courseId, chapterRoot, outline) {
   }
 
   // 5.2 创建并发队列（并发上限 3，TTS API 限制更严格）
+  const PQueue = await getPQueue(); // p-queue v9+ 是 ESM，惰性动态 import
   const ttsQueue = new PQueue({ concurrency: 3 });
   let successCount = 0;
   let failCount = 0;
@@ -608,6 +635,20 @@ async function pipeline(courseId) {
   try {
     // ───── 阶段一：数据获取 ─────
     const { course, tempMDPath } = await phase1_fetchData(courseId);
+
+    // ───── 阶段一后：异步启动标题生成和封面生成（后台执行，不阻塞流水线）─────
+    // 标题生成：调用 AI 为课程生成更合适的标题和副标题
+    startTitleGeneration(courseId, course.userId, course.name, course.textbookPath);
+    console.log("[course_pipeline][pipeline] 标题生成已加入后台异步队列");
+
+    // 封面生成：先读取 MD 文件前 2000 字符作为内容样本，再启动异步封面生成
+    try {
+      const sampleText = fs.readFileSync(tempMDPath, "utf-8").substring(0, 2000);
+      startCoverGeneration(courseId, course.userId, course.name, sampleText);
+      console.log("[course_pipeline][pipeline] 封面生成已加入后台异步队列");
+    } catch (sampleErr) {
+      console.warn("[course_pipeline][pipeline] 提取封面样本失败，跳过封面生成: " + sampleErr.message);
+    }
 
     // ───── 阶段二：文本提取与行号识别 ─────
     const { chapterText, chapter } = await phase2_extractAndIndex(courseId, course, tempMDPath);

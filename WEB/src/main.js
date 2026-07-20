@@ -13,6 +13,10 @@ import "./styles/index.css";
 // 与 Tailwind dark: 变体共用同一个 html.dark 触发器，实现双轨同步切换
 import "element-plus/theme-chalk/dark/css-vars.css";
 
+// Element Plus 命令式组件样式（ElMessageBox 通过 JS API 调用，自动导入解析器无法检测，需手动引入）
+import "element-plus/theme-chalk/el-message-box.css";
+import "element-plus/theme-chalk/el-overlay.css";
+
 // 根组件
 import App from "./App.vue";
 

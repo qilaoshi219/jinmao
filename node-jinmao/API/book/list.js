@@ -65,11 +65,13 @@ const TAG = "[API_book_list]";
  *                           id: { type: string, example: "1", description: "教材 ID（BigInt 转 String）" }
  *                           userId: { type: string, example: "1", description: "用户 ID" }
  *                           name: { type: string, example: "职称考试知识点", description: "教材名称" }
+ *                           subtitle: { type: string, nullable: true, example: "从零开始掌握核心知识点", description: "教材副标题（AI 生成）" }
  *                           description: { type: string, nullable: true, example: null, description: "教材描述" }
  *                           textbookFilename: { type: string, example: "2025年度职称考试部分主要知识点.md", description: "教材源文件名（不可修改）" }
  *                           textbookPath: { type: string, example: "/usercourse/1/2/教材.md", description: "归一化 MD 在 MinIO 路径" }
  *                           sourcePath: { type: string, example: "/usercourse/1/2/教材.pdf", description: "源文件在 MinIO 路径" }
- *                           coverPath: { type: string, nullable: true, example: "/usercourse/1/2/cover.png", description: "封面图 MinIO 路径（暂未生成，预留字段）" }
+ *                           coverPath: { type: string, nullable: true, example: "/usercourse/1/2/cover.png", description: "封面图 MinIO 路径" }
+  *                           coverUrl: { type: string, nullable: true, example: "/api/v1/files/usercourse/1/2/cover.png", description: "封面图代理访问 URL（通过后端代理访问 MinIO，无需暴露 MinIO 服务）" }
  *                           elaborationEnabled: { type: boolean, example: true, description: "是否开启文本细化" }
  *                           endline: { type: integer, example: 0, description: "当前已处理到的行号" }
  *                           pipelineStatus: { type: string, example: "processing", description: "流水线状态" }
@@ -152,11 +154,13 @@ router.get("/books", authenticateToken, async (req, res) => {
       id: String(course.id), // BigInt → String
       userId: String(course.userId), // BigInt → String
       name: course.name, // 教材名称（可被 AI 生成/用户手动修改）
+      subtitle: course.subtitle || null, // 教材副标题（AI 生成）
       description: course.description || null,
       textbookFilename: course.textbookFilename, // 教材源文件名（不可修改）
       textbookPath: course.textbookPath,
       sourcePath: course.sourcePath,
-      coverPath: course.coverPath || null, // 封面图 MinIO 路径（暂未生成，预留字段）
+      coverPath: course.coverPath || null, // 封面图 MinIO 路径
+      coverUrl: course.coverPath ? "/api/v1/files" + course.coverPath : null, // 封面图代理访问 URL
       elaborationEnabled: course.elaborationEnabled,
       endline: course.endline,
       pipelineStatus: course.pipelineStatus,

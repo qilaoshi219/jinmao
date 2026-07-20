@@ -36,6 +36,21 @@ const upload = multer({
   },
   // 文件类型过滤器：仅允许白名单中的扩展名
   fileFilter: (req, file, cb) => {
+    // ==================== 文件名编码修复 ====================
+    // multer 底层 busboy 解析 Content-Disposition 头中的 filename 时，
+    // 若浏览器未使用 RFC 5987 编码（filename*=UTF-8''...），
+    // 原始 UTF-8 字节会被按 Latin-1（ISO-8859-1）逐字节错误解码，
+    // 导致中文文件名变成乱码（如 "闸门运行工.pdf" → "é¸é¨è¿è¡å·¥.pdf"）
+    // 此处将 Latin-1 错误解码的字符串恢复为正确的 UTF-8
+    if (file.originalname) {
+      const fixedName = Buffer.from(file.originalname, "latin1").toString("utf8");
+      if (fixedName !== file.originalname) {
+        console.log(TAG + "[fileFilter] 文件名编码修复: " + file.originalname + " → " + fixedName);
+        file.originalname = fixedName;
+      }
+    }
+    // ==================== 文件名编码修复结束 ====================
+
     // 获取文件扩展名（统一转小写比较）
     const ext = path.extname(file.originalname).toLowerCase();
 
@@ -218,21 +233,6 @@ router.post(
           data: null,
         });
       }
-
-      // ==================== 文件名编码修复 ====================
-      // multer 底层 busboy 解析 Content-Disposition 头中的 filename 时，
-      // 若浏览器未使用 RFC 5987 编码（filename*=UTF-8''...），
-      // 原始 UTF-8 字节会被按 Latin-1（ISO-8859-1）逐字节错误解码，
-      // 导致中文文件名变成乱码（如 "闸门运行工.pdf" → "é¸é¨è¿è¡å·¥.pdf"）
-      // 此处将 Latin-1 错误解码的字符串恢复为正确的 UTF-8
-      if (req.file && req.file.originalname) {
-        const fixedName = Buffer.from(req.file.originalname, "latin1").toString("utf8");
-        if (fixedName !== req.file.originalname) {
-          console.log(TAG + "[encodingFix] 文件名编码修复: " + req.file.originalname + " → " + fixedName);
-          req.file.originalname = fixedName;
-        }
-      }
-      // ==================== 文件名编码修复结束 ====================
 
       next();
     });
