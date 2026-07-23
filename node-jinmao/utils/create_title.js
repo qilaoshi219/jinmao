@@ -11,7 +11,7 @@
 //   code 503 — DeepSeek 返回 JSON 不包含 title 或 subtitle 字段
 
 // 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
-const { deepseek: config } = require("../config");
+const { deepseek: config, DEEPSEEK_TIMEOUT } = require("../config");
 const prompt = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
@@ -98,6 +98,11 @@ async function createTitle(filename, content) {
     console.log(TAG + " 提示词模板已加载并替换占位符，准备调用 DeepSeek API（小模型）。");
 
     // ========== 调用 DeepSeek API 生成标题 ==========
+    // ========== 看门狗定时器：5 分钟（小模型速度快，5 分钟为极端情况兜底） ==========
+    const watchdogTimer = setTimeout(() => {
+        console.error(TAG + " !!! 看门狗超时 !!! DeepSeek API 在 " + (DEEPSEEK_TIMEOUT.SMALL_MODEL / 1000) + " 秒内无任何响应，可能发生了极端异常（网络黑洞/SDK卡死等）。");
+    }, DEEPSEEK_TIMEOUT.SMALL_MODEL);
+
     let completion;
     try {
         completion = await openai.chat.completions.create({
@@ -105,8 +110,11 @@ async function createTitle(filename, content) {
             model: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_MODEL,       // 小模型（deepseek-v4-flash）
             response_format: { "type": "json_object" },                // JSON 格式优化输出
             stream: false,
+            timeout: DEEPSEEK_TIMEOUT.SMALL_MODEL, // HTTP 请求级超时 5 分钟，小模型速度快，5 分钟为极端情况兜底
         });
     } catch (apiError) {
+        // API 调用失败，清除看门狗定时器
+        clearTimeout(watchdogTimer);
         // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
         console.error(TAG + " DeepSeek API 调用失败：" + apiError.message);
         return {
@@ -114,6 +122,9 @@ async function createTitle(filename, content) {
             message: "DeepSeek API 调用失败：" + apiError.message
         };
     }
+
+    // API 调用成功返回，清除看门狗定时器
+    clearTimeout(watchdogTimer);
 
     // ========== 校验 API 返回结构的完整性 ==========
     // 确保 choices 数组存在且不为空

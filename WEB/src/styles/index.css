@@ -1,5 +1,6 @@
 /* ==================== 全局样式入口 ==================== */
 /* 职责：引入 Tailwind CSS，配置暗黑模式策略，定义全局 CSS 变量和基础样式 */
+/* NERV 蓝色战术风格 — 灵感来自 jinmao-nerv-redesign 设计稿 */
 
 /* Tailwind CSS v4 - 通过 @import 引入，替代 v3 的 @tailwind 指令 */
 @import "tailwindcss";
@@ -19,4 +20,89 @@ body {
   background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
   min-height: 100vh;
+}
+
+/* ================================================================
+   NERV 战术装饰元素 — 只读视觉增强（不影响组件功能）
+   灵感来自 jinmao-nerv-redesign 设计稿
+   ================================================================ */
+
+/* ---- 角括号装饰 — 四角 ◤ ◥ ◣ ◢ ---- */
+/* 用于卡片/面板四角，配合父容器 relative 使用 */
+.nerv-brackets {
+  position: relative;
+}
+.nerv-brackets::before,
+.nerv-brackets::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+  z-index: 1;
+}
+/* 左上角 */
+.nerv-brackets::after {
+  top: 4px;
+  left: 4px;
+  border-top: 2px solid var(--color-rail);
+  border-left: 2px solid var(--color-rail);
+}
+/* 右下角（通过额外 class 叠加 .nerv-brackets-bottom） */
+.nerv-brackets-bottom::after {
+  top: auto;
+  left: auto;
+  bottom: 4px;
+  right: 4px;
+  border-top: none;
+  border-left: none;
+  border-bottom: 2px solid var(--color-rail);
+  border-right: 2px solid var(--color-rail);
+}
+
+/* ---- 战术网格背景 — 蓝色网格条纹叠加层 ---- */
+/* 适用于任何容器，添加 .nerv-grid-bg 即可 */
+.nerv-grid-bg {
+  position: relative;
+}
+.nerv-grid-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(var(--color-rail) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-rail) 1px, transparent 1px);
+  background-size: 20px 20px;
+  opacity: 0.03;
+}
+/* 暗黑模式下网格稍明显 */
+.dark .nerv-grid-bg::before {
+  opacity: 0.05;
+}
+
+/* ---- 蓝色状态轨 — 左侧 3px 竖线指示器 ---- */
+/* 用于导航项/卡片的激活态指示 */
+.nerv-rail {
+  position: relative;
+}
+.nerv-rail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background-color: var(--color-rail);
+  border-radius: 0 2px 2px 0;
+}
+
+/* ---- 隐藏滚动条工具类 ---- */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

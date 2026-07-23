@@ -1,0 +1,96 @@
+{
+  "data": [
+    {
+      "id": "page-login-v2",
+      "title": "登录页",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1753235880000,
+      "canvasData": {
+        "x": 0,
+        "y": 0,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/login-v2.html",
+        "interactions": [
+          {
+            "domId": "login-submit",
+            "targetPageId": "page-home-v2",
+            "transitionLabel": "登录成功"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-home-v2",
+      "title": "首页",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1753235880000,
+      "canvasData": {
+        "x": 620,
+        "y": 0,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/home-v2.html",
+        "interactions": [
+          {
+            "domId": "nav-logout-v2",
+            "targetPageId": "page-login-v2",
+            "hideEdge": true,
+            "transitionLabel": "退出登录"
+          },
+          {
+            "domId": "course-card-1",
+            "targetPageId": "page-study",
+            "transitionLabel": "进入课程"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-study",
+      "title": "课程学习",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1753312800000,
+      "canvasData": {
+        "x": 1240,
+        "y": 0,
+        "group": 0,
+        "deviceType": "freeSize",
+        "windowSize": {
+          "width": 1481,
+          "height": 902
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/study.html",
+        "interactions": [
+          {
+            "domId": "back-to-home",
+            "targetPageId": "page-home-v2",
+            "hideEdge": true,
+            "transitionLabel": "返回首页"
+          }
+        ]
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": false,
+    "deviceType": "desktop",
+    "projectName": "金毛教你学 蓝色NERV风格",
+    "designLibrary": {
+      "name": "蓝色主题Nerv",
+      "id": "WVQ_BKQ389WHJN",
+      "version": "9",
+      "scope": "custom-global",
+      "path": "c:\\Users\\yueqi\\.trae-cn\\design_libraries\\WVQ_BKQ389WHJN",
+      "versionSource": "selected-context"
+    },
+    "visualEditorEnabled": true
+  }
+}

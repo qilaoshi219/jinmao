@@ -311,15 +311,16 @@ console.log("[app] ✅ 文件代理路由已注册: /api/v1/files/*");
   const { apiReference } = await import("@scalar/express-api-reference");
 
   // 挂载 Scalar UI 路由
-  // 使用 url 参数指向 OpenAPI JSON 端点（官方推荐方式，避免 spec 参数路由匹配问题）
+  // 使用 content 参数直接嵌入 OpenAPI JSON，避免 URL fetch 和 CDN 版本兼容性问题
+  // @scalar/express-api-reference 中间件不解析 spec.url 嵌套格式，
+  // 顶层 url 又在新版 CDN 客户端中被误解析为多文档模式（api-1）
   app.use(
     "/api/v1/docs",
     apiReference({
-      url: "/api/v1/docs/json", // Scalar 内部通过此 URL 获取 OpenAPI 规范
+      content: JSON.stringify(swaggerSpec), // 直接将 spec 序列化嵌入 HTML
       theme: "purple", // Scalar 主题色（紫色主题，现代风格）
       authentication: {
-        // 指定默认使用的认证方案，Scalar UI 会自动显示 Token 输入框
-        preferredSecurityScheme: "bearerAuth",
+        preferredSecurityScheme: "bearerAuth", // 默认认证方案
       },
     })
   );

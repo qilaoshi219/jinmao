@@ -53,7 +53,7 @@
 | `auth/otp.js` | 邮箱验证码发送与频率限制 | — |
 | `auth/profile.js` | 用户信息查询与更新 | — |
 | `POSTbook.js` | 教材上传+格式归一化（PDF/Word/MD/ZIP→MD） | — |
-| `course_pipeline.js` | 课程生成6阶段流水线（659行，特批超300行） | — |
+| `course_pipeline.js` | 课程生成6阶段流水线（Phase3 扩写已并行化，特批超300行） | 2026-07-23 |
 | `text_tts.js` | 火山引擎 TTS 语音合成+字幕生成 | — |
 
 ### Repository 数据访问层 `utils/repo/`
@@ -73,10 +73,11 @@
 | `extract_zip.js` | ZIP/RAR/7Z 解压工具 | — |
 | `extractor_md.js` | Markdown 文本提取器 | — |
 | `line_indexer.js` | 行号索引器 | — |
-| `get_line.js` | AI 章节行号识别（DeepSeek） | — |
-| `generate_outline.js` | AI 大纲生成 | — |
-| `elaboration.js` | AI 文本细化/口播稿扩写 | — |
-| `htmlppt.js` | AI HTML PPT 生成 | — |
+| `get_line.js` | AI 章节行号识别（DeepSeek 小模型） | 2026-07-20 |
+| `generate_outline.js` | AI 大纲生成（DeepSeek 大模型 + thinking） | 2026-07-20 |
+| `elaboration.js` | AI 文本细化/口播稿扩写（DeepSeek v4-flash） | 2026-07-23 |
+| `htmlppt.js` | AI HTML PPT 生成（DeepSeek 大模型） | 2026-07-20 |
+| `create_title.js` | AI 标题生成（DeepSeek 小模型） | 2026-07-20 |
 | `upload_minio.js` | MinIO 文件上传封装 | — |
 | `word2pdf.js` | Word→PDF 转换（LibreOffice） | — |
 | `input_validator.js` | 输入参数校验工具 | — |
@@ -91,7 +92,7 @@
 ### 配置 `config/`
 | 文件 | 用途 | 上次修改 |
 |------|------|---------|
-| `index.js` | 统一配置加载（API Key 校验） | — |
+| `index.js` | 统一配置加载（含 API Key 校验 + DeepSeek 超时常量） | 2026-07-20 |
 | `swagger.js` | OpenAPI 3.0 规范定义 | — |
 | `deepseek_config.json` | DeepSeek API 配置 | — |
 | `doc2x_config.json` | Doc2x API 配置 | — |
@@ -110,14 +111,23 @@
 | `src/api/auth.js` | 认证 API 封装（登录/注册/用户信息） | — |
 | `src/api/books.js` | 教材 API 封装（上传/列表/详情/状态） | — |
 | `src/api/client.js` | Axios 实例（baseURL/interceptors/Token 注入） | — |
-| `src/pages/login/index.vue` | 登录页面模板 | — |
-| `src/pages/login/script.js` | 登录页面逻辑 | — |
+| `src/pages/login/index.vue` | 登录页面模板 — NERV 双栏布局 | 2026-07-23 |
+| `src/pages/login/script.js` | 登录页面逻辑 | 2026-07-23 |
+| `src/pages/home/index.vue` | 首页模板 — NERV 蓝色战术风格 | 2026-07-23 |
+| `src/pages/home/script.js` | 首页业务逻辑 | 2026-07-23 |
+| `src/pages/study/index.vue` | 课程学习页模板 — NERV 三栏可拖动布局 | 2026-07-23（新增） |
+| `src/pages/study/script.js` | 课程学习页逻辑 | 2026-07-23（新增） |
 | `src/stores/auth.js` | Pinia 认证状态管理 | — |
 | `src/composables/useTheme.js` | 暗黑模式切换逻辑 | — |
-| `src/styles/index.css` | 全局样式（Tailwind + 设计规范） | — |
-| `src/styles/tokens.css` | 设计令牌（CSS 变量） | — |
+| `src/composables/useResize.js` | 侧边栏拖动调整宽度 composable | 2026-07-23（新增） |
+| `src/components/CourseCard.vue` | 教材卡片组件 | — |
+| `src/components/HomeSidebar.vue` | 首页侧边栏 — NERV 蓝色状态轨 | 2026-07-23 |
+| `src/components/HomeTopbar.vue` | 首页顶栏 — NERV 蓝色标签风格 | 2026-07-23 |
+| `src/components/UploadBookDialog.vue` | 上传教材弹窗 | — |
+| `src/styles/index.css` | 全局样式（Tailwind + NERV 装饰元素） | 2026-07-23 |
+| `src/styles/tokens.css` | 设计令牌（NERV 蓝色战术色彩体系） | 2026-07-23 |
 | `src/utils/storage.js` | 本地存储工具（Token 持久化） | — |
-| `src/App.vue` | 根组件 | — |
+| `src/App.vue` | 根组件 — 三页导航 | 2026-07-23 |
 | `src/main.js` | 前端入口 | — |
 | `start.ps1` | 前端启动脚本 | — |
 | `vite.config.js` | Vite 构建配置 | — |

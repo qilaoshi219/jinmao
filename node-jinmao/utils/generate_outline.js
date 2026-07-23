@@ -7,7 +7,7 @@
 // Please install OpenAI SDK first: `npm install openai`
 
 // 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
-const { deepseek: config } = require("../config");
+const { deepseek: config, DEEPSEEK_TIMEOUT } = require("../config");
 const prompt = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
@@ -84,10 +84,19 @@ async function main(yuanwen, pptother) {
   console.log("[main] Prompt 模板已加载并替换占位符，准备调用 DeepSeek API。");
 
   // ========== 调用 DeepSeek API 生成大纲 ==========
-  // 启动心跳定时器：每 2 秒输出一次状态，确保用户知道程序仍在等待大模型响应
+  // 启动心跳定时器：每 2 秒输出一次状态，确保运维人员知道程序仍在等待大模型响应
   const heartbeatInterval = setInterval(() => {
     console.log("[generate_outline] 心跳 — 仍在等待 DeepSeek 大模型响应...");
   }, 2000);
+
+  // ========== 看门狗定时器：15 分钟 ==========
+  // 仅在极其特殊的情况下触发（如 openai SDK 内部卡死、网络黑洞等），
+  // 正常情况下 DeepSeek API 会先返回成功或错误，看门狗会被提前清理（clearTimeout）
+  // 注意：JavaScript Promise 无法取消，看门狗仅用于记录超时日志，真正的超时控制
+  // 由 openai SDK 的 timeout 参数在 HTTP 层面保障
+  const watchdogTimer = setTimeout(() => {
+    console.error("[generate_outline] !!! 看门狗超时 !!! DeepSeek API 在 " + (DEEPSEEK_TIMEOUT.BIG_MODEL / 1000) + " 秒内无任何响应，可能发生了极端异常（网络黑洞/SDK卡死等）。");
+  }, DEEPSEEK_TIMEOUT.BIG_MODEL);
 
   let completion;
   try {
@@ -99,10 +108,12 @@ async function main(yuanwen, pptother) {
       // json_object 模式会强制 {...} 格式，与数组输出冲突，已改为 text 模式
       reasoning_effort: "max",//最大思考努力
       stream: false,
+      timeout: DEEPSEEK_TIMEOUT.BIG_MODEL, // HTTP 请求级超时 15 分钟，DeepSeek 发送的空行/keep-alive 会维持连接
     });
   } catch (apiError) {
-    // API 调用失败，清除心跳定时器
+    // API 调用失败，清除心跳和看门狗定时器
     clearInterval(heartbeatInterval);
+    clearTimeout(watchdogTimer);
     // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
     console.error("[main] DeepSeek API 调用失败：" + apiError.message);
     return {
@@ -111,8 +122,9 @@ async function main(yuanwen, pptother) {
     };
   }
 
-  // API 调用成功返回，清除心跳定时器
+  // API 调用成功返回，清除心跳和看门狗定时器
   clearInterval(heartbeatInterval);
+  clearTimeout(watchdogTimer);
 
   // ========== 校验 API 返回结构的完整性 ==========
   // 确保 choices 数组存在且不为空

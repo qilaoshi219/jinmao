@@ -1,0 +1,64 @@
+{
+  "project": {
+    "name": "金毛教你学（NERV风格重设计）",
+    "deviceType": "desktop",
+    "designRead": "dashboard / student-teacher / tactical / balanced / soft clutter",
+    "designDials": {
+      "layoutVariance": 2,
+      "motionIntensity": 2,
+      "visualDensity": 2
+    },
+    "sharedProjectShellContract": {
+      "primaryColorSystem": "nerv-primary (#ff5a00 hot orange)",
+      "typeStack": "'Segoe UI', 'PingFang SC', system-ui, sans-serif",
+      "radiusScale": "sharp (2px/4px/6px)",
+      "surfaceModel": "flat panels, left status rails, thin borders",
+      "ctaStyle": "solid fill or bordered, sharp corners, no pill"
+    },
+    "styleDefinitionBrief": "NERV-inspired industrial command interface: near-black backgrounds (dark) / warm tactical white (light), hot orange (#ff5a00) as the single primary accent, sharp geometry with left red status rails, thin segmented borders, phosphor-text color palette, condensed uppercase UI labels, tactical grid background pattern, no rounded pills",
+    "styleContinuityAnchors": null,
+    "cssPreflightEvidence": {
+      "applies": true,
+      "status": "passed",
+      "command": "node c:\\Users\\yueqi\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\script\\fill-html-head.mjs 'f:\\代码\\金毛教你学重构版\\jinmao-nerv-redesign\\colors_and_type.css' 'f:\\代码\\金毛教你学重构版\\jinmao-nerv-redesign\\.preflight\\preflight.html' --title=\"Preflight\" --lang=\"zh-CN\" --prefix=\"nerv\"",
+      "brandPrefix": "nerv",
+      "checks": {
+        "themeVars": "present",
+        "semanticTokenFallback": "present",
+        "themeInline": "present",
+        "tailwindCdn": "present",
+        "htmlClass": "present",
+        "semanticMappings": "resolved"
+      },
+      "retryCount": 0,
+      "blockingReason": null
+    },
+    "contextReadBudget": {
+      "workflowFileReadLimit": 1,
+      "largeWorkflowFilesCachedInSummary": [],
+      "restoreInputsCached": [],
+      "subAgentReadsFullSummary": false
+    },
+    "intentProfile": {
+      "routingReason": "free-explore: no existing .design, no Design Library, open-ended UI redesign of existing Vue frontend with NERV aesthetic"
+    },
+    "dispatchPreflightManifest": [],
+    "finishReadinessEvidence": null
+  },
+  "pages": [
+    {
+      "nodeId": "page-login",
+      "htmlSrc": "pages/login.html",
+      "title": "登录页",
+      "pageIndex": 1,
+      "businessScenario": "用户登录/注册页面，左栏品牌展示 + 右栏登录表单"
+    },
+    {
+      "nodeId": "page-home",
+      "htmlSrc": "pages/home.html",
+      "title": "首页",
+      "pageIndex": 2,
+      "businessScenario": "教材管理首页，顶部命令栏 + 左侧导航 + 统计卡片 + 教材网格列表"
+    }
+  ]
+}

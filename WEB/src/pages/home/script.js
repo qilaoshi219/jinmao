@@ -3,7 +3,7 @@
 // 通过 setup() 导出给 index.vue 模板使用
 // 数据流：App.vue → HomePage → { HomeSidebar, HomeTopbar, CourseCard, UploadBookDialog }
 
-import { ref, reactive, onMounted, onUnmounted, computed } from "vue";
+import { ref, reactive, onMounted, onUnmounted, computed, inject } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "../../stores/auth";
 import { useTheme } from "../../composables/useTheme";
@@ -35,6 +35,10 @@ export default {
   },
 
   setup() {
+    // ========== 导航（从 App.vue 注入）==========
+    const navigate = inject("navigate", (page) => {
+      console.warn(TAG + " navigate 未从父组件注入，当前页: " + page);
+    });
     // ========== 状态管理 ==========
     const authStore = useAuthStore();
     const { isDark, toggleTheme } = useTheme();
@@ -258,13 +262,9 @@ export default {
      * @param {string|number} courseId - 教材 ID
      */
     function onOpenCourse(courseId) {
-      console.log(TAG + " 查看教材文件列表，id: " + courseId);
-
-      // 从 courses 数组中查找教材名称
-      const course = courses.value.find((c) => String(c.id) === String(courseId));
-      currentCourseName.value = course ? (course.name || "未命名教材") : "教材 #" + courseId;
-      currentCourseId.value = courseId;
-      courseFilesDialogVisible.value = true;
+      console.log(TAG + " 进入课程学习，id: " + courseId);
+      // 导航到课程学习页
+      navigate("study");
     }
 
     /**

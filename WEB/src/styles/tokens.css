@@ -1,40 +1,61 @@
 /* ==================== 主题 CSS 变量（Tokens） ==================== */
 /* 职责：定义亮色/暗黑两套 CSS 自定义变量，作为 Tailwind 覆盖不到的场景的基础层 */
+/* NERV 蓝色战术风格 — 灵感来自 jinmao-nerv-redesign 设计稿 */
 /* 配合 Tailwind dark: 变体使用，用于处理 body 背景、自定义动画等全局样式 */
 /* 注意：大部分组件颜色应使用 Tailwind 的 dark: 前缀，本文件仅处理全局级别样式 */
 
-/* ========== 亮色模式（默认） ========== */
+/* ========== 亮色模式（默认）— NERV Tactical Cool White ========== */
 :root {
-  /* 页面背景色 */
-  --color-bg-primary: #f9fafb; /* gray-50 */
-  --color-bg-secondary: #ffffff; /* white */
+  /* 页面背景色 — NERV 冷白战术背景 */
+  --color-bg-primary: #f4f6f9;
+  --color-bg-secondary: #ffffff;
 
-  /* 文字颜色 */
-  --color-text-primary: #1f2937; /* gray-800 */
-  --color-text-secondary: #6b7280; /* gray-500 */
+  /* 文字颜色 — 纯黑纯白（遵守设计规范规则 1） */
+  --color-text-primary: #000000;
+  --color-text-secondary: #6b7c95;
 
-  /* 边框颜色 */
-  --color-border: #e5e7eb; /* gray-200 */
+  /* 卡片色 */
+  --color-card: #ffffff;
+  --color-card-hover: #edf1f7;
+
+  /* 边框颜色 — NERV 冷蓝灰边框 */
+  --color-border: #dce3ed;
 
   /* 阴影 */
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+
+  /* ===== NERV 战术装饰 ===== */
+  /* 蓝色状态轨 — 左侧 3px 竖线指示器，用于导航激活态 */
+  --color-rail: #409EFF; /* blue-500（遵守设计规范规则 9） */
+  /* 战术网格背景色 */
+  --color-grid: rgba(64, 158, 255, 0.04); /* blue-500 + 4% 透明度 */
 }
 
-/* ========== 暗黑模式 ========== */
+/* ========== 暗黑模式 — NERV Command Center ========== */
 .dark {
-  /* 页面背景色 */
-  --color-bg-primary: #111827; /* gray-900 */
-  --color-bg-secondary: #1f2937; /* gray-800 */
+  /* 页面背景色 — NERV 深蓝黑虚空 */
+  --color-bg-primary: #0a0e14;
+  --color-bg-secondary: #11161d;
 
-  /* 文字颜色 */
-  --color-text-primary: #f3f4f6; /* gray-100 */
-  --color-text-secondary: #9ca3af; /* gray-400 */
+  /* 文字颜色 — 纯白（遵守设计规范规则 1） */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #7b8faa;
 
-  /* 边框颜色 */
-  --color-border: #374151; /* gray-700 */
+  /* 卡片色 */
+  --color-card: #11161d;
+  --color-card-hover: #161c26;
+
+  /* 边框颜色 — 暗蓝灰结构线 */
+  --color-border: #1e293b;
 
   /* 阴影（暗黑模式下减弱阴影） */
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+
+  /* ===== NERV 战术装饰 ===== */
+  /* 蓝色状态轨 — blue-400（遵守设计规范规则 9） */
+  --color-rail: #60A5FA;
+  /* 战术网格背景色 */
+  --color-grid: rgba(96, 165, 250, 0.06); /* blue-400 + 6% 透明度 */
 }
 
 /* ========== 系统偏好 Fallback ========== */
@@ -44,15 +65,14 @@
   html:not(.dark) {
     /* 注意：这里仅做基础 fallback，实际主题由 useDark + Tailwind dark: 控制 */
     /* 如果 useDark 未加载（如浏览器不支持 JS），这里提供最基本的暗色兜底 */
-    background-color: #111827;
-    color: #f3f4f6;
+    background-color: #0a0e14;
+    color: #ffffff;
   }
 }
 
 /* ========== 全局过渡动画 ========== */
 /* 为所有颜色变化添加平滑过渡，提升主题切换体验 */
-/* 注意：transition 不应过大影响性能，200ms 是平衡值 */
 html {
-  /* 页面级颜色过渡（500ms 符合设计规范规则3） */
+  /* 页面级颜色过渡（500ms 符合设计规范规则 3） */
   transition: background-color 500ms ease, color 500ms ease;
 }

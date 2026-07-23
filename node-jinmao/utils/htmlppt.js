@@ -10,7 +10,7 @@
 //   code 502 — API 返回内容不是有效 HTML（缺少必要的 HTML 标记）
 
 // 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
-const { deepseek: config } = require("../config");
+const { deepseek: config, DEEPSEEK_TIMEOUT } = require("../config");
 const prompt = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
@@ -104,6 +104,18 @@ async function main(pptGuide, originalText, imageUrls) {
 
     // ========== 调用 DeepSeek API 生成 HTML PPT ==========
     // 注意：此处不使用 response_format: json_object，因为输出是 HTML 代码而非 JSON
+    // 启动心跳定时器：每 2 秒输出一次状态，确保运维人员知道程序仍在等待大模型响应
+    const heartbeatInterval = setInterval(() => {
+        console.log("[htmlppt] 心跳 — 仍在等待 DeepSeek 大模型响应...");
+    }, 2000);
+
+    // ========== 看门狗定时器：15 分钟 ==========
+    // 仅在极其特殊的情况下触发（如 openai SDK 内部卡死、网络黑洞等），
+    // 正常情况下 DeepSeek API 会先返回成功或错误，看门狗会被提前清理（clearTimeout）
+    const watchdogTimer = setTimeout(() => {
+        console.error("[htmlppt] !!! 看门狗超时 !!! DeepSeek API 在 " + (DEEPSEEK_TIMEOUT.BIG_MODEL / 1000) + " 秒内无任何响应，可能发生了极端异常（网络黑洞/SDK卡死等）。");
+    }, DEEPSEEK_TIMEOUT.BIG_MODEL);
+
     let completion;
     try {
         completion = await openai.chat.completions.create({
@@ -112,8 +124,12 @@ async function main(pptGuide, originalText, imageUrls) {
             thinking: { "type": "enabled" },                             // 开启思考模式（HTML 生成为复杂任务）
             reasoning_effort: "max",                                     // 最大思考努力
             stream: false,
+            timeout: DEEPSEEK_TIMEOUT.BIG_MODEL, // HTTP 请求级超时 15 分钟，DeepSeek 发送的空行/keep-alive 会维持连接
         });
     } catch (apiError) {
+        // API 调用失败，清除心跳和看门狗定时器
+        clearInterval(heartbeatInterval);
+        clearTimeout(watchdogTimer);
         // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
         console.error("[htmlppt] DeepSeek API 调用失败：" + apiError.message);
         return {
@@ -121,6 +137,10 @@ async function main(pptGuide, originalText, imageUrls) {
             message: "DeepSeek API 调用失败：" + apiError.message
         };
     }
+
+    // API 调用成功返回，清除心跳和看门狗定时器
+    clearInterval(heartbeatInterval);
+    clearTimeout(watchdogTimer);
 
     // ========== 校验 API 返回结构的完整性 ==========
     // 确保 choices 数组存在且不为空

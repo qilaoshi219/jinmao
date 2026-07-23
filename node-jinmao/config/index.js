@@ -110,10 +110,24 @@ console.log("[config/index] 火山引擎 APP_ID 已注入: " + (process.env.VOLC
 console.log("[config/index] 火山引擎 ACCESS_KEY 已注入: " + (process.env.VOLCENGINE_TTS_ACCESS_KEY ? "是" : "否 (空值)"));
 console.log("[config/index] Grsai API_KEY 已注入: " + (process.env.GRSAI_API_KEY ? "是 (长度 " + process.env.GRSAI_API_KEY.length + ")" : "否"));
 
+// ==================== DeepSeek API 超时配置 ====================
+// 大模型（deepseek-v4-pro + thinking enabled）：15 分钟超时
+//   - 思考模式下推理耗时较长，DeepSeek 官方文档说明 10 分钟未开始推理才断开
+//   - 此处设为 15 分钟，给推理 + 输出留足时间
+// 小模型（deepseek-v4-flash）：5 分钟超时
+//   - 小模型速度快（通常 <30 秒），5 分钟为极端情况下的兜底保护
+const DEEPSEEK_TIMEOUT = {
+    BIG_MODEL: 15 * 60 * 1000,      // 大模型（pro）：15 分钟
+    SMALL_MODEL: 5 * 60 * 1000,     // 小模型（flash）：5 分钟
+};
+
+console.log("[config/index] DeepSeek API 超时配置已加载: BIG_MODEL=" + (DEEPSEEK_TIMEOUT.BIG_MODEL / 1000) + "s, SMALL_MODEL=" + (DEEPSEEK_TIMEOUT.SMALL_MODEL / 1000) + "s");
+
 // ==================== 导出统一配置对象 ====================
 module.exports = {
     deepseek: deepseekConfig,       // { DEEPSEEK_API_BIG: {...}, DEEPSEEK_API_SMALL: {...} }
     doc2x: doc2xConfig,             // { DOC2X_API_KEY: "...", DOC2X_API_BASE: "..." }
     volcengine: volcengineConfig,   // { VOLCENGINE_TTS: { APP_ID, ACCESS_KEY, RESOURCE_ID, SPEAKER, API_URL } }
     grsai: grsaiConfig,             // { GRSAI_API_KEY, GRSAI_API_BASE, GRSAI_MODEL, ... }
+    DEEPSEEK_TIMEOUT: DEEPSEEK_TIMEOUT, // { BIG_MODEL: 900000, SMALL_MODEL: 300000 }
 };

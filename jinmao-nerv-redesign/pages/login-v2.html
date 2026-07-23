@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 金毛教你学</title>
+    <style id="theme-vars">
+/* NERV Command Interface — Blue Theme Design Tokens */
+/* 金毛教你学 蓝色NERV风格设计系统 */
+
+/* ============================================
+   Light Mode (日间模式) — Tactical Cool White
+   ============================================ */
+:root {
+  /* Surface */
+  --nerv-background: #f4f6f9;       /* 冷白战术背景 */
+  --nerv-foreground: #141a24;       /* 深蓝黑文字 */
+  --nerv-card: #ffffff;             /* 卡片白 */
+  --nerv-card-foreground: #141a24;  /* 卡片文字 */
+  --nerv-popover: #ffffff;
+  --nerv-popover-foreground: #141a24;
+
+  /* Primary — Command Blue / 指令蓝 */
+  --nerv-primary: #3488ea;
+  --nerv-primary-foreground: #ffffff;
+
+  /* Muted */
+  --nerv-muted: #edf1f7;            /* 冷灰底 */
+  --nerv-muted-foreground: #6b7c95; /* 冷灰文字 */
+
+  /* Structure */
+  --nerv-border: #dce3ed;           /* 冷蓝灰边框 */
+  --nerv-input: #dce3ed;
+  --nerv-ring: #3488ea;
+
+  /* Radius — Sharp NERV geometry */
+  --nerv-radius-sm: 2px;
+  --nerv-radius-md: 4px;
+  --nerv-radius-lg: 6px;
+
+  /* State Colors */
+  --nerv-success: #22c55e;
+  --nerv-success-foreground: #052e16;
+  --nerv-warning: #f59e0b;
+  --nerv-warning-foreground: #2e1a00;
+  --nerv-error: #ef4444;
+  --nerv-error-foreground: #ffffff;
+  --nerv-info: #38bdf8;
+  --nerv-info-foreground: #082f49;
+
+  /* NERV Tactical Extras */
+  --nerv-rail: #3488ea;             /* 蓝色状态轨 */
+  --nerv-grid: rgba(52, 136, 234, 0.04);  /* 蓝色战术网格 */
+  --nerv-scanline: rgba(0, 0, 0, 0.02);   /* 扫描线 */
+}
+
+/* ============================================
+   Dark Mode (夜间模式) — Blue NERV Command Center
+   ============================================ */
+.dark {
+  /* Surface */
+  --nerv-background: #0a0e14;       /* 深蓝黑虚空 */
+  --nerv-foreground: #e8f0fe;       /* 冷蓝白磷光文字 */
+  --nerv-card: #11161d;             /* 面板深蓝黑 */
+  --nerv-card-foreground: #e8f0fe;
+  --nerv-popover: #161c26;
+  --nerv-popover-foreground: #e8f0fe;
+
+  /* Primary */
+  --nerv-primary: #3488ea;
+  --nerv-primary-foreground: #ffffff;
+
+  /* Muted */
+  --nerv-muted: #161c26;            /* 暗控制填充 */
+  --nerv-muted-foreground: #7b8faa; /* 冷蓝灰次文字 */
+
+  /* Structure */
+  --nerv-border: #1e293b;           /* 暗蓝灰结构线 */
+  --nerv-input: #1e293b;
+  --nerv-ring: #60a5fa;             /* 亮蓝聚焦 */
+
+  /* State Colors */
+  --nerv-success: #4ade80;
+  --nerv-success-foreground: #052e16;
+  --nerv-warning: #fbbf24;
+  --nerv-warning-foreground: #1a0a00;
+  --nerv-error: #f87171;
+  --nerv-error-foreground: #0a0e14;
+  --nerv-info: #38bdf8;
+  --nerv-info-foreground: #0a0e14;
+
+  /* NERV Tactical Extras */
+  --nerv-rail: #3488ea;
+  --nerv-grid: rgba(52, 136, 234, 0.06);
+  --nerv-scanline: rgba(52, 136, 234, 0.03);
+}
+
+/* ============================================
+   System preference fallback (legacy)
+   ============================================ */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --nerv-background: #0a0e14;
+    --nerv-foreground: #e8f0fe;
+    --nerv-card: #11161d;
+    --nerv-card-foreground: #e8f0fe;
+    --nerv-popover: #161c26;
+    --nerv-popover-foreground: #e8f0fe;
+    --nerv-primary: #3488ea;
+    --nerv-primary-foreground: #ffffff;
+    --nerv-muted: #161c26;
+    --nerv-muted-foreground: #7b8faa;
+    --nerv-border: #1e293b;
+    --nerv-input: #1e293b;
+    --nerv-ring: #60a5fa;
+  }
+}
+
+/* ============================================
+   Global Base Styles
+   ============================================ */
+html {
+  background-color: var(--nerv-background);
+  color: var(--nerv-foreground);
+  transition: background-color 500ms ease, color 500ms ease;
+}
+
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, "PingFang SC",
+    "Microsoft YaHei", system-ui, sans-serif;
+  background-color: var(--nerv-background);
+  color: var(--nerv-foreground);
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--nerv-background);
+    --color-foreground: var(--nerv-foreground);
+    --color-card: var(--nerv-card);
+    --color-card-foreground: var(--nerv-card-foreground);
+    --color-popover: var(--nerv-popover);
+    --color-popover-foreground: var(--nerv-popover-foreground);
+    --color-primary: var(--nerv-primary);
+    --color-primary-foreground: var(--nerv-primary-foreground);
+    --color-muted: var(--nerv-muted);
+    --color-muted-foreground: var(--nerv-muted-foreground);
+    --color-border: var(--nerv-border);
+    --color-input: var(--nerv-input);
+    --color-ring: var(--nerv-ring);
+    --radius-sm: var(--nerv-radius-sm);
+    --radius-md: var(--nerv-radius-md);
+    --radius-lg: var(--nerv-radius-lg);
+  }
+  @layer base {
+    body { background: var(--nerv-background); color: var(--nerv-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--nerv-background); }
+      .text-background { color: var(--nerv-background); }
+      .border-background { border-color: var(--nerv-background); }
+      .ring-background { --tw-ring-color: var(--nerv-background); }
+      .bg-foreground { background-color: var(--nerv-foreground); }
+      .text-foreground { color: var(--nerv-foreground); }
+      .border-foreground { border-color: var(--nerv-foreground); }
+      .ring-foreground { --tw-ring-color: var(--nerv-foreground); }
+      .bg-card { background-color: var(--nerv-card); }
+      .text-card { color: var(--nerv-card); }
+      .border-card { border-color: var(--nerv-card); }
+      .ring-card { --tw-ring-color: var(--nerv-card); }
+      .bg-card-foreground { background-color: var(--nerv-card-foreground); }
+      .text-card-foreground { color: var(--nerv-card-foreground); }
+      .border-card-foreground { border-color: var(--nerv-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--nerv-card-foreground); }
+      .bg-popover { background-color: var(--nerv-popover); }
+      .text-popover { color: var(--nerv-popover); }
+      .border-popover { border-color: var(--nerv-popover); }
+      .ring-popover { --tw-ring-color: var(--nerv-popover); }
+      .bg-popover-foreground { background-color: var(--nerv-popover-foreground); }
+      .text-popover-foreground { color: var(--nerv-popover-foreground); }
+      .border-popover-foreground { border-color: var(--nerv-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--nerv-popover-foreground); }
+      .bg-primary { background-color: var(--nerv-primary); }
+      .text-primary { color: var(--nerv-primary); }
+      .border-primary { border-color: var(--nerv-primary); }
+      .ring-primary { --tw-ring-color: var(--nerv-primary); }
+      .bg-primary-foreground { background-color: var(--nerv-primary-foreground); }
+      .text-primary-foreground { color: var(--nerv-primary-foreground); }
+      .border-primary-foreground { border-color: var(--nerv-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--nerv-primary-foreground); }
+      .bg-muted { background-color: var(--nerv-muted); }
+      .text-muted { color: var(--nerv-muted); }
+      .border-muted { border-color: var(--nerv-muted); }
+      .ring-muted { --tw-ring-color: var(--nerv-muted); }
+      .bg-muted-foreground { background-color: var(--nerv-muted-foreground); }
+      .text-muted-foreground { color: var(--nerv-muted-foreground); }
+      .border-muted-foreground { border-color: var(--nerv-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--nerv-muted-foreground); }
+      .bg-border { background-color: var(--nerv-border); }
+      .text-border { color: var(--nerv-border); }
+      .border-border { border-color: var(--nerv-border); }
+      .ring-border { --tw-ring-color: var(--nerv-border); }
+      .bg-input { background-color: var(--nerv-input); }
+      .text-input { color: var(--nerv-input); }
+      .border-input { border-color: var(--nerv-input); }
+      .ring-input { --tw-ring-color: var(--nerv-input); }
+      .bg-ring { background-color: var(--nerv-ring); }
+      .text-ring { color: var(--nerv-ring); }
+      .border-ring { border-color: var(--nerv-ring); }
+      .ring-ring { --tw-ring-color: var(--nerv-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <main class="relative min-h-screen flex flex-col lg:flex-row bg-[var(--nerv-background)]">
+        <!-- ===== 战术网格背景叠加层 ===== -->
+        <div class="absolute inset-0 pointer-events-none z-0 opacity-40" style="background-image: repeating-linear-gradient(0deg, transparent, transparent 1px, var(--nerv-grid) 1px, var(--nerv-grid) 3px), repeating-linear-gradient(90deg, transparent, transparent 1px, var(--nerv-grid) 1px, var(--nerv-grid) 3px);"></div>
+
+        <!-- ===== CRT 扫描线叠加层 ===== -->
+        <div class="absolute inset-0 pointer-events-none z-0" style="background: repeating-linear-gradient(0deg, transparent, transparent 2px, var(--nerv-scanline) 2px, var(--nerv-scanline) 4px);"></div>
+
+        <!-- ===== 主题切换按钮（右上角） ===== -->
+        <button data-dom-id="theme-toggle" class="absolute top-6 right-6 z-20 w-10 h-10 flex items-center justify-center rounded-[2px] border border-[var(--nerv-border)] bg-[var(--nerv-card)] text-[var(--nerv-foreground)] hover:border-[var(--nerv-ring)] transition-colors duration-500 cursor-pointer" title="切换主题">
+            <!-- 亮色模式显示月亮图标（切换到暗黑） -->
+            <i data-lucide="moon" class="w-5 h-5 dark:hidden"></i>
+            <!-- 暗黑模式显示太阳图标（切换到亮色） -->
+            <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+        </button>
+
+        <!-- ============================================
+             左面板 — 品牌展示区（brand-hero）
+             ============================================ -->
+        <section class="relative z-10 w-full lg:w-1/2 flex flex-col justify-center items-center p-8 lg:p-14 min-h-[50vh] lg:min-h-screen">
+            <div class="max-w-lg w-full">
+
+                <!-- 品牌标题容器（角括号装饰） -->
+                <div class="relative mb-10">
+                    <!-- 左上角括号 -->
+                    <span class="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-[var(--nerv-rail)]" aria-hidden="true"></span>
+                    <!-- 右下角括号 -->
+                    <span class="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-[var(--nerv-rail)]" aria-hidden="true"></span>
+
+                    <!-- 主标题（磷光效果） -->
+                    <h1 class="text-[2.75rem] lg:text-[3.5rem] font-extrabold tracking-[0.15em] uppercase text-[var(--nerv-foreground)] leading-tight px-4 py-2 dark:[text-shadow:0_0_30px_var(--nerv-primary),0_0_60px_rgba(52,136,234,0.3)]">
+                        金毛教你学
+                    </h1>
+                </div>
+
+                <!-- 副标题 — 友好化 -->
+                <p class="mb-12 text-sm lg:text-base tracking-[0.15em] text-[var(--nerv-muted-foreground)] font-medium">
+                    你的专属 AI 学习伙伴
+                </p>
+
+                <!-- 今日金句 -->
+                <div class="mt-10">
+                    <p class="text-xs tracking-[0.15em] text-[var(--nerv-muted-foreground)] font-medium mb-3">
+                        📖 今日金句
+                    </p>
+                    <p class="text-sm italic text-[var(--nerv-muted-foreground)] leading-relaxed">
+                        "学而不思则罔，思而不学则殆"
+                    </p>
+                    <p class="text-xs text-[var(--nerv-muted-foreground)] mt-1 opacity-60">
+                        —《论语》
+                    </p>
+                </div>
+
+                <!-- 战术分割线 -->
+                <div class="mt-10 pt-6 border-t border-[var(--nerv-border)]">
+                    <p class="text-xs tracking-wider text-[var(--nerv-muted-foreground)]">
+                        一键上传教材 → AI 智能生成课程 → 随时随地学习
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================
+             右面板 — 登录表单区（login-form）
+             ============================================ -->
+        <section class="relative z-10 w-full lg:w-1/2 flex flex-col justify-center items-center p-8 lg:p-14 min-h-[50vh] lg:min-h-screen">
+            <div class="max-w-lg w-full">
+
+                <!-- 表单卡片（左轨 + 面板边框） -->
+                <div class="border-l-[3px] border-[var(--nerv-rail)] bg-[var(--nerv-card)] border border-[var(--nerv-border)] rounded-[2px] p-8 lg:p-10">
+
+                    <!-- 章节标签（带角括号装饰） -->
+                    <div class="mb-8 pb-5 border-b border-[var(--nerv-border)]">
+                        <div class="relative inline-block">
+                            <!-- 左上角括号 -->
+                            <span class="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[var(--nerv-rail)]" aria-hidden="true"></span>
+                            <!-- 右下角括号 -->
+                            <span class="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[var(--nerv-rail)]" aria-hidden="true"></span>
+                            <h2 class="text-base font-bold tracking-[0.15em] text-[var(--nerv-foreground)] pt-2 pl-3 pr-3 pb-2">
+                                开始学习之旅
+                            </h2>
+                        </div>
+                    </div>
+
+                    <!-- 邮箱输入 -->
+                    <div class="mb-5">
+                        <label class="block text-[11px] font-bold tracking-[0.2em] uppercase text-[var(--nerv-muted-foreground)] mb-2">
+                            邮箱
+                        </label>
+                        <input type="email" placeholder="example@mail.com" class="w-full px-4 py-3 bg-[var(--nerv-background)] border border-[var(--nerv-input)] rounded-[2px] text-[var(--nerv-foreground)] text-sm placeholder:text-[var(--nerv-muted-foreground)] focus:outline-none focus:border-[var(--nerv-ring)] transition-colors duration-500">
+                    </div>
+
+                    <!-- 验证码输入 + 发送按钮 -->
+                    <div class="mb-5">
+                        <label class="block text-[11px] font-bold tracking-[0.2em] uppercase text-[var(--nerv-muted-foreground)] mb-2">
+                            验证码
+                        </label>
+                        <div class="flex gap-3">
+                            <input type="text" placeholder="6 位验证码" maxlength="6" class="flex-1 px-4 py-3 bg-[var(--nerv-background)] border border-[var(--nerv-input)] rounded-[2px] text-[var(--nerv-foreground)] text-sm placeholder:text-[var(--nerv-muted-foreground)] focus:outline-none focus:border-[var(--nerv-ring)] transition-colors duration-500">
+                            <button type="button" class="px-4 py-3 text-[11px] font-bold tracking-[0.15em] uppercase whitespace-nowrap rounded-[2px] border border-[var(--nerv-border)] text-[var(--nerv-foreground)] bg-[var(--nerv-muted)] hover:border-[var(--nerv-ring)] transition-colors duration-500 cursor-pointer">
+                                发送验证码
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 用户协议提示 -->
+                    <p class="mb-6 text-xs text-[var(--nerv-muted-foreground)] text-left">
+                        点击发送验证码即代表同意我们的<a href="#" class="text-[var(--nerv-primary)] hover:underline transition-colors duration-500">《用户协议》</a>
+                    </p>
+
+                    <!-- 提交按钮（主 CTA） -->
+                    <button data-dom-id="login-submit" type="button" class="w-full py-3.5 text-sm font-bold tracking-[0.15em] bg-[var(--nerv-primary)] text-[var(--nerv-primary-foreground)] rounded-[2px] hover:opacity-90 active:opacity-80 transition-all duration-500 cursor-pointer">
+                        开始学习
+                    </button>
+                </div>
+
+                <!-- 底部状态信息（footer-status） -->
+                <p class="mt-6 text-center text-[10px] tracking-[0.1em] text-[var(--nerv-muted-foreground)] opacity-60">
+                    金毛教你学 · 让学习更简单
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===== 主题切换 JavaScript ===== -->
+    <script>
+    (function() {
+        const html = document.documentElement;
+        const toggleBtn = document.querySelector('[data-dom-id="theme-toggle"]');
+
+        // 读取本地存储的主题偏好，默认为 light
+        const savedTheme = localStorage.getItem('nerv-theme') || 'light';
+        html.className = savedTheme;
+        // 确保 CSS 变量及时生效
+        document.body.style.setProperty('transition', 'none');
+        requestAnimationFrame(function() {
+            document.body.style.removeProperty('transition');
+        });
+
+        // 主题切换
+        toggleBtn.addEventListener('click', function() {
+            const next = html.className === 'light' ? 'dark' : 'light';
+            html.className = next;
+            localStorage.setItem('nerv-theme', next);
+        });
+
+    })();
+    </script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

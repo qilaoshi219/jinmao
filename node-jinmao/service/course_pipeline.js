@@ -243,36 +243,73 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
       "，内容摘要: " + JSON.stringify(outline).substring(0, 500));
   }
 
-  // 3.3 条件性口播稿扩写
+  // 3.2b 字段名规范化：映射大纲 Prompt 字段名 → Pipeline 内部字段名
+  // 背景：outline_prompt.txt 要求 AI 输出 ppt/kbg 字段，
+  //       而 Phase 4 读 slide.pptGuide，Phase 5 读 slide.script，字段名不一致导致数据为空。
+  // 此处做兼容映射，确保下游各阶段能正确读取数据，不修改 Prompt 以保持 AI 输出质量。
+  if (outline.slides && outline.slides.length > 0) {
+    let pptMapped = 0;  // 统计 ppt → pptGuide 映射次数
+    let kbgMapped = 0;  // 统计 kbg → script 映射次数
+    outline.slides = outline.slides.map(slide => {
+      // pptGuide：优先使用已有的 pptGuide/ppt_guide，否则从 ppt 字段映射
+      const hasPptGuide = (slide.pptGuide || slide.ppt_guide);
+      // script：优先使用已有的 script/elaboration，否则从 kbg 字段映射
+      const hasScript = (slide.script || slide.elaboration);
+      if (!hasPptGuide && slide.ppt) pptMapped++;
+      if (!hasScript && slide.kbg) kbgMapped++;
+      return {
+        ...slide,
+        pptGuide: hasPptGuide || slide.ppt || "",
+        script: hasScript || slide.kbg || ""
+      };
+    });
+    console.log("[course_pipeline][Phase3] 字段规范化完成，ppt→pptGuide 映射 " + pptMapped +
+      " 页，kbg→script 映射 " + kbgMapped + " 页");
+  }
+
+  // 3.3 条件性口播稿扩写（p-queue 并发，上限 5）
   if (course.elaborationEnabled && outline.slides && outline.slides.length > 0) {
-    console.log("[course_pipeline][Phase3] 扩写功能已开启，开始逐页扩写口播稿...");
+    console.log("[course_pipeline][Phase3] 扩写功能已开启，开始并发扩写口播稿（并发上限 5）...");
     let enrichedCount = 0;
-    // elaborateText 参数：(elaboration, original, expectedWords)
     const totalSlidesCount = outline.slides.length;
-    for (let i = 0; i < outline.slides.length; i++) {
-      const slide = outline.slides[i];
-      const slideScript = slide.script || slide.elaboration || "";
-      if (!slideScript.trim()) {
-        console.log("[course_pipeline][Phase3] 扩写进度 " + (i + 1) + "/" + totalSlidesCount + " — 跳过空口播稿");
-        continue; // 跳过空口播稿的 slide
-      }
-      // 输出当前扩写进度，让用户知道程序仍在运行
-      console.log("[course_pipeline][Phase3] 扩写进度 " + (i + 1) + "/" + totalSlidesCount + " — 正在调用大模型扩写幻灯片...");
-      try {
-        // 预期字数：根据现有脚本长度估算，范围 100~5000
-        const expectedWords = Math.max(100, Math.min(5000, slideScript.length * 3));
-        const elaborationResult = await elaborateText(slideScript, chapterText, expectedWords);
-        if (elaborationResult.code === 200 && elaborationResult.script) {
-          slide.script = elaborationResult.script; // 用扩写后的脚本替换原脚本
-          enrichedCount++;
-        } else {
-          console.warn("[course_pipeline][Phase3] 幻灯片 " + (i + 1) + " 扩写失败: " +
-            (elaborationResult.message || "未知错误") + "，保留原口播稿");
+
+    const PQueue = await getPQueue();
+    const elaborationQueue = new PQueue({ concurrency: 5 });
+
+    // 为每张幻灯片创建异步任务并加入并发队列
+    const tasks = outline.slides.map((slide, i) => {
+      return elaborationQueue.add(async () => {
+        const slideScript = slide.script || slide.elaboration || "";
+        const slideNum = i + 1;
+
+        if (!slideScript.trim()) {
+          console.log("[course_pipeline][Phase3] 扩写进度 " + slideNum + "/" + totalSlidesCount + " — 跳过空口播稿");
+          return; // 跳过空口播稿的 slide
         }
-      } catch (err) {
-        console.warn("[course_pipeline][Phase3] 幻灯片 " + (i + 1) + " 扩写异常: " + err.message + "，保留原口播稿");
-      }
-    }
+
+        // 输出当前扩写进度，让用户知道程序仍在运行
+        console.log("[course_pipeline][Phase3] 扩写进度 " + slideNum + "/" + totalSlidesCount + " — 正在调用大模型扩写幻灯片...");
+        try {
+          // 预期字数：根据现有脚本长度估算，范围 100~5000
+          const expectedWords = Math.max(100, Math.min(5000, slideScript.length * 3));
+          const elaborationResult = await elaborateText(slideScript, chapterText, expectedWords);
+
+          if (elaborationResult.code === 200 && elaborationResult.script) {
+            slide.script = elaborationResult.script; // 用扩写后的脚本替换原脚本
+            enrichedCount++;
+          } else {
+            console.warn("[course_pipeline][Phase3] 幻灯片 " + slideNum + " 扩写失败: " +
+              (elaborationResult.message || "未知错误") + "，保留原口播稿");
+          }
+        } catch (err) {
+          console.warn("[course_pipeline][Phase3] 幻灯片 " + slideNum + " 扩写异常: " + err.message + "，保留原口播稿");
+        }
+      });
+    });
+
+    // 等待所有扩写任务完成
+    await Promise.all(tasks);
+
     console.log("[course_pipeline][Phase3] 口播稿扩写完成，成功扩写 " + enrichedCount + "/" + outline.slides.length + " 页");
   } else {
     console.log("[course_pipeline][Phase3] 扩写功能未开启，跳过口播稿扩写");

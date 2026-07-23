@@ -13,7 +13,7 @@
 //   { "code": 503, "message": "API 返回内容格式不符合预期..." } — 响应格式异常
 
 // 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
-const { deepseek: config } = require("../config");
+const { deepseek: config, DEEPSEEK_TIMEOUT } = require("../config");
 const promptConfig = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
@@ -84,6 +84,11 @@ async function getLine(indexedMarkdown) {
     console.log("[get_line] 提示词与文本拼接完成，总长度：" + fullPrompt.length + " 字符。准备调用 DeepSeek API（小模型，思考模式已关闭）。");
 
     // ========== 步骤 3：调用 DeepSeek API（小模型 + 关闭思考模式） ==========
+    // ========== 看门狗定时器：5 分钟（小模型速度极快，5 分钟为极端情况兜底） ==========
+    const watchdogTimer = setTimeout(() => {
+        console.error("[get_line] !!! 看门狗超时 !!! DeepSeek API 在 " + (DEEPSEEK_TIMEOUT.SMALL_MODEL / 1000) + " 秒内无任何响应，可能发生了极端异常（网络黑洞/SDK卡死等）。");
+    }, DEEPSEEK_TIMEOUT.SMALL_MODEL);
+
     let completion;
     try {
         completion = await openai.chat.completions.create({
@@ -91,8 +96,11 @@ async function getLine(indexedMarkdown) {
             model: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_MODEL,  // 小模型（deepseek-v4-flash）
             thinking: { "type": "disabled" },                      // 关闭思考模式（任务简单，无需深度推理）
             stream: false,                                          // 非流式输出，等待完整结果
+            timeout: DEEPSEEK_TIMEOUT.SMALL_MODEL, // HTTP 请求级超时 5 分钟，小模型速度极快，5 分钟为极端情况兜底
         });
     } catch (apiError) {
+        // API 调用失败，清除看门狗定时器
+        clearTimeout(watchdogTimer);
         // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
         console.error("[get_line] DeepSeek API 调用失败：" + apiError.message);
         return {
@@ -100,6 +108,9 @@ async function getLine(indexedMarkdown) {
             message: "DeepSeek API 调用失败：" + apiError.message
         };
     }
+
+    // API 调用成功返回，清除看门狗定时器
+    clearTimeout(watchdogTimer);
 
     // ========== 步骤 4：校验 API 返回结构的完整性 ==========
     // 确保 choices 数组存在且不为空

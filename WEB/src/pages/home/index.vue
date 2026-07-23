@@ -15,13 +15,13 @@
 <template>
   <!--
   ============================================================
-  全屏 flex 行布局（参考老项目 .home-shell）
+  全屏 flex 行布局 — NERV 蓝色战术风格
     - 左侧：HomeSidebar（固定宽度侧边栏）
     - 右侧：flex-1 填充剩余空间的主区域
     - 不使用 max-w 限制宽度（遵守设计规范规则5）
   ============================================================
   -->
-  <div class="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-500">
+  <div class="flex h-screen bg-[var(--color-bg-primary)] transition-colors duration-500">
 
     <!-- ========== 左侧侧边栏 ========== -->
     <HomeSidebar
@@ -31,7 +31,7 @@
       @upload="openUploadDialog"
     />
 
-    <!-- ========== 右侧主区域（参考老项目 .home-main） ========== -->
+    <!-- ========== 右侧主区域 ========== -->
     <div class="flex-1 flex flex-col min-w-0">
 
       <!-- ========== 顶部栏 ========== -->
@@ -42,25 +42,25 @@
         @logout="handleLogout"
       />
 
-      <!-- ========== 主内容区（参考老项目 .home-content） ========== -->
+      <!-- ========== 主内容区 ========== -->
       <main class="flex-1 overflow-auto p-5 lg:px-8">
 
         <!-- ============================================================
-        统计卡片区（参考老项目 .home-stats，4个统计卡片）
+        统计卡片区 — NERV 蓝色战术风格：左侧蓝色状态轨 + CSS 变量驱动
         ============================================================ -->
         <section class="mb-6">
           <div class="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
+
             <!-- 累计学习时长 -->
-            <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
-                        bg-white dark:bg-gray-800
-                        shadow-sm
+            <div class="rounded-[10px] border border-[var(--color-border)]
+                        bg-[var(--color-card)]
+                        border-l-[3px] border-l-blue-500 dark:border-l-blue-400
                         p-4 transition-colors duration-500">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[13px] font-bold text-gray-500 dark:text-gray-400
+                <span class="text-[13px] font-bold text-black dark:text-white
                              transition-colors duration-500">
                   累计学习时长
                 </span>
-                <!-- 图标 -->
                 <div class="w-7 h-7 rounded-[10px]
                             bg-blue-50 dark:bg-blue-900/20
                             border border-blue-200/40 dark:border-blue-800/30
@@ -82,12 +82,12 @@
             </div>
 
             <!-- 已完成章节 -->
-            <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
-                        bg-white dark:bg-gray-800
-                        shadow-sm
+            <div class="rounded-[10px] border border-[var(--color-border)]
+                        bg-[var(--color-card)]
+                        border-l-[3px] border-l-blue-500 dark:border-l-blue-400
                         p-4 transition-colors duration-500">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[13px] font-bold text-gray-500 dark:text-gray-400
+                <span class="text-[13px] font-bold text-black dark:text-white
                              transition-colors duration-500">
                   已完成章节
                 </span>
@@ -112,12 +112,12 @@
             </div>
 
             <!-- 习题正确率 -->
-            <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
-                        bg-white dark:bg-gray-800
-                        shadow-sm
+            <div class="rounded-[10px] border border-[var(--color-border)]
+                        bg-[var(--color-card)]
+                        border-l-[3px] border-l-blue-500 dark:border-l-blue-400
                         p-4 transition-colors duration-500">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[13px] font-bold text-gray-500 dark:text-gray-400
+                <span class="text-[13px] font-bold text-black dark:text-white
                              transition-colors duration-500">
                   习题正确率
                 </span>
@@ -142,12 +142,12 @@
             </div>
 
             <!-- 连续学习天数 -->
-            <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
-                        bg-white dark:bg-gray-800
-                        shadow-sm
+            <div class="rounded-[10px] border border-[var(--color-border)]
+                        bg-[var(--color-card)]
+                        border-l-[3px] border-l-blue-500 dark:border-l-blue-400
                         p-4 transition-colors duration-500">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[13px] font-bold text-gray-500 dark:text-gray-400
+                <span class="text-[13px] font-bold text-black dark:text-white
                              transition-colors duration-500">
                   连续学习天数
                 </span>
@@ -170,13 +170,15 @@
                 即将上线
               </p>
             </div>
+
           </div>
         </section>
 
         <!--
         ============================================================
-        教材列表区域
-          - 标题栏 + 排序 + 上传按钮
+        教材列表区域 — NERV 战术风格
+          - NERV 角括号装饰标题
+          - 排序下拉 + 上传按钮
           - 骨架屏（加载态）
           - 教材卡片网格（有数据时）+ 添加卡片
           - 空状态（无数据时）
@@ -184,16 +186,17 @@
         ============================================================
         -->
         <section>
-          <!-- 标题栏（参考老项目 .home-section-head） -->
+          <!-- 标题栏 — NERV 角括号装饰 -->
           <div class="flex items-center justify-between mb-3">
-            <h2 class="text-black dark:text-white text-lg font-extrabold
-                       tracking-wide transition-colors duration-500">
+            <h2 class="flex items-center gap-2 text-black dark:text-white text-lg font-bold tracking-wide transition-colors duration-500">
+              <span class="text-blue-500 dark:text-blue-400 font-mono select-none" aria-hidden="true">&#x25E4;</span>
               我的教材
+              <span class="text-blue-500 dark:text-blue-400 font-mono select-none" aria-hidden="true">&#x25E2;</span>
             </h2>
 
             <!-- 右侧：排序下拉 + 上传按钮 -->
             <div class="flex items-center gap-3">
-              <!-- 排序下拉（参考老项目 .home-sort） -->
+              <!-- 排序下拉 -->
               <el-select
                 v-model="sortBy"
                 placeholder="排序"
@@ -224,24 +227,24 @@
             <div
               v-for="n in 6"
               :key="n"
-              class="border border-gray-200 dark:border-gray-700
-                     bg-white dark:bg-gray-800
+              class="border border-[var(--color-border)]
+                     bg-[var(--color-card)]
                      rounded-[10px] overflow-hidden
                      transition-colors duration-500 animate-pulse"
             >
               <!-- 封面占位 16:9 -->
-              <div class="aspect-[16/9] bg-gray-200 dark:bg-gray-700 transition-colors duration-500" />
+              <div class="aspect-[16/9] bg-slate-200 dark:bg-slate-700 transition-colors duration-500" />
               <!-- 内容占位 -->
               <div class="p-4 space-y-3">
-                <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4
+                <div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-3/4
                             transition-colors duration-500" />
-                <div class="h-3 bg-gray-100 dark:bg-gray-700/50 rounded w-1/2
+                <div class="h-3 bg-slate-100 dark:bg-slate-700/50 rounded w-1/2
                             transition-colors duration-500" />
                 <div class="flex justify-between mt-3 pt-3
-                            border-t border-gray-100 dark:border-gray-700">
-                  <div class="h-6 bg-gray-100 dark:bg-gray-700/50 rounded w-16
+                            border-t border-slate-200 dark:border-slate-700">
+                  <div class="h-6 bg-slate-100 dark:bg-slate-700/50 rounded w-16
                               transition-colors duration-500" />
-                  <div class="h-6 bg-gray-100 dark:bg-gray-700/50 rounded w-12
+                  <div class="h-6 bg-slate-100 dark:bg-slate-700/50 rounded w-12
                               transition-colors duration-500" />
                 </div>
               </div>
@@ -261,15 +264,15 @@
               @delete="onDeleteCourse"
             />
 
-            <!-- ===== 添加教材卡片（参考老项目 .home-add-card） ===== -->
+            <!-- ===== 添加教材卡片 — NERV 虚线边框 + hover 蓝光 ===== -->
             <div
-              class="border border-dashed border-gray-300 dark:border-gray-600
-                     rounded-[10px] bg-white/80 dark:bg-gray-800/80
+              class="border border-dashed border-[var(--color-border)]
+                     rounded-[10px] bg-[var(--color-card)]
                      min-h-[300px]
                      flex flex-col items-center justify-center gap-2
                      cursor-pointer
-                     hover:-translate-y-0.5 hover:shadow-lg
-                     hover:border-blue-400/50 dark:hover:border-blue-500/40
+                     hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)]
+                     hover:border-blue-500 dark:hover:border-blue-400
                      transition-all duration-500"
               @click="openUploadDialog"
             >
@@ -286,7 +289,7 @@
                         transition-colors duration-500">
                 添加教材
               </p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 text-center
+              <p class="text-xs text-slate-500 dark:text-slate-400 text-center
                         transition-colors duration-500">
                 上传教学资料，AI 自动生成课程
               </p>
@@ -297,12 +300,12 @@
           <div
             v-else
             class="text-center py-20 min-h-[200px] flex flex-col items-center justify-center
-                   border border-dashed border-gray-300 dark:border-gray-600
+                   border border-dashed border-[var(--color-border)]
                    rounded-[10px]
                    transition-colors duration-500"
           >
             <!-- 空状态图标 -->
-            <svg class="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600
+            <svg class="w-16 h-16 mx-auto mb-4 text-slate-300 dark:text-slate-600
                         transition-colors duration-500"
                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
@@ -312,7 +315,7 @@
                       transition-colors duration-500">
               还没有教材
             </p>
-            <p class="text-gray-500 dark:text-gray-400 text-sm
+            <p class="text-slate-500 dark:text-slate-400 text-sm
                       transition-colors duration-500">
               点击"上传教材"按钮上传你的第一份教材
             </p>

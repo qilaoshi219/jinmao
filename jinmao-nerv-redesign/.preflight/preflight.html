@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preflight</title>
+    <style id="theme-vars">
+/* NERV Command Interface — Design Tokens */
+/* 金毛教你学 NERV 风格设计系统 */
+
+/* ============================================
+   Light Mode (日间模式) — Tactical White
+   ============================================ */
+:root {
+  /* Surface */
+  --nerv-background: #f7f4ee;       /* 暖白战术背景 */
+  --nerv-foreground: #1a1208;       /* 深棕黑文字 */
+  --nerv-card: #ffffff;             /* 卡片白 */
+  --nerv-card-foreground: #1a1208;  /* 卡片文字 */
+  --nerv-popover: #ffffff;
+  --nerv-popover-foreground: #1a1208;
+
+  /* Primary — Hot Orange / 警报橙 */
+  --nerv-primary: #ff5a00;
+  --nerv-primary-foreground: #ffffff;
+
+  /* Muted */
+  --nerv-muted: #f0ebe0;            /* 暖灰底 */
+  --nerv-muted-foreground: #8c7a60; /* 暖灰文字 */
+
+  /* Structure */
+  --nerv-border: #e0d8c8;           /* 暖卡其边框 */
+  --nerv-input: #e0d8c8;
+  --nerv-ring: #ff5a00;
+
+  /* Radius — Sharp NERV geometry */
+  --nerv-radius-sm: 2px;
+  --nerv-radius-md: 4px;
+  --nerv-radius-lg: 6px;
+
+  /* State Colors */
+  --nerv-success: #7cff6b;
+  --nerv-success-foreground: #0a2e00;
+  --nerv-warning: #ffb700;
+  --nerv-warning-foreground: #2e1a00;
+  --nerv-error: #ff1f4f;
+  --nerv-error-foreground: #ffffff;
+  --nerv-info: #ffb15a;
+  --nerv-info-foreground: #1a0a00;
+
+  /* NERV Tactical Extras */
+  --nerv-rail: #ff5a00;             /* 状态轨 */
+  --nerv-grid: rgba(255, 90, 0, 0.04);  /* 战术网格 */
+  --nerv-scanline: rgba(0, 0, 0, 0.02); /* 扫描线 */
+}
+
+/* ============================================
+   Dark Mode (夜间模式) — NERV Command Center
+   ============================================ */
+.dark {
+  /* Surface */
+  --nerv-background: #030100;       /* CRT 黑色虚空 */
+  --nerv-foreground: #ffe7bc;       /* 淡黄磷光文字 */
+  --nerv-card: #0b0502;             /* 面板黑棕 */
+  --nerv-card-foreground: #ffe7bc;
+  --nerv-popover: #160a03;
+  --nerv-popover-foreground: #ffe7bc;
+
+  /* Primary */
+  --nerv-primary: #ff5a00;
+  --nerv-primary-foreground: #030100;
+
+  /* Muted */
+  --nerv-muted: #160a03;            /* 暗控制填充 */
+  --nerv-muted-foreground: #c89452; /* 暖棕次文字 */
+
+  /* Structure */
+  --nerv-border: #5f2709;           /* 低亮橙色结构线 */
+  --nerv-input: #5f2709;
+  --nerv-ring: #ff7a00;             /* 热橙聚焦 */
+
+  /* State Colors */
+  --nerv-success: #7cff6b;
+  --nerv-success-foreground: #0a2e00;
+  --nerv-warning: #ffd56f;
+  --nerv-warning-foreground: #1a0a00;
+  --nerv-error: #ff1f4f;
+  --nerv-error-foreground: #030100;
+  --nerv-info: #ffb15a;
+  --nerv-info-foreground: #030100;
+
+  /* NERV Tactical Extras */
+  --nerv-rail: #ff5a00;
+  --nerv-grid: rgba(255, 90, 0, 0.06);
+  --nerv-scanline: rgba(255, 90, 0, 0.03);
+}
+
+/* ============================================
+   System preference fallback (legacy)
+   ============================================ */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --nerv-background: #030100;
+    --nerv-foreground: #ffe7bc;
+    --nerv-card: #0b0502;
+    --nerv-card-foreground: #ffe7bc;
+    --nerv-popover: #160a03;
+    --nerv-popover-foreground: #ffe7bc;
+    --nerv-primary: #ff5a00;
+    --nerv-primary-foreground: #030100;
+    --nerv-muted: #160a03;
+    --nerv-muted-foreground: #c89452;
+    --nerv-border: #5f2709;
+    --nerv-input: #5f2709;
+    --nerv-ring: #ff7a00;
+  }
+}
+
+/* ============================================
+   Global Base Styles
+   ============================================ */
+html {
+  background-color: var(--nerv-background);
+  color: var(--nerv-foreground);
+  transition: background-color 500ms ease, color 500ms ease;
+}
+
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, "PingFang SC",
+    "Microsoft YaHei", system-ui, sans-serif;
+  background-color: var(--nerv-background);
+  color: var(--nerv-foreground);
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--nerv-background);
+    --color-foreground: var(--nerv-foreground);
+    --color-card: var(--nerv-card);
+    --color-card-foreground: var(--nerv-card-foreground);
+    --color-popover: var(--nerv-popover);
+    --color-popover-foreground: var(--nerv-popover-foreground);
+    --color-primary: var(--nerv-primary);
+    --color-primary-foreground: var(--nerv-primary-foreground);
+    --color-muted: var(--nerv-muted);
+    --color-muted-foreground: var(--nerv-muted-foreground);
+    --color-border: var(--nerv-border);
+    --color-input: var(--nerv-input);
+    --color-ring: var(--nerv-ring);
+    --radius-sm: var(--nerv-radius-sm);
+    --radius-md: var(--nerv-radius-md);
+    --radius-lg: var(--nerv-radius-lg);
+  }
+  @layer base {
+    body { background: var(--nerv-background); color: var(--nerv-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--nerv-background); }
+      .text-background { color: var(--nerv-background); }
+      .border-background { border-color: var(--nerv-background); }
+      .ring-background { --tw-ring-color: var(--nerv-background); }
+      .bg-foreground { background-color: var(--nerv-foreground); }
+      .text-foreground { color: var(--nerv-foreground); }
+      .border-foreground { border-color: var(--nerv-foreground); }
+      .ring-foreground { --tw-ring-color: var(--nerv-foreground); }
+      .bg-card { background-color: var(--nerv-card); }
+      .text-card { color: var(--nerv-card); }
+      .border-card { border-color: var(--nerv-card); }
+      .ring-card { --tw-ring-color: var(--nerv-card); }
+      .bg-card-foreground { background-color: var(--nerv-card-foreground); }
+      .text-card-foreground { color: var(--nerv-card-foreground); }
+      .border-card-foreground { border-color: var(--nerv-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--nerv-card-foreground); }
+      .bg-popover { background-color: var(--nerv-popover); }
+      .text-popover { color: var(--nerv-popover); }
+      .border-popover { border-color: var(--nerv-popover); }
+      .ring-popover { --tw-ring-color: var(--nerv-popover); }
+      .bg-popover-foreground { background-color: var(--nerv-popover-foreground); }
+      .text-popover-foreground { color: var(--nerv-popover-foreground); }
+      .border-popover-foreground { border-color: var(--nerv-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--nerv-popover-foreground); }
+      .bg-primary { background-color: var(--nerv-primary); }
+      .text-primary { color: var(--nerv-primary); }
+      .border-primary { border-color: var(--nerv-primary); }
+      .ring-primary { --tw-ring-color: var(--nerv-primary); }
+      .bg-primary-foreground { background-color: var(--nerv-primary-foreground); }
+      .text-primary-foreground { color: var(--nerv-primary-foreground); }
+      .border-primary-foreground { border-color: var(--nerv-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--nerv-primary-foreground); }
+      .bg-muted { background-color: var(--nerv-muted); }
+      .text-muted { color: var(--nerv-muted); }
+      .border-muted { border-color: var(--nerv-muted); }
+      .ring-muted { --tw-ring-color: var(--nerv-muted); }
+      .bg-muted-foreground { background-color: var(--nerv-muted-foreground); }
+      .text-muted-foreground { color: var(--nerv-muted-foreground); }
+      .border-muted-foreground { border-color: var(--nerv-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--nerv-muted-foreground); }
+      .bg-border { background-color: var(--nerv-border); }
+      .text-border { color: var(--nerv-border); }
+      .border-border { border-color: var(--nerv-border); }
+      .ring-border { --tw-ring-color: var(--nerv-border); }
+      .bg-input { background-color: var(--nerv-input); }
+      .text-input { color: var(--nerv-input); }
+      .border-input { border-color: var(--nerv-input); }
+      .ring-input { --tw-ring-color: var(--nerv-input); }
+      .bg-ring { background-color: var(--nerv-ring); }
+      .text-ring { color: var(--nerv-ring); }
+      .border-ring { border-color: var(--nerv-ring); }
+      .ring-ring { --tw-ring-color: var(--nerv-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <main>
+    </main>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

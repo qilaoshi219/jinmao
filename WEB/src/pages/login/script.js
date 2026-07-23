@@ -33,9 +33,10 @@
 // 上次修改：2026-07-06（按 design-spec 重构：拆分为 isSending/isSubmitting）
 // ============================================================================
 
-import { ref, computed } from "vue"; // Vue 3 响应式 API：ref(响应式变量), computed(计算属性)
+import { ref, computed, onMounted } from "vue"; // Vue 3 响应式 API：ref(响应式变量), computed(计算属性), onMounted(生命周期)
 import { useAuthStore } from "../../stores/auth"; // Pinia 认证 Store：管理 token、登录状态
 import { sendCode } from "../../api/auth"; // 发送验证码的 HTTP API 封装
+import { useTheme } from "../../composables/useTheme"; // 主题切换 composable
 
 // ============================================================================
 // 一、常量定义
@@ -73,6 +74,8 @@ export default {
 
     // 获取认证 Store 实例，提供 login/logout/isLoggedIn/user 等能力
     const authStore = useAuthStore();
+    // 主题切换
+    const { isDark, toggleTheme } = useTheme();
 
     // ========================================================================
     // 四、表单响应式数据（ref 包裹，修改后自动触发视图更新）
@@ -392,9 +395,21 @@ export default {
     //     这些值会被 Vue SFC 编译器自动绑定到模板上下文
     // ========================================================================
 
-    console.log(TAG + " 登录注册页面组件已初始化（design-spec 重构版）");
+    console.log(TAG + " 登录注册页面组件已初始化（NERV 设计重构版）");
+
+    // ========================================================================
+    // 十一、生命周期 — 绑定主题切换按钮
+    // ========================================================================
+    onMounted(() => {
+      const btn = document.getElementById("theme-toggle");
+      if (btn) { btn.addEventListener("click", toggleTheme); }
+    });
 
     return {
+      // --- 主题 ---
+      isDark,
+      toggleTheme,
+
       // --- 表单数据 ---
       email,
       code,

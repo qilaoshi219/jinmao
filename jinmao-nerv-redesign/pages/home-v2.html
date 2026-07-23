@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>首页 - 金毛教你学</title>
+    <style id="theme-vars">
+/* NERV Command Interface — Blue Theme Design Tokens */
+/* 金毛教你学 蓝色NERV风格设计系统 */
+
+/* ============================================
+   Light Mode (日间模式) — Tactical Cool White
+   ============================================ */
+:root {
+  /* Surface */
+  --nerv-background: #f4f6f9;       /* 冷白战术背景 */
+  --nerv-foreground: #141a24;       /* 深蓝黑文字 */
+  --nerv-card: #ffffff;             /* 卡片白 */
+  --nerv-card-foreground: #141a24;  /* 卡片文字 */
+  --nerv-popover: #ffffff;
+  --nerv-popover-foreground: #141a24;
+
+  /* Primary — Command Blue / 指令蓝 */
+  --nerv-primary: #3488ea;
+  --nerv-primary-foreground: #ffffff;
+
+  /* Muted */
+  --nerv-muted: #edf1f7;            /* 冷灰底 */
+  --nerv-muted-foreground: #6b7c95; /* 冷灰文字 */
+
+  /* Structure */
+  --nerv-border: #dce3ed;           /* 冷蓝灰边框 */
+  --nerv-input: #dce3ed;
+  --nerv-ring: #3488ea;
+
+  /* Radius — Sharp NERV geometry */
+  --nerv-radius-sm: 2px;
+  --nerv-radius-md: 4px;
+  --nerv-radius-lg: 6px;
+
+  /* State Colors */
+  --nerv-success: #22c55e;
+  --nerv-success-foreground: #052e16;
+  --nerv-warning: #f59e0b;
+  --nerv-warning-foreground: #2e1a00;
+  --nerv-error: #ef4444;
+  --nerv-error-foreground: #ffffff;
+  --nerv-info: #38bdf8;
+  --nerv-info-foreground: #082f49;
+
+  /* NERV Tactical Extras */
+  --nerv-rail: #3488ea;             /* 蓝色状态轨 */
+  --nerv-grid: rgba(52, 136, 234, 0.04);  /* 蓝色战术网格 */
+  --nerv-scanline: rgba(0, 0, 0, 0.02);   /* 扫描线 */
+}
+
+/* ============================================
+   Dark Mode (夜间模式) — Blue NERV Command Center
+   ============================================ */
+.dark {
+  /* Surface */
+  --nerv-background: #0a0e14;       /* 深蓝黑虚空 */
+  --nerv-foreground: #e8f0fe;       /* 冷蓝白磷光文字 */
+  --nerv-card: #11161d;             /* 面板深蓝黑 */
+  --nerv-card-foreground: #e8f0fe;
+  --nerv-popover: #161c26;
+  --nerv-popover-foreground: #e8f0fe;
+
+  /* Primary */
+  --nerv-primary: #3488ea;
+  --nerv-primary-foreground: #ffffff;
+
+  /* Muted */
+  --nerv-muted: #161c26;            /* 暗控制填充 */
+  --nerv-muted-foreground: #7b8faa; /* 冷蓝灰次文字 */
+
+  /* Structure */
+  --nerv-border: #1e293b;           /* 暗蓝灰结构线 */
+  --nerv-input: #1e293b;
+  --nerv-ring: #60a5fa;             /* 亮蓝聚焦 */
+
+  /* State Colors */
+  --nerv-success: #4ade80;
+  --nerv-success-foreground: #052e16;
+  --nerv-warning: #fbbf24;
+  --nerv-warning-foreground: #1a0a00;
+  --nerv-error: #f87171;
+  --nerv-error-foreground: #0a0e14;
+  --nerv-info: #38bdf8;
+  --nerv-info-foreground: #0a0e14;
+
+  /* NERV Tactical Extras */
+  --nerv-rail: #3488ea;
+  --nerv-grid: rgba(52, 136, 234, 0.06);
+  --nerv-scanline: rgba(52, 136, 234, 0.03);
+}
+
+/* ============================================
+   System preference fallback (legacy)
+   ============================================ */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --nerv-background: #0a0e14;
+    --nerv-foreground: #e8f0fe;
+    --nerv-card: #11161d;
+    --nerv-card-foreground: #e8f0fe;
+    --nerv-popover: #161c26;
+    --nerv-popover-foreground: #e8f0fe;
+    --nerv-primary: #3488ea;
+    --nerv-primary-foreground: #ffffff;
+    --nerv-muted: #161c26;
+    --nerv-muted-foreground: #7b8faa;
+    --nerv-border: #1e293b;
+    --nerv-input: #1e293b;
+    --nerv-ring: #60a5fa;
+  }
+}
+
+/* ============================================
+   Global Base Styles
+   ============================================ */
+html {
+  background-color: var(--nerv-background);
+  color: var(--nerv-foreground);
+  transition: background-color 500ms ease, color 500ms ease;
+}
+
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, "PingFang SC",
+    "Microsoft YaHei", system-ui, sans-serif;
+  background-color: var(--nerv-background);
+  color: var(--nerv-foreground);
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--nerv-background);
+    --color-foreground: var(--nerv-foreground);
+    --color-card: var(--nerv-card);
+    --color-card-foreground: var(--nerv-card-foreground);
+    --color-popover: var(--nerv-popover);
+    --color-popover-foreground: var(--nerv-popover-foreground);
+    --color-primary: var(--nerv-primary);
+    --color-primary-foreground: var(--nerv-primary-foreground);
+    --color-muted: var(--nerv-muted);
+    --color-muted-foreground: var(--nerv-muted-foreground);
+    --color-border: var(--nerv-border);
+    --color-input: var(--nerv-input);
+    --color-ring: var(--nerv-ring);
+    --radius-sm: var(--nerv-radius-sm);
+    --radius-md: var(--nerv-radius-md);
+    --radius-lg: var(--nerv-radius-lg);
+  }
+  @layer base {
+    body { background: var(--nerv-background); color: var(--nerv-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--nerv-background); }
+      .text-background { color: var(--nerv-background); }
+      .border-background { border-color: var(--nerv-background); }
+      .ring-background { --tw-ring-color: var(--nerv-background); }
+      .bg-foreground { background-color: var(--nerv-foreground); }
+      .text-foreground { color: var(--nerv-foreground); }
+      .border-foreground { border-color: var(--nerv-foreground); }
+      .ring-foreground { --tw-ring-color: var(--nerv-foreground); }
+      .bg-card { background-color: var(--nerv-card); }
+      .text-card { color: var(--nerv-card); }
+      .border-card { border-color: var(--nerv-card); }
+      .ring-card { --tw-ring-color: var(--nerv-card); }
+      .bg-card-foreground { background-color: var(--nerv-card-foreground); }
+      .text-card-foreground { color: var(--nerv-card-foreground); }
+      .border-card-foreground { border-color: var(--nerv-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--nerv-card-foreground); }
+      .bg-popover { background-color: var(--nerv-popover); }
+      .text-popover { color: var(--nerv-popover); }
+      .border-popover { border-color: var(--nerv-popover); }
+      .ring-popover { --tw-ring-color: var(--nerv-popover); }
+      .bg-popover-foreground { background-color: var(--nerv-popover-foreground); }
+      .text-popover-foreground { color: var(--nerv-popover-foreground); }
+      .border-popover-foreground { border-color: var(--nerv-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--nerv-popover-foreground); }
+      .bg-primary { background-color: var(--nerv-primary); }
+      .text-primary { color: var(--nerv-primary); }
+      .border-primary { border-color: var(--nerv-primary); }
+      .ring-primary { --tw-ring-color: var(--nerv-primary); }
+      .bg-primary-foreground { background-color: var(--nerv-primary-foreground); }
+      .text-primary-foreground { color: var(--nerv-primary-foreground); }
+      .border-primary-foreground { border-color: var(--nerv-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--nerv-primary-foreground); }
+      .bg-muted { background-color: var(--nerv-muted); }
+      .text-muted { color: var(--nerv-muted); }
+      .border-muted { border-color: var(--nerv-muted); }
+      .ring-muted { --tw-ring-color: var(--nerv-muted); }
+      .bg-muted-foreground { background-color: var(--nerv-muted-foreground); }
+      .text-muted-foreground { color: var(--nerv-muted-foreground); }
+      .border-muted-foreground { border-color: var(--nerv-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--nerv-muted-foreground); }
+      .bg-border { background-color: var(--nerv-border); }
+      .text-border { color: var(--nerv-border); }
+      .border-border { border-color: var(--nerv-border); }
+      .ring-border { --tw-ring-color: var(--nerv-border); }
+      .bg-input { background-color: var(--nerv-input); }
+      .text-input { color: var(--nerv-input); }
+      .border-input { border-color: var(--nerv-input); }
+      .ring-input { --tw-ring-color: var(--nerv-input); }
+      .bg-ring { background-color: var(--nerv-ring); }
+      .text-ring { color: var(--nerv-ring); }
+      .border-ring { border-color: var(--nerv-ring); }
+      .ring-ring { --tw-ring-color: var(--nerv-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <!-- ========== Topbar ========== -->
+    <header class="sticky top-0 z-50 h-14 bg-card border-b border-border flex items-center px-4 gap-3 transition-colors duration-500">
+      <!-- Left: hamburger (mobile) + system label -->
+      <button id="sidebar-toggle" class="md:hidden flex items-center justify-center w-8 h-8 rounded-[2px] hover:bg-muted transition-colors duration-500" aria-label="Toggle sidebar">
+        <i data-lucide="menu" class="w-5 h-5 text-foreground"></i>
+      </button>
+      <div class="hidden md:flex flex-col gap-0.5 min-w-0">
+        <span class="font-mono text-[11px] tracking-[0.15em] text-muted-foreground leading-none whitespace-nowrap">金毛 · 自学空间</span>
+        <span class="w-12 h-[2px] rounded-[1px]" style="background-color:var(--nerv-rail)"></span>
+      </div>
+      <!-- Center: search -->
+      <div class="flex-1 flex justify-center">
+        <div class="relative w-full max-w-md">
+          <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"></i>
+          <input type="text" placeholder="搜索教材..." class="w-full h-9 pl-9 pr-3 rounded-[2px] text-sm bg-muted border border-input text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring transition-colors duration-500">
+        </div>
+      </div>
+      <!-- Right: theme toggle + user avatar dropdown -->
+      <div class="flex items-center gap-3 shrink-0">
+        <button data-dom-id="theme-toggle" id="theme-toggle" class="flex items-center justify-center w-9 h-9 rounded-[2px] border border-border bg-card hover:bg-muted transition-colors duration-500" aria-label="Toggle theme">
+          <i data-lucide="sun" class="w-4 h-4 text-foreground hidden dark:block"></i>
+          <i data-lucide="moon" class="w-4 h-4 text-foreground block dark:hidden"></i>
+        </button>
+        <!-- User avatar dropdown trigger -->
+        <div class="relative">
+          <button data-dom-id="user-menu-trigger" id="user-menu-trigger" class="flex items-center justify-center w-8 h-8 rounded-[2px] text-xs font-bold uppercase transition-colors duration-500 hover:opacity-90" style="background-color:var(--nerv-primary);color:var(--nerv-primary-foreground)" aria-label="User menu">
+            明
+          </button>
+          <!-- Avatar dropdown menu -->
+          <div id="user-dropdown" class="hidden absolute right-0 top-full mt-1.5 w-52 rounded-[2px] border border-border shadow-lg transition-colors duration-500 z-50" style="background-color:var(--nerv-popover)">
+            <div class="px-4 py-3 border-b border-border">
+              <div class="text-sm font-medium text-foreground">小明</div>
+              <div class="text-[11px] text-muted-foreground mt-0.5">xiaoming@example.com</div>
+            </div>
+            <div class="py-1">
+              <button data-dom-id="nav-logout-v2" id="nav-logout-v2" class="w-full flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500">
+                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                <span>退出登录</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ========== Layout Wrapper ========== -->
+    <div class="flex min-h-[calc(100vh-3.5rem)]">
+      <!-- ========== Sidebar Overlay (mobile) ========== -->
+      <div id="sidebar-overlay" class="hidden fixed inset-0 z-40 bg-black/40 transition-opacity duration-500" aria-hidden="true"></div>
+
+      <!-- ========== Sidebar ========== -->
+      <aside id="sidebar" class="fixed md:sticky top-14 left-0 z-40 w-56 h-[calc(100vh-3.5rem)] bg-card border-r border-border flex flex-col transition-all duration-500 -translate-x-full md:translate-x-0 overflow-y-auto no-scrollbar">
+        <!-- Sidebar header -->
+        <div class="px-4 pt-5 pb-3 border-b border-border">
+          <div class="text-lg font-bold tracking-wider" style="color:var(--nerv-foreground)">金毛教你学</div>
+          <div class="text-[10px] font-mono tracking-[0.2em] mt-0.5" style="color:var(--nerv-primary)">自学平台</div>
+        </div>
+        <!-- Navigation -->
+        <nav class="flex-1 py-3">
+          <ul class="flex flex-col gap-0.5">
+            <!-- Active nav item: 我的教材 -->
+            <li>
+              <a href="#" class="relative flex items-center gap-3 px-4 py-2.5 text-sm transition-colors duration-500" style="color:var(--nerv-foreground);background-color:var(--nerv-muted)">
+                <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+                <i data-lucide="book-open" class="w-4 h-4"></i>
+                <span class="font-medium">我的教材</span>
+              </a>
+            </li>
+            <li>
+              <a href="#" class="relative flex items-center gap-3 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-500 rounded-[2px] mx-2">
+                <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                <span>数据概览</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+        <!-- Sidebar footer: membership info -->
+        <div class="px-4 py-3 border-t border-border space-y-3">
+          <!-- Membership badge -->
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-mono font-bold tracking-wider bg-muted text-muted-foreground">免费版</span>
+          </div>
+          <!-- Points progress -->
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-muted-foreground">积分</span>
+              <span class="text-foreground font-mono">320 / 500</span>
+            </div>
+            <div class="w-full h-[3px] rounded-[1px] bg-muted overflow-hidden">
+              <div class="h-full rounded-[1px] transition-all duration-500" style="width:64%;background-color:var(--nerv-primary)"></div>
+            </div>
+          </div>
+        </div>
+        <!-- 系统设置 at the very bottom -->
+        <div class="px-4 pb-4">
+          <a href="#" class="flex items-center gap-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-500">
+            <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+            <span>系统设置</span>
+          </a>
+        </div>
+      </aside>
+
+      <!-- ========== Main Content ========== -->
+      <main class="flex-1 min-w-0 relative" style="background-image:linear-gradient(var(--nerv-grid) 1px,transparent 1px),linear-gradient(90deg,var(--nerv-grid) 1px,transparent 1px);background-size:32px 32px">
+        <div class="p-4 md:p-6 space-y-6">
+
+          <!-- Stats Row -->
+          <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Stat 1: 拥有教材数 -->
+            <div class="relative bg-card border border-border rounded-[2px] p-4 transition-colors duration-500">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="flex flex-col gap-1">
+                <span class="text-xs text-muted-foreground tracking-wider">拥有教材数</span>
+                <span class="text-3xl font-bold text-foreground">12</span>
+                <span class="inline-flex items-center self-start gap-1 px-2 py-0.5 rounded-[2px] text-[10px] font-mono font-bold tracking-wider" style="background-color:var(--nerv-success);color:var(--nerv-success-foreground)">正常</span>
+              </div>
+            </div>
+            <!-- Stat 2: 总答题数 -->
+            <div class="relative bg-card border border-border rounded-[2px] p-4 transition-colors duration-500">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="flex flex-col gap-1">
+                <span class="text-xs text-muted-foreground tracking-wider">总答题数</span>
+                <span class="text-3xl font-bold text-foreground">1,286</span>
+                <span class="inline-flex items-center self-start gap-1 px-2 py-0.5 rounded-[2px] text-[10px] font-mono font-bold tracking-wider" style="background-color:var(--nerv-info);color:var(--nerv-info-foreground)">活跃</span>
+              </div>
+            </div>
+            <!-- Stat 3: 连续签到天数 -->
+            <div class="relative bg-card border border-border rounded-[2px] p-4 transition-colors duration-500">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="flex flex-col gap-1">
+                <span class="text-xs text-muted-foreground tracking-wider">连续签到天数</span>
+                <span class="text-3xl font-bold text-foreground">7</span>
+                <span class="inline-flex items-center self-start gap-1 px-2 py-0.5 rounded-[2px] text-[10px] font-mono font-bold tracking-wider" style="background-color:var(--nerv-warning);color:var(--nerv-warning-foreground)">继续加油</span>
+              </div>
+            </div>
+            <!-- Stat 4: 答题正确率 -->
+            <div class="relative bg-card border border-border rounded-[2px] p-4 transition-colors duration-500">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="flex flex-col gap-2">
+                <span class="text-xs text-muted-foreground tracking-wider">答题正确率</span>
+                <span class="text-3xl font-bold text-foreground">78.5<span class="text-lg text-muted-foreground font-normal">%</span></span>
+                <div class="w-full h-[3px] rounded-[1px] bg-muted overflow-hidden">
+                  <div class="h-full rounded-[1px] transition-all duration-500" style="width:78.5%;background-color:var(--nerv-primary)"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Section Header: 教材列表 -->
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <!-- Corner bracket left -->
+              <span class="hidden sm:flex items-center gap-0">
+                <span class="w-2 h-[14px] border-l-2 border-t-2 border-muted-foreground rounded-tl-[2px]"></span>
+              </span>
+              <h2 class="text-base font-bold tracking-[0.1em] text-foreground">教材列表</h2>
+              <!-- Corner bracket right -->
+              <span class="hidden sm:flex items-center gap-0">
+                <span class="w-2 h-[14px] border-r-2 border-t-2 border-muted-foreground rounded-tr-[2px]"></span>
+              </span>
+            </div>
+            <button data-dom-id="upload-book" class="flex items-center gap-2 h-9 px-4 rounded-[2px] text-sm font-bold tracking-wider transition-colors duration-500" style="background-color:var(--nerv-primary);color:var(--nerv-primary-foreground)">
+              <i data-lucide="upload" class="w-4 h-4"></i>
+              <span>上传教材</span>
+            </button>
+          </div>
+
+          <!-- Course Grid -->
+          <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+            <!-- Course 1: 高等数学第一章 — 已完成 -->
+            <a href="#" data-dom-id="course-card-1" class="relative bg-card border border-border rounded-[2px] transition-colors duration-500 flex flex-col no-underline hover:border-primary/50 group">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <!-- Cover image placeholder -->
+              <div class="h-36 rounded-t-[2px] flex items-center justify-center relative overflow-hidden" style="background:linear-gradient(135deg,#3488ea 0%,#1d4ed8 50%,#1e3a5f 100%)">
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <span class="text-white/80 text-2xl font-bold tracking-wider select-none">高等数学</span>
+                </div>
+                <div class="absolute inset-0" style="background:linear-gradient(var(--nerv-scanline) 1px,transparent 1px);background-size:100% 4px"></div>
+              </div>
+              <!-- Card body -->
+              <div class="p-4 flex flex-col gap-3 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <h3 class="text-sm font-bold text-foreground leading-snug truncate">高等数学第一章</h3>
+                  <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-bold tracking-wider" style="background-color:var(--nerv-success);color:var(--nerv-success-foreground)">已完成</span>
+                </div>
+                <div class="flex items-center gap-3 text-[11px] text-muted-foreground tracking-wide flex-wrap">
+              <span>共 12 章</span>
+              <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+              <span>上次学习 07-20</span>
+              <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+              <span>已学到第 8 章</span>
+            </div>
+            <div class="w-full h-[3px] rounded-[1px] bg-muted overflow-hidden">
+              <div class="h-full rounded-[1px]" style="width:100%;background-color:var(--nerv-success)"></div>
+            </div>
+            <!-- Three-dot menu trigger -->
+                <div class="relative self-end">
+                  <button data-dom-id="card-menu-1" class="card-menu-btn flex items-center justify-center w-7 h-7 rounded-[2px] border border-border bg-transparent hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-500" aria-label="更多操作" onclick="event.preventDefault();event.stopPropagation();">
+                    <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                  </button>
+                  <div class="card-dropdown hidden absolute right-0 bottom-full mb-1 w-36 rounded-[2px] border border-border shadow-lg transition-colors duration-500 z-50" style="background-color:var(--nerv-popover)">
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">删除课程</button>
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">重新生成</button>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+            <!-- Course 2: 线性代数基础 — 处理中 -->
+            <a href="#" class="relative bg-card border border-border rounded-[2px] transition-colors duration-500 flex flex-col no-underline hover:border-primary/50 group">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="h-36 rounded-t-[2px] flex items-center justify-center relative overflow-hidden" style="background:linear-gradient(135deg,#7c3aed 0%,#5b21b6 50%,#3b0764 100%)">
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <span class="text-white/80 text-2xl font-bold tracking-wider select-none">线性代数</span>
+                </div>
+                <div class="absolute inset-0" style="background:linear-gradient(var(--nerv-scanline) 1px,transparent 1px);background-size:100% 4px"></div>
+              </div>
+              <div class="p-4 flex flex-col gap-3 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <h3 class="text-sm font-bold text-foreground leading-snug truncate">线性代数基础</h3>
+                  <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-bold tracking-wider" style="background-color:var(--nerv-warning);color:var(--nerv-warning-foreground)">处理中</span>
+                </div>
+                <div class="flex items-center gap-3 text-[11px] text-muted-foreground tracking-wide flex-wrap">
+                  <span>共 8 章</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>上次学习 07-19</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>已学到第 3 章</span>
+                </div>
+                <div class="w-full h-[3px] rounded-[1px] bg-muted overflow-hidden">
+                  <div class="h-full rounded-[1px] transition-all duration-500" style="width:65%;background-color:var(--nerv-primary)"></div>
+                </div>
+                <!-- 生成状态提示 -->
+                <p class="text-[10px] text-muted-foreground font-mono tracking-wider">正在生成 PPT 课件...</p>
+                <div class="relative self-end">
+                  <button data-dom-id="card-menu-2" class="card-menu-btn flex items-center justify-center w-7 h-7 rounded-[2px] border border-border bg-transparent hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-500" aria-label="更多操作" onclick="event.preventDefault();event.stopPropagation();">
+                    <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                  </button>
+                  <div class="card-dropdown hidden absolute right-0 bottom-full mb-1 w-36 rounded-[2px] border border-border shadow-lg transition-colors duration-500 z-50" style="background-color:var(--nerv-popover)">
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">删除课程</button>
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">重新生成</button>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+            <!-- Course 3: 大学物理力学 — 已完成 -->
+            <a href="#" class="relative bg-card border border-border rounded-[2px] transition-colors duration-500 flex flex-col no-underline hover:border-primary/50 group">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="h-36 rounded-t-[2px] flex items-center justify-center relative overflow-hidden" style="background:linear-gradient(135deg,#0d9488 0%,#0f766e 50%,#042f2e 100%)">
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <span class="text-white/80 text-2xl font-bold tracking-wider select-none">物理</span>
+                </div>
+                <div class="absolute inset-0" style="background:linear-gradient(var(--nerv-scanline) 1px,transparent 1px);background-size:100% 4px"></div>
+              </div>
+              <div class="p-4 flex flex-col gap-3 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <h3 class="text-sm font-bold text-foreground leading-snug truncate">大学物理力学</h3>
+                  <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-bold tracking-wider" style="background-color:var(--nerv-success);color:var(--nerv-success-foreground)">已完成</span>
+                </div>
+                <div class="flex items-center gap-3 text-[11px] text-muted-foreground tracking-wide flex-wrap">
+                  <span>共 16 章</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>上次学习 07-18</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>已学到第 12 章</span>
+                </div>
+                <div class="w-full h-[3px] rounded-[1px] bg-muted overflow-hidden">
+                  <div class="h-full rounded-[1px]" style="width:100%;background-color:var(--nerv-success)"></div>
+                </div>
+                <div class="relative self-end">
+                  <button data-dom-id="card-menu-3" class="card-menu-btn flex items-center justify-center w-7 h-7 rounded-[2px] border border-border bg-transparent hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-500" aria-label="更多操作" onclick="event.preventDefault();event.stopPropagation();">
+                    <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                  </button>
+                  <div class="card-dropdown hidden absolute right-0 bottom-full mb-1 w-36 rounded-[2px] border border-border shadow-lg transition-colors duration-500 z-50" style="background-color:var(--nerv-popover)">
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">删除课程</button>
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">重新生成</button>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+            <!-- Course 4: 英语四级词汇 — 出错 -->
+            <a href="#" class="relative bg-card border border-border rounded-[2px] transition-colors duration-500 flex flex-col no-underline hover:border-primary/50 group">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="h-36 rounded-t-[2px] flex items-center justify-center relative overflow-hidden" style="background:linear-gradient(135deg,#d97706 0%,#b45309 50%,#451a03 100%)">
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <span class="text-white/80 text-2xl font-bold tracking-wider select-none">English</span>
+                </div>
+                <div class="absolute inset-0" style="background:linear-gradient(var(--nerv-scanline) 1px,transparent 1px);background-size:100% 4px"></div>
+              </div>
+              <div class="p-4 flex flex-col gap-3 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <h3 class="text-sm font-bold text-foreground leading-snug truncate">英语四级词汇</h3>
+                  <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-bold tracking-wider" style="background-color:var(--nerv-error);color:var(--nerv-error-foreground)">出错</span>
+                </div>
+                <div class="flex items-center gap-3 text-[11px] text-muted-foreground tracking-wide flex-wrap">
+                  <span>共 24 章</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>上次学习 07-17</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>已学到第 5 章</span>
+                </div>
+                <div class="w-full h-[3px] rounded-[1px] bg-muted overflow-hidden">
+                  <div class="h-full rounded-[1px]" style="width:100%;background-color:var(--nerv-error)"></div>
+                </div>
+                <!-- 生成状态提示 -->
+                <p class="text-[10px] text-muted-foreground font-mono tracking-wider">生成失败，请重试</p>
+                <div class="relative self-end">
+                  <button data-dom-id="card-menu-4" class="card-menu-btn flex items-center justify-center w-7 h-7 rounded-[2px] border border-border bg-transparent hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-500" aria-label="更多操作" onclick="event.preventDefault();event.stopPropagation();">
+                    <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                  </button>
+                  <div class="card-dropdown hidden absolute right-0 bottom-full mb-1 w-36 rounded-[2px] border border-border shadow-lg transition-colors duration-500 z-50" style="background-color:var(--nerv-popover)">
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">删除课程</button>
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">重新生成</button>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+            <!-- Course 5: 计算机网络原理 — 处理中 -->
+            <a href="#" class="relative bg-card border border-border rounded-[2px] transition-colors duration-500 flex flex-col no-underline hover:border-primary/50 group">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="h-36 rounded-t-[2px] flex items-center justify-center relative overflow-hidden" style="background:linear-gradient(135deg,#4f46e5 0%,#3730a3 50%,#1e1b4b 100%)">
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <span class="text-white/80 text-2xl font-bold tracking-wider select-none">网络</span>
+                </div>
+                <div class="absolute inset-0" style="background:linear-gradient(var(--nerv-scanline) 1px,transparent 1px);background-size:100% 4px"></div>
+              </div>
+              <div class="p-4 flex flex-col gap-3 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <h3 class="text-sm font-bold text-foreground leading-snug truncate">计算机网络原理</h3>
+                  <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-bold tracking-wider" style="background-color:var(--nerv-warning);color:var(--nerv-warning-foreground)">处理中</span>
+                </div>
+                <div class="flex items-center gap-3 text-[11px] text-muted-foreground tracking-wide flex-wrap">
+                  <span>共 10 章</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>上次学习 07-16</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>已学到第 2 章</span>
+                </div>
+                <div class="w-full h-[3px] rounded-[1px] bg-muted overflow-hidden">
+                  <div class="h-full rounded-[1px] transition-all duration-500" style="width:30%;background-color:var(--nerv-primary)"></div>
+                </div>
+                <!-- 生成状态提示 -->
+                <p class="text-[10px] text-muted-foreground font-mono tracking-wider">正在生成语音字幕...</p>
+                <div class="relative self-end">
+                  <button data-dom-id="card-menu-5" class="card-menu-btn flex items-center justify-center w-7 h-7 rounded-[2px] border border-border bg-transparent hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-500" aria-label="更多操作" onclick="event.preventDefault();event.stopPropagation();">
+                    <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                  </button>
+                  <div class="card-dropdown hidden absolute right-0 bottom-full mb-1 w-36 rounded-[2px] border border-border shadow-lg transition-colors duration-500 z-50" style="background-color:var(--nerv-popover)">
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">删除课程</button>
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">重新生成</button>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+            <!-- Course 6: 数据结构与算法 — 已完成 -->
+            <a href="#" class="relative bg-card border border-border rounded-[2px] transition-colors duration-500 flex flex-col no-underline hover:border-primary/50 group">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-[1px]" style="background-color:var(--nerv-rail)"></span>
+              <div class="h-36 rounded-t-[2px] flex items-center justify-center relative overflow-hidden" style="background:linear-gradient(135deg,#e11d48 0%,#be123c 50%,#4c0519 100%)">
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <span class="text-white/80 text-2xl font-bold tracking-wider select-none">算法</span>
+                </div>
+                <div class="absolute inset-0" style="background:linear-gradient(var(--nerv-scanline) 1px,transparent 1px);background-size:100% 4px"></div>
+              </div>
+              <div class="p-4 flex flex-col gap-3 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <h3 class="text-sm font-bold text-foreground leading-snug truncate">数据结构与算法</h3>
+                  <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-bold tracking-wider" style="background-color:var(--nerv-success);color:var(--nerv-success-foreground)">已完成</span>
+                </div>
+                <div class="flex items-center gap-3 text-[11px] text-muted-foreground tracking-wide flex-wrap">
+                  <span>共 15 章</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>上次学习 07-15</span>
+                  <span class="w-px h-3 rounded-[0.5px]" style="background-color:var(--nerv-border)"></span>
+                  <span>已学到第 10 章</span>
+                </div>
+                <div class="w-full h-[3px] rounded-[1px] bg-muted overflow-hidden">
+                  <div class="h-full rounded-[1px]" style="width:100%;background-color:var(--nerv-success)"></div>
+                </div>
+                <div class="relative self-end">
+                  <button data-dom-id="card-menu-6" class="card-menu-btn flex items-center justify-center w-7 h-7 rounded-[2px] border border-border bg-transparent hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-500" aria-label="更多操作" onclick="event.preventDefault();event.stopPropagation();">
+                    <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                  </button>
+                  <div class="card-dropdown hidden absolute right-0 bottom-full mb-1 w-36 rounded-[2px] border border-border shadow-lg transition-colors duration-500 z-50" style="background-color:var(--nerv-popover)">
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">删除课程</button>
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors duration-500" onclick="event.preventDefault();event.stopPropagation();">重新生成</button>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <!-- ========== Scripts ========== -->
+    <script>
+      // ---- Theme toggle ----
+      (function() {
+        var toggle = document.getElementById('theme-toggle');
+        var html = document.documentElement;
+
+        // Restore saved theme preference
+        var saved = localStorage.getItem('nerv-theme');
+        if (saved === 'dark') {
+          html.classList.remove('light');
+          html.classList.add('dark');
+        } else if (saved === 'light') {
+          html.classList.add('light');
+          html.classList.remove('dark');
+        }
+
+        if (toggle) {
+          toggle.addEventListener('click', function() {
+            if (html.classList.contains('dark')) {
+              html.classList.remove('dark');
+              html.classList.add('light');
+              localStorage.setItem('nerv-theme', 'light');
+            } else {
+              html.classList.remove('light');
+              html.classList.add('dark');
+              localStorage.setItem('nerv-theme', 'dark');
+            }
+          });
+        }
+      })();
+
+      // ---- Mobile sidebar toggle ----
+      (function() {
+        var toggleBtn = document.getElementById('sidebar-toggle');
+        var sidebar = document.getElementById('sidebar');
+        var overlay = document.getElementById('sidebar-overlay');
+
+        if (toggleBtn && sidebar && overlay) {
+          function openSidebar() {
+            sidebar.classList.remove('-translate-x-full');
+            sidebar.classList.add('translate-x-0');
+            overlay.classList.remove('hidden');
+            overlay.classList.add('block');
+          }
+          function closeSidebar() {
+            sidebar.classList.add('-translate-x-full');
+            sidebar.classList.remove('translate-x-0');
+            overlay.classList.add('hidden');
+            overlay.classList.remove('block');
+          }
+
+          toggleBtn.addEventListener('click', function() {
+            if (sidebar.classList.contains('-translate-x-full')) {
+              openSidebar();
+            } else {
+              closeSidebar();
+            }
+          });
+
+          overlay.addEventListener('click', closeSidebar);
+        }
+      })();
+
+      // ---- User avatar dropdown ----
+      (function() {
+        var userTrigger = document.getElementById('user-menu-trigger');
+        var userDropdown = document.getElementById('user-dropdown');
+
+        if (userTrigger && userDropdown) {
+          userTrigger.addEventListener('click', function(e) {
+            e.stopPropagation();
+            userDropdown.classList.toggle('hidden');
+            // Close all card dropdowns when opening user dropdown
+            document.querySelectorAll('.card-dropdown').forEach(function(dd) {
+              dd.classList.add('hidden');
+            });
+          });
+
+          // Close dropdown when clicking anywhere else
+          document.addEventListener('click', function(e) {
+            if (!userTrigger.contains(e.target) && !userDropdown.contains(e.target)) {
+              userDropdown.classList.add('hidden');
+            }
+          });
+        }
+      })();
+
+      // ---- Card three-dot menus ----
+      (function() {
+        var cardMenuBtns = document.querySelectorAll('.card-menu-btn');
+
+        cardMenuBtns.forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var dropdown = btn.nextElementSibling;
+            if (!dropdown || !dropdown.classList.contains('card-dropdown')) return;
+
+            // Close user dropdown
+            var userDropdown = document.getElementById('user-dropdown');
+            if (userDropdown) userDropdown.classList.add('hidden');
+
+            // Close all other card dropdowns
+            document.querySelectorAll('.card-dropdown').forEach(function(dd) {
+              if (dd !== dropdown) dd.classList.add('hidden');
+            });
+
+            // Toggle current dropdown
+            dropdown.classList.toggle('hidden');
+          });
+        });
+
+        // Close all card dropdowns when clicking elsewhere
+        document.addEventListener('click', function(e) {
+          var clickedInsideCard = false;
+          document.querySelectorAll('.card-dropdown').forEach(function(dd) {
+            if (dd.contains(e.target)) {
+              clickedInsideCard = true;
+            }
+          });
+          document.querySelectorAll('.card-menu-btn').forEach(function(btn) {
+            if (btn.contains(e.target)) {
+              clickedInsideCard = true;
+            }
+          });
+
+          if (!clickedInsideCard) {
+            document.querySelectorAll('.card-dropdown').forEach(function(dd) {
+              dd.classList.add('hidden');
+            });
+          }
+        });
+      })();
+
+      // ---- Lucide icons ----
+      lucide.createIcons();
+    </script>
+</body>
+</html>

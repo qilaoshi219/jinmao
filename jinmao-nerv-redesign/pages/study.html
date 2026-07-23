@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>课程学习 - 金毛教你学</title>
+    <style id="theme-vars">
+/* NERV Command Interface — Blue Theme Design Tokens */
+/* 金毛教你学 蓝色NERV风格设计系统 */
+
+/* ============================================
+   Light Mode (日间模式) — Tactical Cool White
+   ============================================ */
+:root {
+  /* Surface */
+  --nerv-background: #f4f6f9;       /* 冷白战术背景 */
+  --nerv-foreground: #141a24;       /* 深蓝黑文字 */
+  --nerv-card: #ffffff;             /* 卡片白 */
+  --nerv-card-foreground: #141a24;  /* 卡片文字 */
+  --nerv-popover: #ffffff;
+  --nerv-popover-foreground: #141a24;
+
+  /* Primary — Command Blue / 指令蓝 */
+  --nerv-primary: #3488ea;
+  --nerv-primary-foreground: #ffffff;
+
+  /* Muted */
+  --nerv-muted: #edf1f7;            /* 冷灰底 */
+  --nerv-muted-foreground: #6b7c95; /* 冷灰文字 */
+
+  /* Structure */
+  --nerv-border: #dce3ed;           /* 冷蓝灰边框 */
+  --nerv-input: #dce3ed;
+  --nerv-ring: #3488ea;
+
+  /* Radius — Sharp NERV geometry */
+  --nerv-radius-sm: 2px;
+  --nerv-radius-md: 4px;
+  --nerv-radius-lg: 6px;
+
+  /* State Colors */
+  --nerv-success: #22c55e;
+  --nerv-success-foreground: #052e16;
+  --nerv-warning: #f59e0b;
+  --nerv-warning-foreground: #2e1a00;
+  --nerv-error: #ef4444;
+  --nerv-error-foreground: #ffffff;
+  --nerv-info: #38bdf8;
+  --nerv-info-foreground: #082f49;
+
+  /* NERV Tactical Extras */
+  --nerv-rail: #3488ea;             /* 蓝色状态轨 */
+  --nerv-grid: rgba(52, 136, 234, 0.04);  /* 蓝色战术网格 */
+  --nerv-scanline: rgba(0, 0, 0, 0.02);   /* 扫描线 */
+}
+
+/* ============================================
+   Dark Mode (夜间模式) — Blue NERV Command Center
+   ============================================ */
+.dark {
+  /* Surface */
+  --nerv-background: #0a0e14;       /* 深蓝黑虚空 */
+  --nerv-foreground: #e8f0fe;       /* 冷蓝白磷光文字 */
+  --nerv-card: #11161d;             /* 面板深蓝黑 */
+  --nerv-card-foreground: #e8f0fe;
+  --nerv-popover: #161c26;
+  --nerv-popover-foreground: #e8f0fe;
+
+  /* Primary */
+  --nerv-primary: #3488ea;
+  --nerv-primary-foreground: #ffffff;
+
+  /* Muted */
+  --nerv-muted: #161c26;            /* 暗控制填充 */
+  --nerv-muted-foreground: #7b8faa; /* 冷蓝灰次文字 */
+
+  /* Structure */
+  --nerv-border: #1e293b;           /* 暗蓝灰结构线 */
+  --nerv-input: #1e293b;
+  --nerv-ring: #60a5fa;             /* 亮蓝聚焦 */
+
+  /* State Colors */
+  --nerv-success: #4ade80;
+  --nerv-success-foreground: #052e16;
+  --nerv-warning: #fbbf24;
+  --nerv-warning-foreground: #1a0a00;
+  --nerv-error: #f87171;
+  --nerv-error-foreground: #0a0e14;
+  --nerv-info: #38bdf8;
+  --nerv-info-foreground: #0a0e14;
+
+  /* NERV Tactical Extras */
+  --nerv-rail: #3488ea;
+  --nerv-grid: rgba(52, 136, 234, 0.06);
+  --nerv-scanline: rgba(52, 136, 234, 0.03);
+}
+
+/* ============================================
+   System preference fallback (legacy)
+   ============================================ */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --nerv-background: #0a0e14;
+    --nerv-foreground: #e8f0fe;
+    --nerv-card: #11161d;
+    --nerv-card-foreground: #e8f0fe;
+    --nerv-popover: #161c26;
+    --nerv-popover-foreground: #e8f0fe;
+    --nerv-primary: #3488ea;
+    --nerv-primary-foreground: #ffffff;
+    --nerv-muted: #161c26;
+    --nerv-muted-foreground: #7b8faa;
+    --nerv-border: #1e293b;
+    --nerv-input: #1e293b;
+    --nerv-ring: #60a5fa;
+  }
+}
+
+/* ============================================
+   Global Base Styles
+   ============================================ */
+html {
+  background-color: var(--nerv-background);
+  color: var(--nerv-foreground);
+  transition: background-color 500ms ease, color 500ms ease;
+}
+
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, "PingFang SC",
+    "Microsoft YaHei", system-ui, sans-serif;
+  background-color: var(--nerv-background);
+  color: var(--nerv-foreground);
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--nerv-background);
+    --color-foreground: var(--nerv-foreground);
+    --color-card: var(--nerv-card);
+    --color-card-foreground: var(--nerv-card-foreground);
+    --color-popover: var(--nerv-popover);
+    --color-popover-foreground: var(--nerv-popover-foreground);
+    --color-primary: var(--nerv-primary);
+    --color-primary-foreground: var(--nerv-primary-foreground);
+    --color-muted: var(--nerv-muted);
+    --color-muted-foreground: var(--nerv-muted-foreground);
+    --color-border: var(--nerv-border);
+    --color-input: var(--nerv-input);
+    --color-ring: var(--nerv-ring);
+    --radius-sm: var(--nerv-radius-sm);
+    --radius-md: var(--nerv-radius-md);
+    --radius-lg: var(--nerv-radius-lg);
+  }
+  @layer base {
+    body { background: var(--nerv-background); color: var(--nerv-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--nerv-background); }
+      .text-background { color: var(--nerv-background); }
+      .border-background { border-color: var(--nerv-background); }
+      .ring-background { --tw-ring-color: var(--nerv-background); }
+      .bg-foreground { background-color: var(--nerv-foreground); }
+      .text-foreground { color: var(--nerv-foreground); }
+      .border-foreground { border-color: var(--nerv-foreground); }
+      .ring-foreground { --tw-ring-color: var(--nerv-foreground); }
+      .bg-card { background-color: var(--nerv-card); }
+      .text-card { color: var(--nerv-card); }
+      .border-card { border-color: var(--nerv-card); }
+      .ring-card { --tw-ring-color: var(--nerv-card); }
+      .bg-card-foreground { background-color: var(--nerv-card-foreground); }
+      .text-card-foreground { color: var(--nerv-card-foreground); }
+      .border-card-foreground { border-color: var(--nerv-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--nerv-card-foreground); }
+      .bg-popover { background-color: var(--nerv-popover); }
+      .text-popover { color: var(--nerv-popover); }
+      .border-popover { border-color: var(--nerv-popover); }
+      .ring-popover { --tw-ring-color: var(--nerv-popover); }
+      .bg-popover-foreground { background-color: var(--nerv-popover-foreground); }
+      .text-popover-foreground { color: var(--nerv-popover-foreground); }
+      .border-popover-foreground { border-color: var(--nerv-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--nerv-popover-foreground); }
+      .bg-primary { background-color: var(--nerv-primary); }
+      .text-primary { color: var(--nerv-primary); }
+      .border-primary { border-color: var(--nerv-primary); }
+      .ring-primary { --tw-ring-color: var(--nerv-primary); }
+      .bg-primary-foreground { background-color: var(--nerv-primary-foreground); }
+      .text-primary-foreground { color: var(--nerv-primary-foreground); }
+      .border-primary-foreground { border-color: var(--nerv-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--nerv-primary-foreground); }
+      .bg-muted { background-color: var(--nerv-muted); }
+      .text-muted { color: var(--nerv-muted); }
+      .border-muted { border-color: var(--nerv-muted); }
+      .ring-muted { --tw-ring-color: var(--nerv-muted); }
+      .bg-muted-foreground { background-color: var(--nerv-muted-foreground); }
+      .text-muted-foreground { color: var(--nerv-muted-foreground); }
+      .border-muted-foreground { border-color: var(--nerv-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--nerv-muted-foreground); }
+      .bg-border { background-color: var(--nerv-border); }
+      .text-border { color: var(--nerv-border); }
+      .border-border { border-color: var(--nerv-border); }
+      .ring-border { --tw-ring-color: var(--nerv-border); }
+      .bg-input { background-color: var(--nerv-input); }
+      .text-input { color: var(--nerv-input); }
+      .border-input { border-color: var(--nerv-input); }
+      .ring-input { --tw-ring-color: var(--nerv-input); }
+      .bg-ring { background-color: var(--nerv-ring); }
+      .text-ring { color: var(--nerv-ring); }
+      .border-ring { border-color: var(--nerv-ring); }
+      .ring-ring { --tw-ring-color: var(--nerv-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+      /* 拖动调整宽度时的全局状态 */
+      body.resizing {
+        cursor: col-resize !important;
+        user-select: none !important;
+        -webkit-user-select: none !important;
+      }
+      body.resizing * {
+        cursor: col-resize !important;
+      }
+      /* 拖动手柄基础样式 */
+      .resize-handle {
+        flex-shrink: 0;
+        width: 6px;
+        cursor: col-resize;
+        position: relative;
+        z-index: 20;
+        transition: background-color 500ms ease;
+      }
+      .resize-handle:hover,
+      .resize-handle.active {
+        background-color: var(--nerv-primary);
+      }
+      .resize-handle::after {
+        content: '';
+        position: absolute;
+        inset: 0 -4px; /* 扩大点击区域 */
+        z-index: 1;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <main class="flex flex-col h-screen overflow-hidden">
+        <!-- ============================================================ -->
+        <!-- 顶部导航栏 (h-10)                                              -->
+        <!-- ============================================================ -->
+        <header class="flex items-center justify-between h-10 px-3 border-b flex-shrink-0 bg-[var(--nerv-card)] border-[var(--nerv-border)] transition-colors duration-500">
+            <!-- 左侧：返回按钮 -->
+            <a data-dom-id="back-to-home" href="#" class="flex items-center gap-1 text-xs font-medium text-[var(--nerv-primary)] hover:opacity-80 transition-opacity duration-500 no-underline">
+                <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+                <span>返回</span>
+            </a>
+            <!-- 中间：课程标题 -->
+            <span class="text-xs text-[var(--nerv-muted-foreground)] truncate max-w-[50%]">高等数学第一章 · 极限与连续</span>
+            <!-- 右侧：主题切换按钮 -->
+            <button id="theme-toggle" class="flex items-center justify-center w-6 h-6 rounded-[2px] border border-[var(--nerv-border)] bg-transparent text-[var(--nerv-muted-foreground)] hover:text-[var(--nerv-primary)] hover:border-[var(--nerv-primary)] transition-all duration-500 cursor-pointer" title="切换主题">
+                <i data-lucide="sun" class="w-3.5 h-3.5 hidden dark:block"></i>
+                <i data-lucide="moon" class="w-3.5 h-3.5 block dark:hidden"></i>
+            </button>
+        </header>
+
+        <!-- ============================================================ -->
+        <!-- 三栏主体区域 (填充剩余高度)                                      -->
+        <!-- ============================================================ -->
+        <div class="flex flex-1 min-h-0 overflow-hidden">
+            <!-- 左侧边栏：课程目录 (可拖动调整宽度) -->
+            <aside id="left-sidebar" class="hidden md:flex flex-col flex-shrink-0 bg-[var(--nerv-card)] border-r border-[var(--nerv-border)] transition-colors duration-500" style="width:14rem;">
+
+                <!-- 目录标题栏 -->
+                <div class="flex items-center justify-between px-3 py-2.5 border-b border-[var(--nerv-border)]">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-[var(--nerv-primary)] font-mono text-xs select-none">◤</span>
+                        <span class="text-xs font-semibold text-[var(--nerv-foreground)]">课程目录</span>
+                        <span class="text-[var(--nerv-primary)] font-mono text-xs select-none">◢</span>
+                    </div>
+                    <button id="sidebar-collapse" class="flex items-center justify-center w-5 h-5 rounded-[2px] border border-[var(--nerv-border)] bg-transparent text-[var(--nerv-muted-foreground)] hover:text-[var(--nerv-primary)] hover:border-[var(--nerv-primary)] transition-all duration-500 cursor-pointer" title="折叠目录">
+                        <i data-lucide="panel-left-close" class="w-3 h-3"></i>
+                    </button>
+                </div>
+                <!-- 章节列表 (可滚动) -->
+                <nav id="sidebar-nav" class="flex-1 overflow-y-auto no-scrollbar py-1">
+                    <!-- 第 1 章：已完成 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="1" data-status="completed">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--nerv-success)] text-[var(--nerv-success-foreground)] text-[10px] font-bold flex-shrink-0">
+                            <i data-lucide="check" class="w-2.5 h-2.5"></i>
+                        </span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">01</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">函数与极限</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">12:08</span>
+                    </div>
+                    <!-- 第 2 章：已完成 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="2" data-status="completed">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--nerv-success)] text-[var(--nerv-success-foreground)] text-[10px] font-bold flex-shrink-0">
+                            <i data-lucide="check" class="w-2.5 h-2.5"></i>
+                        </span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">02</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">数列极限</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">14:21</span>
+                    </div>
+                    <!-- 第 3 章：已完成 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="3" data-status="completed">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--nerv-success)] text-[var(--nerv-success-foreground)] text-[10px] font-bold flex-shrink-0">
+                            <i data-lucide="check" class="w-2.5 h-2.5"></i>
+                        </span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">03</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">函数极限</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">15:42</span>
+                    </div>
+                    <!-- 第 4 章：已完成 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="4" data-status="completed">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--nerv-success)] text-[var(--nerv-success-foreground)] text-[10px] font-bold flex-shrink-0">
+                            <i data-lucide="check" class="w-2.5 h-2.5"></i>
+                        </span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">04</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">无穷小与无穷大</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">10:55</span>
+                    </div>
+                    <!-- 第 5 章：已完成 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="5" data-status="completed">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--nerv-success)] text-[var(--nerv-success-foreground)] text-[10px] font-bold flex-shrink-0">
+                            <i data-lucide="check" class="w-2.5 h-2.5"></i>
+                        </span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">05</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">极限运算法则</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">18:30</span>
+                    </div>
+                    <!-- 第 6 章：已完成 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="6" data-status="completed">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--nerv-success)] text-[var(--nerv-success-foreground)] text-[10px] font-bold flex-shrink-0">
+                            <i data-lucide="check" class="w-2.5 h-2.5"></i>
+                        </span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">06</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">极限存在准则</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">13:17</span>
+                    </div>
+                    <!-- 第 7 章：已完成 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="7" data-status="completed">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--nerv-success)] text-[var(--nerv-success-foreground)] text-[10px] font-bold flex-shrink-0">
+                            <i data-lucide="check" class="w-2.5 h-2.5"></i>
+                        </span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">07</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">连续与间断</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">16:05</span>
+                    </div>
+                    <!-- 第 8 章：当前活跃（蓝色状态轨 + 高亮） -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-[var(--nerv-rail)] bg-[var(--nerv-muted)]" data-chapter="8" data-status="active">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--nerv-primary)] text-[var(--nerv-primary-foreground)] text-[10px] font-bold flex-shrink-0">
+                            <i data-lucide="play" class="w-2 h-2 fill-current"></i>
+                        </span>
+                        <span class="text-[11px] text-[var(--nerv-primary)] font-mono font-semibold flex-shrink-0 w-5">08</span>
+                        <span class="text-xs text-[var(--nerv-foreground)] font-medium flex-1 truncate">导数定义</span>
+                        <span class="text-[10px] text-[var(--nerv-primary)] font-mono flex-shrink-0">15:32</span>
+                    </div>
+                    <!-- 第 9 章：待学 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="9" data-status="pending">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-[var(--nerv-border)] flex-shrink-0"></span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">09</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">求导法则</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">20:00</span>
+                    </div>
+                    <!-- 第 10 章：待学 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="10" data-status="pending">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-[var(--nerv-border)] flex-shrink-0"></span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">10</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">高阶导数</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">18:45</span>
+                    </div>
+                    <!-- 第 11 章：待学 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="11" data-status="pending">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-[var(--nerv-border)] flex-shrink-0"></span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">11</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">隐函数求导</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">16:20</span>
+                    </div>
+                    <!-- 第 12 章：待学 -->
+                    <div data-dom-id="chapter-item" class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] border-l-transparent hover:bg-[var(--nerv-muted)]" data-chapter="12" data-status="pending">
+                        <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-[var(--nerv-border)] flex-shrink-0"></span>
+                        <span class="text-[11px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0 w-5">12</span>
+                        <span class="text-xs text-[var(--nerv-muted-foreground)] flex-1 truncate">微分中值定理</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] font-mono flex-shrink-0">22:10</span>
+                    </div>
+                </nav>
+                <!-- 底部：下一章生成中 -->
+                <div class="px-3 py-2 border-t border-[var(--nerv-border)]">
+                    <div class="flex items-center gap-1.5 text-[10px] text-[var(--nerv-muted-foreground)]">
+                        <span class="inline-block w-2 h-2 rounded-full bg-[var(--nerv-primary)] animate-pulse"></span>
+                        <span>下一章生成中...</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 左侧拖动手柄 — 拖动调整左侧边栏宽度 -->
+            <div id="resize-handle-left" class="hidden md:flex flex-shrink-0 w-[6px] cursor-col-resize relative z-20 group transition-colors duration-500 hover:bg-[var(--nerv-primary)]" style="background:var(--nerv-border);">
+                <!-- 手柄指示条（hover 时可见） -->
+                <div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-[var(--nerv-primary)] opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- 中间播放区 (flex-1)                                            -->
+            <!-- ============================================================ -->
+            <section class="flex-1 flex flex-col min-w-0 bg-[var(--nerv-background)] transition-colors duration-500">
+                <!-- PPT 展示区域 (填充剩余高度) -->
+                <div id="ppt-area" class="flex-1 relative flex flex-col items-center justify-center min-h-0" style="background-color:var(--nerv-card)">
+                    <!-- 战术网格背景 -->
+                    <div class="absolute inset-0 opacity-[0.03]" style="background-image:linear-gradient(var(--nerv-primary) 1px,transparent 1px),linear-gradient(90deg,var(--nerv-primary) 1px,transparent 1px);background-size:20px 20px;"></div>
+                    <!-- 四角括号装饰 -->
+                    <div class="absolute top-3 left-3 text-[var(--nerv-primary)] font-mono text-xs select-none z-10">◤</div>
+                    <div class="absolute top-3 right-3 text-[var(--nerv-primary)] font-mono text-xs select-none z-10">◥</div>
+                    <div class="absolute bottom-3 left-3 text-[var(--nerv-primary)] font-mono text-xs select-none z-10">◣</div>
+                    <div class="absolute bottom-3 right-3 text-[var(--nerv-primary)] font-mono text-xs select-none z-10">◢</div>
+
+                    <!-- PPT 16:9 容器 — 铺满中间列全宽（左sidebar右边缘 → 右sidebar左边缘） -->
+                    <div id="ppt-container" class="relative w-full aspect-[16/9] border border-[var(--nerv-border)] bg-[var(--nerv-muted)] flex flex-col items-center justify-center z-10 transition-all duration-500">
+                        <!-- 内边框装饰 -->
+                        <div class="absolute inset-1 border border-[var(--nerv-border)] pointer-events-none"></div>
+                        <i data-lucide="presentation" class="w-12 h-12 text-[var(--nerv-muted-foreground)] mb-3 opacity-40"></i>
+                        <span class="text-sm text-[var(--nerv-muted-foreground)] font-mono tracking-wider">PPT 课件 · 第 8 页</span>
+                        <span class="text-[10px] text-[var(--nerv-muted-foreground)] mt-1 opacity-60">导数的定义</span>
+
+                        <!-- 字幕层 — 悬浮在 PPT 底部上方，下边缘与 PPT 底边对齐（在控件层之上） -->
+                        <div id="subtitle-overlay" class="absolute left-0 right-0 z-20 text-center px-6" style="bottom:4.5rem;">
+                            <p id="subtitle-text" class="text-base md:text-lg font-bold leading-relaxed select-none pointer-events-none" style="color:#000;text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff,0 0 8px rgba(0,0,0,0.15);">
+                                导数的定义：设函数 y = f(x) 在点 x₀ 的某个邻域内有定义，当自变量 x 在 x₀ 处取得增量 Δx 时，函数取得增量 Δy = f(x₀ + Δx) - f(x₀)；如果 Δy 与 Δx 之比的极限存在，则称函数在点 x₀ 处可导。
+                            </p>
+                        </div>
+
+                        <!-- 播放控件 — 悬浮在 PPT 底部，下边缘与 PPT 底边对齐，B站风格 hover 显示 -->
+                        <div id="player-controls" class="absolute bottom-0 left-0 right-0 z-30 transition-all duration-[400ms]" style="opacity:0;pointer-events:none;">
+                            <!-- 底部渐变遮罩（B站风格） -->
+                            <div class="h-20 pointer-events-none" style="background:linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 100%);"></div>
+                            <!-- 控件本体 -->
+                            <div class="absolute bottom-0 left-0 right-0">
+                                <!-- 进度条 -->
+                                <div class="relative h-1 bg-white/20 cursor-pointer group mx-3" id="progress-bar">
+                                    <div class="absolute inset-y-0 left-0 bg-[var(--nerv-primary)] transition-all duration-300" style="width:62%;"></div>
+                                    <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[var(--nerv-primary)] opacity-0 group-hover:opacity-100 transition-opacity duration-300" style="left:62%;"></div>
+                                </div>
+                                <!-- 控制按钮行 -->
+                                <div class="flex items-center justify-between px-3 h-11">
+                                    <!-- 左侧：播放控制按钮组 -->
+                                    <div class="flex items-center gap-0.5">
+                                        <button data-dom-id="prev-page" class="flex items-center justify-center w-8 h-8 rounded-[2px] bg-transparent text-white/85 hover:text-white transition-all duration-[400ms] cursor-pointer" title="上一页">
+                                            <i data-lucide="skip-back" class="w-4 h-4"></i>
+                                        </button>
+                                        <button data-dom-id="play-pause" id="play-pause-btn" class="flex items-center justify-center w-9 h-9 rounded-[2px] text-white hover:text-[var(--nerv-primary)] transition-all duration-[400ms] cursor-pointer" title="暂停" data-playing="true">
+                                            <i data-lucide="pause" class="w-5 h-5 fill-current" id="play-pause-icon"></i>
+                                        </button>
+                                        <button data-dom-id="next-page" class="flex items-center justify-center w-8 h-8 rounded-[2px] bg-transparent text-white/85 hover:text-white transition-all duration-[400ms] cursor-pointer" title="下一页">
+                                            <i data-lucide="skip-forward" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                    <!-- 中间：时间显示 -->
+                                    <span class="font-mono text-xs text-white/75 tracking-wider">08:32 / 15:32</span>
+                                    <!-- 右侧：自动播放 + 倍速 -->
+                                    <div class="flex items-center gap-2">
+                                        <button data-dom-id="auto-play-toggle" id="auto-play-btn" class="flex items-center gap-1 px-2 h-7 rounded-[2px] text-[11px] transition-all duration-[400ms] cursor-pointer bg-transparent text-white/75 hover:text-white" title="自动播放" data-auto="true">
+                                            <span>自动</span>
+                                            <span class="inline-block w-1.5 h-1.5 rounded-full bg-[var(--nerv-success)]" id="auto-indicator"></span>
+                                        </button>
+                                        <div class="relative">
+                                            <select data-dom-id="speed-select" id="speed-select" class="appearance-none h-7 px-2 pr-5 rounded-[2px] bg-transparent text-[11px] text-white/75 cursor-pointer font-mono transition-all duration-[400ms] hover:text-white outline-none" title="播放倍速">
+                                                <option value="0.75">0.75x</option>
+                                                <option value="1.0" selected>1.0x</option>
+                                                <option value="1.25">1.25x</option>
+                                                <option value="1.5">1.5x</option>
+                                                <option value="2.0">2.0x</option>
+                                            </select>
+                                            <i data-lucide="chevron-down" class="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-white/50 pointer-events-none"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 全屏按钮 -->
+                        <button data-dom-id="fullscreen-toggle" id="fullscreen-btn" class="absolute top-2 right-2 z-30 flex items-center justify-center w-7 h-7 rounded-[2px] border border-[var(--nerv-border)] bg-[var(--nerv-card)] text-[var(--nerv-muted-foreground)] hover:text-[var(--nerv-primary)] hover:border-[var(--nerv-primary)] transition-all duration-500 cursor-pointer opacity-0 pointer-events-none" title="全屏">
+                            <i data-lucide="maximize" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+
+                    <!-- 页码指示器 -->
+                    <div class="absolute top-3 right-10 z-20 font-mono text-xs tracking-wider px-2 py-0.5 rounded-[2px] border border-[var(--nerv-border)] bg-[var(--nerv-card)] text-[var(--nerv-primary)]">
+                        8 / 45
+                    </div>
+                </div>
+            </section>
+
+            <!-- 右侧拖动手柄 — 拖动调整右侧边栏宽度 -->
+            <div id="resize-handle-right" class="hidden lg:flex flex-shrink-0 w-[6px] cursor-col-resize relative z-20 group transition-colors duration-500 hover:bg-[var(--nerv-primary)]" style="background:var(--nerv-border);">
+                <!-- 手柄指示条（hover 时可见） -->
+                <div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-[var(--nerv-primary)] opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- 右侧边栏：AI 助教 + 口播稿 (可拖动调整宽度)                     -->
+            <!-- ============================================================ -->
+            <aside id="right-sidebar" class="hidden lg:flex flex-col flex-shrink-0 bg-[var(--nerv-card)] border-l border-[var(--nerv-border)] transition-colors duration-500" style="width:20rem;">
+                <!-- Tab 切换栏 -->
+                <div class="flex border-b border-[var(--nerv-border)]">
+                    <button class="flex-1 py-2.5 text-xs font-medium transition-all duration-500 border-b-2 text-[var(--nerv-primary)] border-b-[var(--nerv-primary)] bg-transparent cursor-pointer" id="tab-ai" data-tab="ai">AI 助教</button>
+                    <button class="flex-1 py-2.5 text-xs font-medium transition-all duration-500 border-b-2 text-[var(--nerv-muted-foreground)] border-b-transparent bg-transparent cursor-pointer" id="tab-script" data-tab="script">口播稿</button>
+                </div>
+
+                <!-- AI 助教面板 -->
+                <div id="panel-ai" class="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    <!-- 聊天消息区 -->
+                    <div class="flex-1 overflow-y-auto p-3 space-y-3 no-scrollbar">
+                        <!-- 用户消息 1 -->
+                        <div class="flex justify-end">
+                            <div class="max-w-[85%] px-3 py-2 rounded-[2px] text-xs leading-relaxed bg-[var(--nerv-primary)] text-[var(--nerv-primary-foreground)]">这页的导数定义不太理解</div>
+                        </div>
+                        <!-- AI 回复 1 -->
+                        <div class="flex justify-start">
+                            <div class="max-w-[85%] px-3 py-2 rounded-[2px] text-xs leading-relaxed bg-[var(--nerv-muted)] text-[var(--nerv-foreground)]">导数描述的是函数在某一点处的瞬时变化率。你可以想象一辆汽车的行驶——速度表上的读数就是位移对时间的导数。</div>
+                        </div>
+                        <!-- 用户消息 2 -->
+                        <div class="flex justify-end">
+                            <div class="max-w-[85%] px-3 py-2 rounded-[2px] text-xs leading-relaxed bg-[var(--nerv-primary)] text-[var(--nerv-primary-foreground)]">Δx 趋近于 0 是什么意思？</div>
+                        </div>
+                        <!-- AI 回复 2 -->
+                        <div class="flex justify-start">
+                            <div class="max-w-[85%] px-3 py-2 rounded-[2px] text-xs leading-relaxed bg-[var(--nerv-muted)] text-[var(--nerv-foreground)]">Δx 趋近于 0 是指自变量的变化量无限缩小，但永远不等于 0。这正是微积分的核心思想——用无限逼近的方式来研究变化。</div>
+                        </div>
+                        <!-- 用户消息 3 -->
+                        <div class="flex justify-end">
+                            <div class="max-w-[85%] px-3 py-2 rounded-[2px] text-xs leading-relaxed bg-[var(--nerv-primary)] text-[var(--nerv-primary-foreground)]">能举个具体例子吗？</div>
+                        </div>
+                        <!-- AI 回复 3 -->
+                        <div class="flex justify-start">
+                            <div class="max-w-[85%] px-3 py-2 rounded-[2px] text-xs leading-relaxed bg-[var(--nerv-muted)] text-[var(--nerv-foreground)]">以 f(x) = x² 为例，在 x = 2 处的导数。计算过程：f(2+Δx) - f(2) = (2+Δx)² - 4 = 4Δx + (Δx)²，除以 Δx 得 4+Δx，当 Δx→0 时极限为 4。所以 f'(2) = 4。</div>
+                        </div>
+                    </div>
+                    <!-- AI 输入区 -->
+                    <div class="flex items-center gap-2 px-3 py-2 border-t border-[var(--nerv-border)]">
+                        <input type="text" id="ai-input" class="flex-1 h-8 px-2.5 rounded-[2px] border border-[var(--nerv-border)] bg-transparent text-xs text-[var(--nerv-foreground)] placeholder:text-[var(--nerv-muted-foreground)] outline-none transition-all duration-500 focus:border-[var(--nerv-primary)]" placeholder="输入问题...">
+                        <button data-dom-id="ai-send" id="ai-send-btn" class="flex items-center justify-center w-8 h-8 rounded-[2px] border border-[var(--nerv-primary)] bg-[var(--nerv-primary)] text-[var(--nerv-primary-foreground)] hover:opacity-90 transition-all duration-500 cursor-pointer" title="发送">
+                            <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 口播稿面板 (默认隐藏) -->
+                <div id="panel-script" class="flex-1 overflow-y-auto p-4 no-scrollbar hidden">
+                    <div class="text-xs leading-relaxed text-[var(--nerv-foreground)] space-y-3">
+                        <p>导数是微积分的基础概念之一。在数学中，导数被定义为函数输出值的增量与自变量增量的比值在自变量增量趋于零时的极限。</p>
+                        <p>设有函数 y = f(x)，在点 x₀ 的某个邻域内有定义。当自变量 x 在 x₀ 处取得增量 Δx 时，函数相应地取得增量 Δy = f(x₀ + Δx) - f(x₀)。</p>
+                        <p>如果当 Δx → 0 时，Δy/Δx 的极限存在，则称该极限为函数 f(x) 在点 x₀ 处的导数，记作 f'(x₀) 或 dy/dx|_{x=x₀}。</p>
+                        <p>从几何意义上看，导数 f'(x₀) 就是曲线 y = f(x) 在点 (x₀, f(x₀)) 处的切线斜率。这为我们研究函数的变化趋势提供了强有力的数学工具。</p>
+                        <hr class="border-[var(--nerv-border)] my-3">
+                        <p class="text-[var(--nerv-muted-foreground)] text-[10px]">* 口播稿由 AI 自动生成，内容基于当前 PPT 页码对应知识点</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 移动端提示 -->
+            <div class="flex md:hidden flex-1 items-center justify-center p-8 text-center bg-[var(--nerv-card)]">
+                <div>
+                    <i data-lucide="monitor" class="w-16 h-16 text-[var(--nerv-muted-foreground)] mx-auto mb-4 opacity-40"></i>
+                    <p class="text-sm text-[var(--nerv-muted-foreground)]">请在平板或桌面端打开</p>
+                    <p class="text-xs text-[var(--nerv-muted-foreground)] mt-1 opacity-60">课程播放器需要更大的屏幕</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ============================================================ -->
+    <!-- 交互脚本                                                     -->
+    <!-- ============================================================ -->
+    <script>
+    /**
+     * 金毛教你学 — 课程学习页面交互逻辑
+     * NERV 蓝色战术风格播放器
+     * 功能：主题切换、播放控制、Tab 切换、侧边栏折叠、PPT 全屏、章节点击
+     */
+    (function () {
+        'use strict';
+        var htmlEl = document.documentElement;
+
+        // ---- DOM 引用缓存 --------------------------------------------
+        var els = {};
+        function cache(key, id) {
+            if (!els[key]) { els[key] = document.getElementById(id); }
+            return els[key];
+        }
+
+        // ---- 初始化 Lucide 图标 ---------------------------------------
+        lucide.createIcons();
+
+        // ---- 1. 字幕 text-shadow — 始终黑字白边（电影字幕风格） ----------------------------
+        function updateSubtitleShadow() {
+            var sub = document.getElementById('subtitle-text');
+            if (!sub) { return; }
+            // 无论亮色/暗色模式，字幕始终为黑字白边
+            sub.style.color = '#000';
+            sub.style.textShadow = '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff, 0 0 8px rgba(0,0,0,0.15)';
+        }
+        updateSubtitleShadow();
+
+        // ---- 2. 主题切换 (dark/light) ----------------------------------
+        var themeToggle = cache('themeToggle', 'theme-toggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', function () {
+                if (htmlEl.classList.contains('light')) {
+                    htmlEl.classList.remove('light');
+                    htmlEl.classList.add('dark');
+                } else {
+                    htmlEl.classList.remove('dark');
+                    htmlEl.classList.add('light');
+                }
+                lucide.createIcons();
+                updateSubtitleShadow();
+            });
+        }
+
+        // ---- 3. 播放/暂停切换 -----------------------------------------
+        var playPauseBtn = cache('playPauseBtn', 'play-pause-btn');
+        if (playPauseBtn) {
+            playPauseBtn.addEventListener('click', function () {
+                var playing = playPauseBtn.getAttribute('data-playing') === 'true';
+                var icon = document.getElementById('play-pause-icon');
+                if (playing) {
+                    playPauseBtn.setAttribute('data-playing', 'false');
+                    playPauseBtn.title = '播放';
+                    if (icon) { icon.setAttribute('data-lucide', 'play'); }
+                } else {
+                    playPauseBtn.setAttribute('data-playing', 'true');
+                    playPauseBtn.title = '暂停';
+                    if (icon) { icon.setAttribute('data-lucide', 'pause'); }
+                }
+                lucide.createIcons();
+            });
+        }
+
+        // ---- 4. 上一页/下一页 -----------------------------------------
+        var prevBtn = document.querySelector('[data-dom-id="prev-page"]');
+        var nextBtn = document.querySelector('[data-dom-id="next-page"]');
+        if (prevBtn) { prevBtn.addEventListener('click', function () { console.log('[学习页] 切换到上一页'); }); }
+        if (nextBtn) { nextBtn.addEventListener('click', function () { console.log('[学习页] 切换到下一页'); }); }
+
+        // ---- 5. 自动播放开关 ------------------------------------------
+        var autoPlayBtn = cache('autoPlayBtn', 'auto-play-btn');
+        var autoIndicator = cache('autoIndicator', 'auto-indicator');
+        if (autoPlayBtn && autoIndicator) {
+            autoPlayBtn.addEventListener('click', function () {
+                var isAuto = autoPlayBtn.getAttribute('data-auto') === 'true';
+                if (isAuto) {
+                    autoPlayBtn.setAttribute('data-auto', 'false');
+                    autoIndicator.style.backgroundColor = 'var(--nerv-muted-foreground)';
+                } else {
+                    autoPlayBtn.setAttribute('data-auto', 'true');
+                    autoIndicator.style.backgroundColor = 'var(--nerv-success)';
+                }
+            });
+        }
+
+        // ---- 6. 倍速选择器 --------------------------------------------
+        var speedSelect = cache('speedSelect', 'speed-select');
+        if (speedSelect) {
+            speedSelect.addEventListener('change', function () {
+                console.log('[学习页] 播放倍速切换为: ' + speedSelect.value + 'x');
+            });
+        }
+
+        // ---- 7. AI 助教 / 口播稿 Tab 切换 -----------------------------
+        var tabAi = cache('tabAi', 'tab-ai');
+        var tabScript = cache('tabScript', 'tab-script');
+        var panelAi = cache('panelAi', 'panel-ai');
+        var panelScript = cache('panelScript', 'panel-script');
+
+        function activateTab(tabEl, panelEl) {
+            if (tabAi && tabScript) {
+                tabAi.classList.remove('text-[var(--nerv-primary)]', 'border-b-[var(--nerv-primary)]');
+                tabAi.classList.add('text-[var(--nerv-muted-foreground)]', 'border-b-transparent');
+                tabScript.classList.remove('text-[var(--nerv-primary)]', 'border-b-[var(--nerv-primary)]');
+                tabScript.classList.add('text-[var(--nerv-muted-foreground)]', 'border-b-transparent');
+            }
+            if (tabEl) {
+                tabEl.classList.remove('text-[var(--nerv-muted-foreground)]', 'border-b-transparent');
+                tabEl.classList.add('text-[var(--nerv-primary)]', 'border-b-[var(--nerv-primary)]');
+            }
+            if (panelAi && panelScript) {
+                panelAi.classList.add('hidden');
+                panelScript.classList.add('hidden');
+            }
+            if (panelEl) {
+                panelEl.classList.remove('hidden');
+                // 恢复默认 display 样式
+                if (panelEl.id === 'panel-ai') {
+                    panelEl.style.display = 'flex';
+                    panelEl.style.flexDirection = 'column';
+                    panelEl.style.minHeight = '0';
+                    panelEl.style.overflow = 'hidden';
+                } else {
+                    panelEl.style.display = 'block';
+                }
+            }
+        }
+
+        if (tabAi) { tabAi.addEventListener('click', function () { activateTab(tabAi, panelAi); }); }
+        if (tabScript) { tabScript.addEventListener('click', function () { activateTab(tabScript, panelScript); }); }
+
+        // ---- 8. AI 发送消息 -------------------------------------------
+        var aiSendBtn = cache('aiSendBtn', 'ai-send-btn');
+        var aiInput = cache('aiInput', 'ai-input');
+        if (aiSendBtn && aiInput) {
+            function sendAiMessage() {
+                var msg = aiInput.value.trim();
+                if (msg) {
+                    console.log('[学习页] AI 消息发送: ' + msg);
+                    aiInput.value = '';
+                }
+            }
+            aiSendBtn.addEventListener('click', sendAiMessage);
+            aiInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { sendAiMessage(); }
+            });
+        }
+
+        // ---- 9. 侧边栏折叠 --------------------------------------------
+        var sidebarCollapse = cache('sidebarCollapse', 'sidebar-collapse');
+        var leftSidebar = cache('leftSidebar', 'left-sidebar');
+        var sidebarNav = cache('sidebarNav', 'sidebar-nav');
+        // lastLeftWidth 在下方拖动逻辑中声明，var 提升至此可用
+        if (sidebarCollapse && leftSidebar) {
+            var sidebarExpanded = true;
+            sidebarCollapse.addEventListener('click', function () {
+                sidebarExpanded = !sidebarExpanded;
+                if (sidebarExpanded) {
+                    leftSidebar.style.width = (typeof lastLeftWidth !== 'undefined' ? lastLeftWidth : 224) + 'px';
+                    if (sidebarNav) { sidebarNav.style.display = ''; }
+                    sidebarCollapse.querySelector('[data-lucide]').setAttribute('data-lucide', 'panel-left-close');
+                } else {
+                    leftSidebar.style.width = '40px';
+                    if (sidebarNav) { sidebarNav.style.display = 'none'; }
+                    sidebarCollapse.querySelector('[data-lucide]').setAttribute('data-lucide', 'panel-left-open');
+                }
+                lucide.createIcons();
+            });
+        }
+
+        // ---- 10. PPT 全屏切换 -----------------------------------------
+        var fullscreenBtn = cache('fullscreenBtn', 'fullscreen-btn');
+        var pptContainer = cache('pptContainer', 'ppt-container');
+        var playerControls = document.getElementById('player-controls');
+        if (fullscreenBtn && pptContainer) {
+            var isFs = false;
+            fullscreenBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                isFs = !isFs;
+                if (isFs) {
+                    pptContainer.style.position = 'fixed';
+                    pptContainer.style.inset = '0';
+                    pptContainer.style.zIndex = '100';
+                    pptContainer.style.width = '100vw';
+                    pptContainer.style.maxWidth = '100vw';
+                    pptContainer.style.height = '100vh';
+                    pptContainer.style.aspectRatio = 'auto';
+                    pptContainer.style.borderRadius = '0';
+                    pptContainer.style.margin = '0';
+                    fullscreenBtn.querySelector('[data-lucide]').setAttribute('data-lucide', 'minimize');
+                    fullscreenBtn.style.opacity = '1';
+                    fullscreenBtn.style.pointerEvents = 'auto';
+                    // 同步控件栏全屏
+                    if (playerControls) {
+                        playerControls.style.position = 'fixed';
+                        playerControls.style.zIndex = '101';
+                        playerControls.style.width = '100vw';
+                        playerControls.style.maxWidth = '100vw';
+                        playerControls.style.left = '0';
+                        playerControls.style.transform = 'none';
+                        playerControls.style.opacity = '1';
+                        playerControls.style.pointerEvents = 'auto';
+                    }
+                } else {
+                    pptContainer.style.position = '';
+                    pptContainer.style.inset = '';
+                    pptContainer.style.zIndex = '10';
+                    pptContainer.style.width = '';
+                    pptContainer.style.maxWidth = '100vw';
+                    pptContainer.style.height = '';
+                    pptContainer.style.aspectRatio = '16/9';
+                    pptContainer.style.borderRadius = '';
+                    pptContainer.style.margin = '';
+                    fullscreenBtn.querySelector('[data-lucide]').setAttribute('data-lucide', 'maximize');
+                    fullscreenBtn.style.opacity = '0';
+                    fullscreenBtn.style.pointerEvents = 'none';
+                    // 同步控件栏还原
+                    if (playerControls) {
+                        playerControls.style.position = '';
+                        playerControls.style.zIndex = '30';
+                        playerControls.style.width = '';
+                        playerControls.style.maxWidth = '';
+                        playerControls.style.left = '';
+                        playerControls.style.right = '';
+                        playerControls.style.transform = '';
+                        playerControls.style.opacity = '0';
+                        playerControls.style.pointerEvents = 'none';
+                    }
+                }
+                lucide.createIcons();
+            });
+
+            // 鼠标移入 PPT 容器时显示全屏按钮
+            pptContainer.addEventListener('mouseenter', function () {
+                if (!isFs) {
+                    fullscreenBtn.style.opacity = '1';
+                    fullscreenBtn.style.pointerEvents = 'auto';
+                }
+            });
+            pptContainer.addEventListener('mouseleave', function () {
+                if (!isFs) {
+                    fullscreenBtn.style.opacity = '0';
+                    fullscreenBtn.style.pointerEvents = 'none';
+                }
+            });
+        }
+
+        // ---- 10b. 播放控件 hover 显示/隐藏 (B站风格) --------------------
+        // 控件已在 PPT 容器内部，hover 事件绑定到 ppt-container
+        if (pptContainer && playerControls) {
+            // 初始隐藏
+            playerControls.style.opacity = '0';
+            playerControls.style.pointerEvents = 'none';
+
+            var hideTimer = null;
+            pptContainer.addEventListener('mouseenter', function () {
+                clearTimeout(hideTimer);
+                playerControls.style.opacity = '1';
+                playerControls.style.pointerEvents = 'auto';
+            });
+            pptContainer.addEventListener('mouseleave', function () {
+                hideTimer = setTimeout(function () {
+                    playerControls.style.opacity = '0';
+                    playerControls.style.pointerEvents = 'none';
+                }, 800); // 800ms 延迟，避免误触
+            });
+            // 鼠标移入控件区时取消隐藏
+            playerControls.addEventListener('mouseenter', function () {
+                clearTimeout(hideTimer);
+                playerControls.style.opacity = '1';
+                playerControls.style.pointerEvents = 'auto';
+            });
+            playerControls.addEventListener('mouseleave', function () {
+                hideTimer = setTimeout(function () {
+                    playerControls.style.opacity = '0';
+                    playerControls.style.pointerEvents = 'none';
+                }, 300);
+            });
+        }
+
+        // ---- 11. 侧边栏拖动调整宽度 ------------------------------------
+        var resizeHandleLeft  = document.getElementById('resize-handle-left');
+        var resizeHandleRight = document.getElementById('resize-handle-right');
+        var rightSidebar = document.getElementById('right-sidebar');
+        var bodyEl = document.body;
+
+        // 存储用户手动调整的宽度，折叠时保留
+        var lastLeftWidth  = 14 * 16; // 14rem → px
+        var lastRightWidth = 20 * 16; // 20rem → px
+
+        /**
+         * 通用拖动调整宽度逻辑
+         * @param {HTMLElement} handle    拖动手柄元素
+         * @param {HTMLElement} sidebar   要调整的侧边栏
+         * @param {string}      side      'left' | 'right'（left=向左拖动缩小sidebar，right=向右拖动增大sidebar）
+         * @param {number}      minWidth  最小宽度(px)
+         * @param {number}      maxWidth  最大宽度(px)，按窗口比例
+         */
+        function setupResize(handle, sidebar, side, minWidth, maxWidthRatio) {
+            if (!handle || !sidebar) { return; }
+
+            var startX, startWidth;
+            var active = false;
+
+            function onMouseDown(e) {
+                e.preventDefault();
+                active = true;
+                startX = e.clientX;
+                startWidth = sidebar.offsetWidth;
+                handle.classList.add('active');
+                bodyEl.classList.add('resizing');
+                // 拖动时禁用 transition 以保证流畅
+                sidebar.style.transition = 'none';
+                console.log('[学习页] 开始拖动 ' + side + ' 侧边栏，初始宽度: ' + startWidth + 'px');
+            }
+
+            function onMouseMove(e) {
+                if (!active) { return; }
+                var dx = e.clientX - startX;
+                var newWidth;
+                if (side === 'left') {
+                    // 向左拖动缩小，向右拖动增大
+                    newWidth = startWidth + dx;
+                } else {
+                    // 拖动右侧手柄：向右拖动缩小右侧边栏，向左拖动增大
+                    newWidth = startWidth - dx;
+                }
+                var maxWidth = window.innerWidth * maxWidthRatio;
+                newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+                sidebar.style.width = newWidth + 'px';
+            }
+
+            function onMouseUp(e) {
+                if (!active) { return; }
+                active = false;
+                handle.classList.remove('active');
+                bodyEl.classList.remove('resizing');
+                sidebar.style.transition = '';
+                console.log('[学习页] ' + side + ' 侧边栏调整完成，最终宽度: ' + sidebar.offsetWidth + 'px');
+                // 保存用户调整的宽度
+                var finalWidth = sidebar.offsetWidth;
+                if (side === 'left') {
+                    lastLeftWidth = finalWidth;
+                } else {
+                    lastRightWidth = finalWidth;
+                }
+            }
+
+            handle.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+
+        // 左侧边栏：拖动范围 12rem(192px) ~ 40vw
+        setupResize(resizeHandleLeft, leftSidebar, 'left', 192, 0.4);
+        // 右侧边栏：拖动范围 16rem(256px) ~ 40vw
+        setupResize(resizeHandleRight, rightSidebar, 'right', 256, 0.4);
+
+        console.log('[学习页] 侧边栏拖动调整宽度已就绪');
+
+        // ---- 12. 章节列表点击 ------------------------------------------
+        var chapterItems = document.querySelectorAll('[data-dom-id="chapter-item"]');
+        for (var i = 0; i < chapterItems.length; i++) {
+            chapterItems[i].addEventListener('click', function () {
+                var chapter = this.getAttribute('data-chapter');
+                console.log('[学习页] 跳转到第 ' + chapter + ' 章');
+            });
+        }
+
+        console.log('[学习页] NERV 三栏播放器布局初始化完成');
+    })();
+    </script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>
