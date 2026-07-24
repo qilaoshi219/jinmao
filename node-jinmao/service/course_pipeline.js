@@ -224,6 +224,8 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
 
   // 3.1 更新状态：课程生成中
   await bookRepo.updatePipelineStatus(courseId, "course_generating");
+  // 记录大纲生成启动时间戳，用于前端 15 分钟看门狗进度条
+  await bookRepo.updatePipelineProgress(courseId, { outlineStartTime: Date.now() });
 
   // 3.2 调用 AI 生成 PPT 大纲
   // generateOutline 参数：(yuanwen, pptother)，pptother 传课程名称
@@ -269,6 +271,8 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
 
   // 3.3 条件性口播稿扩写（p-queue 并发，上限 5）
   if (course.elaborationEnabled && outline.slides && outline.slides.length > 0) {
+    // 切换到扩写状态，通知前端当前进入口播稿扩写阶段
+    await bookRepo.updatePipelineStatus(courseId, "elaborating");
     console.log("[course_pipeline][Phase3] 扩写功能已开启，开始并发扩写口播稿（并发上限 5）...");
     let enrichedCount = 0;
     const totalSlidesCount = outline.slides.length;
@@ -284,7 +288,10 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
 
         if (!slideScript.trim()) {
           console.log("[course_pipeline][Phase3] 扩写进度 " + slideNum + "/" + totalSlidesCount + " — 跳过空口播稿");
-          return; // 跳过空口播稿的 slide
+          // 空口播稿也算已完成一页（用户能感知到总页数在推进）
+          enrichedCount++;
+          await bookRepo.updatePipelineProgress(courseId, { elaborationCompleted: enrichedCount });
+          return;
         }
 
         // 输出当前扩写进度，让用户知道程序仍在运行
@@ -296,13 +303,17 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
 
           if (elaborationResult.code === 200 && elaborationResult.script) {
             slide.script = elaborationResult.script; // 用扩写后的脚本替换原脚本
-            enrichedCount++;
           } else {
             console.warn("[course_pipeline][Phase3] 幻灯片 " + slideNum + " 扩写失败: " +
               (elaborationResult.message || "未知错误") + "，保留原口播稿");
           }
+          enrichedCount++;
+          // 每完成一页扩写后更新进度到数据库，供前端轮询查询
+          await bookRepo.updatePipelineProgress(courseId, { elaborationCompleted: enrichedCount });
         } catch (err) {
           console.warn("[course_pipeline][Phase3] 幻灯片 " + slideNum + " 扩写异常: " + err.message + "，保留原口播稿");
+          enrichedCount++;
+          await bookRepo.updatePipelineProgress(courseId, { elaborationCompleted: enrichedCount });
         }
       });
     });
@@ -336,6 +347,8 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
   // 3.6 更新章节信息：总页数 + 大纲路径
   const totalSlides = outline.slides ? outline.slides.length : 0;
   await chapterRepo.updateChapterTotalPages(chapter.id, totalSlides, outlineJsonPath);
+  // 写入大纲总页数到进度数据，供前端展示扩写/PPT/TTS 总数
+  await bookRepo.updatePipelineProgress(courseId, { totalSlides: totalSlides });
 
   // 3.7 更新流程状态
   await bookRepo.updatePipelineStatus(courseId, "course_generated");
@@ -419,6 +432,8 @@ async function phase4_generatePpt(courseId, chapterRoot, outline) {
 
         console.log("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 完成: " + minioPath);
         successCount++;
+        // 原子递增加载 filesCompleted（PPT 每文件计 1，前端显示总数为 totalSlides × 3）
+        bookRepo.incrementPipelineProgress(courseId, "filesCompleted", 1).catch(() => {});
       } catch (err) {
         console.error("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 异常: " + err.message);
         failCount++;
@@ -521,6 +536,8 @@ async function phase5_generateTts(courseId, chapterRoot, outline) {
         if (mp3UploadResult.code === 200 && srtUploadResult.code === 200) {
           console.log("[course_pipeline][Phase5] 幻灯片 " + slideNum + " TTS 完成（MP3 + SRT）");
           successCount++;
+          // 原子递增加载 filesCompleted（MP3 + SRT 各计 1，共 +2）
+          bookRepo.incrementPipelineProgress(courseId, "filesCompleted", 2).catch(() => {});
         } else {
           failCount++;
         }
@@ -559,6 +576,8 @@ async function phase6_validate(courseId, chapter, outline, pptAllSuccess, ttsAll
 
   // 6.1 更新状态：校验中
   await bookRepo.updatePipelineStatus(courseId, "data_validating");
+  // 清除流水线进度数据（进入校验阶段，前端显示"正在检查课程完整性"）
+  await bookRepo.updatePipelineProgress(courseId, { outlineStartTime: null, totalSlides: null, elaborationCompleted: null, filesCompleted: null });
 
   const slides = outline.slides || [];
   const chapterRoot = chapter.chapterRoot;

@@ -260,6 +260,7 @@
               v-for="course in courses"
               :key="course.id"
               :course="course"
+              :progress="courseProgressMap[String(course.id)]"
               @open="onOpenCourse"
               @delete="onDeleteCourse"
             />

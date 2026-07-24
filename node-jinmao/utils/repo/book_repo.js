@@ -239,6 +239,93 @@ async function softDeleteCourse(id) {
   }
 }
 
+/**
+ * 更新流水线进度数据（合并 JSON）
+ * 读取当前 pipelineProgress → 解析 JSON → 浅合并传入字段 → 写回数据库
+ *
+ * @param {string|number} id - 课程 ID
+ * @param {Object} progressData - 要合并的进度数据（如 { outlineStartTime: 123, totalSlides: 10 }）
+ * @returns {Promise<{ code: number, message?: string }>}
+ */
+async function updatePipelineProgress(id, progressData) {
+  console.log("[book_repo][updatePipelineProgress] 课程 " + id +
+    " 更新进度: " + JSON.stringify(progressData));
+
+  try {
+    // 1. 先读取当前进度 JSON
+    const course = await prisma.course.findUnique({
+      where: { id: BigInt(id), isDeleted: false },
+      select: { pipelineProgress: true },
+    });
+
+    if (!course) {
+      return { code: 404, message: "课程不存在。" };
+    }
+
+    // 2. 解析现有进度 JSON（若为空则初始化为 {}）
+    let currentProgress = {};
+    if (course.pipelineProgress) {
+      try {
+        currentProgress = JSON.parse(course.pipelineProgress);
+      } catch (parseErr) {
+        console.warn("[book_repo][updatePipelineProgress] JSON 解析失败，使用空对象: " + parseErr.message);
+      }
+    }
+
+    // 3. 浅合并：传入字段覆盖现有字段，未传入字段保留原值
+    const merged = { ...currentProgress, ...progressData };
+
+    // 4. 写回数据库
+    await prisma.course.update({
+      where: { id: BigInt(id), isDeleted: false },
+      data: { pipelineProgress: JSON.stringify(merged) },
+    });
+
+    console.log("[book_repo][updatePipelineProgress] 进度更新成功");
+    return { code: 200 };
+  } catch (error) {
+    if (error.code === "P2025") {
+      return { code: 404, message: "课程不存在。" };
+    }
+    console.error("[book_repo][updatePipelineProgress] 数据库更新异常: " + error.message);
+    return { code: 500, message: "数据库更新异常: " + error.message };
+  }
+}
+
+/**
+ * 原子递增加载流水线进度字段（用于 PPT/TTS 并发计数场景）
+ * 使用 MySQL JSON_SET + JSON_EXTRACT 在数据库层面做原子递增加载，避免读写竞态
+ *
+ * @param {string|number} id - 课程 ID
+ * @param {string} field - 要递增加载的 JSON 字段名（如 "filesCompleted"）
+ * @param {number} delta - 递增加载量（正数）
+ * @returns {Promise<{ code: number, message?: string }>}
+ */
+async function incrementPipelineProgress(id, field, delta) {
+  console.log("[book_repo][incrementPipelineProgress] 课程 " + id +
+    " 字段 " + field + " 递增加载 +" + delta);
+
+  try {
+    // 使用 MySQL JSON_SET + JSON_EXTRACT 实现原子递增加载
+    // 单个 UPDATE 语句，避免 read-modify-write 竞态
+    await prisma.$executeRawUnsafe(
+      `UPDATE \`Course\` SET \`pipeline_progress\` = JSON_SET(
+        COALESCE(\`pipeline_progress\`, '{}'),
+        '$.` + field + `',
+        CAST(COALESCE(JSON_EXTRACT(\`pipeline_progress\`, '$.` + field + `'), '0') AS UNSIGNED) + ?
+      ) WHERE \`id\` = ? AND \`is_deleted\` = 0`,
+      delta,
+      BigInt(id)
+    );
+
+    console.log("[book_repo][incrementPipelineProgress] 递增加载成功");
+    return { code: 200 };
+  } catch (error) {
+    console.error("[book_repo][incrementPipelineProgress] 递增加载异常: " + error.message);
+    return { code: 500, message: "递增加载异常: " + error.message };
+  }
+}
+
 // 导出模块函数
 module.exports = {
   createCourse,
@@ -247,5 +334,7 @@ module.exports = {
   updateCourse,
   updateEndline,
   updatePipelineStatus,
+  updatePipelineProgress,
+  incrementPipelineProgress,
   softDeleteCourse,
 };

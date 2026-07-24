@@ -8,7 +8,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "../../stores/auth";
 import { useTheme } from "../../composables/useTheme";
 import { getProfile } from "../../api/auth";
-import { listBooks, getBookStatus } from "../../api/books";
+import { listBooks, getBookStatus, getCourseProgress } from "../../api/books";
 import apiClient from "../../api/client";
 
 // 导入子组件（供模板使用）
@@ -94,6 +94,9 @@ export default {
     /** 轮询间隔（毫秒） */
     const POLL_INTERVAL = 3000;
 
+    /** 课程详细进度映射表（key: courseId, value: 进度对象） */
+    const courseProgressMap = reactive({});
+
     // ========== 计算属性 ==========
 
     /** 是否有教材处于处理中状态（需要轮询） */
@@ -104,6 +107,9 @@ export default {
         (c) => c.pipelineStatus && !TERMINAL.includes(c.pipelineStatus)
       );
     });
+
+    /** 终端状态白名单（用于进度轮询过滤） */
+    const TERMINAL_STATUSES_FOR_PROGRESS = ["completed", "partial_completed", "failed", "error"];
 
     // ========== 数据加载 ==========
 
@@ -172,7 +178,7 @@ export default {
     }
 
     /**
-     * 教材状态轮询（有处理中的教材时自动刷新列表）
+     * 教材状态轮询（有处理中的教材时自动刷新列表 + 获取详细进度）
      * 每 3 秒检查一次，所有教材就绪后自动停止
      */
     function startPollingIfNeeded() {
@@ -184,7 +190,7 @@ export default {
         pollTimer = setInterval(async () => {
           console.log(TAG + " [轮询] 刷新教材列表...");
 
-          // 静默刷新（不显示加载动画）
+          // 静默刷新列表（不显示加载动画）
           try {
             const result = await listBooks({
               page: currentPage.value,
@@ -194,16 +200,41 @@ export default {
             if (result.code === 0 && result.data) {
               courses.value = result.data.items || [];
               total.value = result.data.total || 0;
-
-              // 检查是否还有处理中的教材
-              if (!hasProcessingCourses.value) {
-                console.log(TAG + " 所有教材已处理完毕，停止轮询");
-                stopPolling();
-              }
             }
           } catch (error) {
-            // 轮询失败不提示用户，静默处理
-            console.warn(TAG + " [轮询] 刷新失败: " + (error?.message || error));
+            console.warn(TAG + " [轮询] 刷新列表失败: " + (error?.message || error));
+          }
+
+          // 为每个处理中的课程获取详细进度
+          const processingCourses = courses.value.filter(
+            (c) => c.pipelineStatus && !TERMINAL_STATUSES_FOR_PROGRESS.includes(c.pipelineStatus)
+          );
+          const newMap = {};
+
+          for (const course of processingCourses) {
+            const courseId = String(course.id);
+            try {
+              const progressResult = await getCourseProgress(courseId);
+              if (progressResult.code === 0 && progressResult.data) {
+                newMap[courseId] = progressResult.data;
+              }
+            } catch (_) {
+              // 获取进度失败静默处理
+            }
+          }
+
+          // 批量更新进度映射表（删除已完成课程，更新进行中的）
+          Object.keys(courseProgressMap).forEach((key) => {
+            if (!newMap[key]) delete courseProgressMap[key];
+          });
+          Object.entries(newMap).forEach(([key, val]) => {
+            courseProgressMap[key] = val;
+          });
+
+          // 检查是否还有处理中的教材
+          if (!hasProcessingCourses.value) {
+            console.log(TAG + " 所有教材已处理完毕，停止轮询");
+            stopPolling();
           }
         }, POLL_INTERVAL);
       }
@@ -258,13 +289,31 @@ export default {
     }
 
     /**
-     * 查看教材详情 — 【临时】改为打开文件列表弹窗
+     * 进入课程学习页
+     * 仅当课程流水线已完成（或部分完成/失败）时才允许进入
      * @param {string|number} courseId - 教材 ID
      */
     function onOpenCourse(courseId) {
       console.log(TAG + " 进入课程学习，id: " + courseId);
-      // 导航到课程学习页
-      navigate("study");
+
+      // 查找课程对象，检查流水线是否已完成
+      const course = courses.value.find((c) => String(c.id) === String(courseId));
+      if (!course) {
+        console.warn(TAG + " 课程不存在于列表中，id: " + courseId);
+        ElMessage.error("课程数据异常，请刷新页面后重试");
+        return;
+      }
+
+      // 终端状态：只有这些状态才允许进入学习页
+      const TERMINAL = ["completed", "partial_completed", "failed", "error"];
+      if (!TERMINAL.includes(course.pipelineStatus)) {
+        console.log(TAG + " 课程尚未生成完毕，当前状态: " + course.pipelineStatus + "，禁止进入学习页");
+        ElMessage.warning("课程内容正在生成中，请稍后再试");
+        return;
+      }
+
+      // 导航到课程学习页，传递课程 ID
+      navigate("study", { courseId: String(courseId) });
     }
 
     /**
@@ -361,6 +410,9 @@ export default {
       courseFilesDialogVisible,
       currentCourseId,
       currentCourseName,
+
+      // ===== 课程详细进度映射表 =====
+      courseProgressMap,
 
       // 方法
       toggleTheme,

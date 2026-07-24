@@ -1,9 +1,12 @@
-// ==================== 教材路由模块（上传 + 状态查询） ====================
+// 本文件因包含大量 OpenAPI JSDoc 注释（每个端点约40行），且上传/状态查询/进度查询
+// 三个端点高度相关不宜拆分，特批允许超过 300 行限制
+// ==================== 教材路由模块（上传 + 状态查询 + 进度查询） ====================
 // 职责：收发 HTTP 请求/响应，调用 Service 层执行业务逻辑
 // 使用 Express Router 管理路由，挂载到 /api/v1 前缀下
 // 端点列表：
-//   POST /api/v1/book/upload          — 上传教材文件
-//   GET  /api/v1/book/:book_id/status — 查询教材处理状态
+//   POST /api/v1/book/upload           — 上传教材文件
+//   GET  /api/v1/book/:book_id/status  — 查询教材处理状态
+//   GET  /api/v1/book/:book_id/progress — 查询教材生成详细进度
 
 const express = require("express"); // Express 框架
 const router = express.Router(); // 创建路由实例
@@ -413,6 +416,200 @@ router.get("/book/:book_id/status", authenticateToken, async (req, res) => {
     // 捕获未预期的异常
     console.error(TAG + "[GET /book/:book_id/status] 处理异常: " + error.message);
     console.error(error.stack);
+    return res.status(500).json({
+      code: 500,
+      message: "服务器内部错误: " + error.message,
+      data: null,
+    });
+  }
+});
+
+/**
+ * @openapi
+ * /api/v1/book/{book_id}/progress:
+ *   get:
+ *     tags: [教材]
+ *     summary: 查询教材生成详细进度
+ *     description: 返回流水线各阶段的详细进度数据，包括大纲生成百分比（15分钟看门狗）、口播稿扩写计数、PPT/TTS/SRT 文件生成计数等。
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: book_id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 教材 ID
+ *     responses:
+ *       200:
+ *         description: 查询成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code: { type: integer, example: 0 }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     courseId: { type: string, example: "42" }
+ *                     pipelineStatus: { type: string, example: "ppt_generating" }
+ *                     elaborationEnabled: { type: boolean, example: true }
+ *                     totalSlides: { type: integer, nullable: true, example: 10 }
+ *                     progress:
+ *                       type: object
+ *                       properties:
+ *                         phase: { type: string, example: "generating_files" }
+ *                         outlineProgress:
+ *                           type: object
+ *                           properties:
+ *                             percentage: { type: integer, example: 100 }
+ *                             isComplete: { type: boolean, example: true }
+ *                         elaborationProgress:
+ *                           type: object
+ *                           properties:
+ *                             current: { type: integer, example: 10 }
+ *                             total: { type: integer, example: 10 }
+ *                             isComplete: { type: boolean, example: true }
+ *                         filesProgress:
+ *                           type: object
+ *                           properties:
+ *                             current: { type: integer, example: 12 }
+ *                             total: { type: integer, example: 30 }
+ *                             isComplete: { type: boolean, example: false }
+ *                     isTerminal: { type: boolean, example: false }
+ *       401:
+ *         description: 未认证
+ *       404:
+ *         description: 教材不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
+
+/**
+ * GET /api/v1/book/:book_id/progress — 查询教材生成详细进度
+ *
+ * 鉴权由 authenticateToken 中间件完成
+ * 根据 pipelineStatus 和 pipelineProgress JSON 字段计算各阶段进度数据
+ *
+ * 响应：{ code: 0, data: { courseId, pipelineStatus, progress: { phase, outlineProgress, ... } } }
+ */
+router.get("/book/:book_id/progress", authenticateToken, async (req, res) => {
+  const bookId = req.params.book_id;
+  console.log(TAG + "[GET /book/:book_id/progress] 查询进度，bookId: " + bookId);
+
+  try {
+    // 查询课程信息（含章节）
+    const courseResult = await bookRepo.getCourseById(bookId);
+
+    if (courseResult.code === 404) {
+      return res.status(404).json({ code: 404, message: "教材不存在。", data: null });
+    }
+    if (courseResult.code !== 200) {
+      return res.status(500).json({ code: 500, message: courseResult.message, data: null });
+    }
+
+    const course = courseResult.course;
+    const status = course.pipelineStatus || "idle";
+    const elaborationEnabled = course.elaborationEnabled;
+
+    // 解析进度 JSON
+    let progressData = {};
+    if (course.pipelineProgress) {
+      try {
+        progressData = JSON.parse(course.pipelineProgress);
+      } catch (_) { /* JSON 解析失败时使用空对象 */ }
+    }
+
+    // 总页数（优先从进度数据读取，其次从第一章读取）
+    const totalSlides = progressData.totalSlides ||
+      (course.chapters && course.chapters.length > 0 ? course.chapters[0].totalPages : 0) || 0;
+
+    // ========== 判断当前阶段 ==========
+    const TERMINAL = ["completed", "partial_completed", "failed", "error"];
+    const isTerminal = TERMINAL.includes(status);
+
+    let phase;
+    if (isTerminal) {
+      phase = "completed";
+    } else if (status === "data_validating") {
+      phase = "validating";
+    } else if (status === "ppt_generating" || status === "ppt_generated" ||
+               status === "tts_generating" || status === "tts_generated") {
+      phase = "generating_files";
+    } else if (status === "elaborating") {
+      phase = "elaborating";
+    } else if (status === "course_generating" || status === "course_generated") {
+      // course_generated 也显示为大纲阶段（如果还没进入 PPT/TTS）
+      phase = "outline_generating";
+    } else {
+      phase = "preparing";
+    }
+
+    // ========== 大纲进度：15 分钟看门狗 ==========
+    let outlineProgress = { percentage: 0, isComplete: phase !== "outline_generating" };
+    if (phase === "outline_generating" && progressData.outlineStartTime) {
+      const elapsed = Date.now() - progressData.outlineStartTime;
+      const watchdogMs = 15 * 60 * 1000; // 15 分钟
+      outlineProgress.percentage = Math.min(100, Math.round((elapsed / watchdogMs) * 100));
+      outlineProgress.isComplete = false;
+    } else if (phase !== "outline_generating" && phase !== "preparing") {
+      // 已进入后续阶段，大纲必定已完成
+      outlineProgress.percentage = 100;
+      outlineProgress.isComplete = true;
+    }
+
+    // ========== 扩写进度 ==========
+    let elaborationProgress = { current: 0, total: totalSlides, isComplete: false };
+    if (!elaborationEnabled) {
+      // 未开扩写，直接标记完成
+      elaborationProgress.current = totalSlides;
+      elaborationProgress.total = totalSlides;
+      elaborationProgress.isComplete = true;
+    } else if (phase === "elaborating") {
+      elaborationProgress.current = progressData.elaborationCompleted || 0;
+      elaborationProgress.total = totalSlides;
+      elaborationProgress.isComplete = false;
+    } else if (phase === "generating_files" || phase === "validating" || phase === "completed") {
+      // 已进入后续阶段，扩写已完成
+      elaborationProgress.current = totalSlides;
+      elaborationProgress.total = totalSlides;
+      elaborationProgress.isComplete = true;
+    }
+
+    // ========== 文件生成进度（PPT + TTS + SRT） ==========
+    let filesProgress = { current: 0, total: totalSlides * 3, isComplete: false };
+    if (phase === "generating_files" || phase === "validating") {
+      filesProgress.current = progressData.filesCompleted || 0;
+      filesProgress.total = totalSlides * 3;
+      filesProgress.isComplete = false;
+    } else if (phase === "completed") {
+      filesProgress.current = totalSlides * 3;
+      filesProgress.total = totalSlides * 3;
+      filesProgress.isComplete = true;
+    }
+
+    // ========== 构建响应 ==========
+    return res.status(200).json({
+      code: 0,
+      message: "查询成功",
+      data: {
+        courseId: String(course.id),
+        pipelineStatus: status,
+        elaborationEnabled: elaborationEnabled,
+        totalSlides: totalSlides || null,
+        progress: {
+          phase: phase,
+          outlineProgress: outlineProgress,
+          elaborationProgress: elaborationProgress,
+          filesProgress: filesProgress,
+        },
+        isTerminal: isTerminal,
+      },
+    });
+
+  } catch (error) {
+    console.error(TAG + "[GET /book/:book_id/progress] 处理异常: " + error.message);
     return res.status(500).json({
       code: 500,
       message: "服务器内部错误: " + error.message,

@@ -119,7 +119,7 @@
         </p>
         <p class="text-[11px] text-gray-600 dark:text-gray-300 mt-1
                   transition-colors duration-500">
-          {{ statusLabel }}...
+          {{ progressLabel || (statusLabel + '...') }}
         </p>
       </div>
     </div>
@@ -154,34 +154,56 @@
         {{ course.description }}
       </p>
 
-      <!-- ===== 处理中状态进度条（参考老项目 .home-course-status） ===== -->
+      <!-- ===== 处理中状态进度区域 ===== -->
       <div
-        v-if="isProcessing"
+        v-if="isProcessing && progressData"
         class="mt-2 mb-3 p-2.5 px-3 rounded-[10px]
                bg-blue-50/60 dark:bg-blue-900/10
                border border-blue-200/40 dark:border-blue-800/30
                transition-colors duration-500"
       >
-        <!-- 进度文字行 -->
+        <!-- 阶段描述文字 -->
+        <p class="text-xs text-gray-600 dark:text-gray-300 mb-1.5
+                  transition-colors duration-500">
+          {{ progressLabel }}
+        </p>
+
+        <!-- 进度条（大纲阶段显示百分比，扩写和文件生成阶段显示等比例） -->
+        <div class="mt-1.5 h-1.5 rounded-full bg-white/85 dark:bg-gray-700/50
+                    overflow-hidden transition-colors duration-500">
+          <div
+            class="h-full rounded-full bg-blue-500 dark:bg-blue-400
+                   transition-[width] duration-[220ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+            :style="{ width: progressBarWidth }"
+          />
+        </div>
+
+        <!-- 百分比 / 计数文字 -->
+        <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 text-right
+                  transition-colors duration-500">
+          {{ progressCountText }}
+        </p>
+      </div>
+
+      <!-- 处理中但没有详细进度数据时，显示旧版进度条 -->
+      <div
+        v-else-if="isProcessing"
+        class="mt-2 mb-3 p-2.5 px-3 rounded-[10px]
+               bg-blue-50/60 dark:bg-blue-900/10
+               border border-blue-200/40 dark:border-blue-800/30
+               transition-colors duration-500"
+      >
         <div class="flex items-center justify-between gap-2">
           <span class="text-xs text-gray-600 dark:text-gray-300
                        overflow-hidden text-ellipsis whitespace-nowrap
                        transition-colors duration-500">
             {{ statusLabel }}
           </span>
-          <span class="text-xs font-bold text-gray-600 dark:text-gray-300
-                       flex-shrink-0 transition-colors duration-500">
-            {{ pipelineProgressText }}
-          </span>
         </div>
-        <!-- 进度条 -->
         <div class="mt-2 h-1.5 rounded-full bg-white/85 dark:bg-gray-700/50
                     overflow-hidden transition-colors duration-500">
-          <div
-            class="h-full rounded-full bg-blue-500 dark:bg-blue-400
-                   transition-[width] duration-[220ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
-            :style="{ width: pipelineProgressWidth }"
-          />
+          <div class="h-full rounded-full bg-blue-500 dark:bg-blue-400
+                   animate-pulse w-1/2" />
         </div>
       </div>
 
@@ -241,6 +263,11 @@ const props = defineProps({
   course: {
     type: Object, // 教材对象 { id, name, description, coverUrl, pipelineStatus, chapterCount, createTime, ... }
     required: true,
+  },
+  /** 进度详情对象（由父组件通过 getCourseProgress API 轮询获取后传入） */
+  progress: {
+    type: Object,
+    default: null, // { progress: { phase, outlineProgress, elaborationProgress, filesProgress }, isTerminal, ... }
   },
 });
 
@@ -372,6 +399,93 @@ const pipelineProgressWidth = computed(() => {
     return Math.min(100, Math.max(0, pct)) + "%";
   }
   return "0%";
+});
+
+// ========== 进度详情计算属性（基于 progress prop） ==========
+
+/** 进度详情对象（从 progress prop 提取，避免深层 undefined 访问） */
+const progressData = computed(() => {
+  return props.progress?.progress || null;
+});
+
+/** 进度阶段文字描述 */
+const progressLabel = computed(() => {
+  const phase = progressData.value?.phase;
+  const elaborationProgress = progressData.value?.elaborationProgress || {};
+  const filesProgress = progressData.value?.filesProgress || {};
+
+  switch (phase) {
+    case "preparing":
+      return "正在准备中...";
+    case "outline_generating":
+      return "正在生成大纲";
+    case "elaborating":
+      return "正在扩写口播稿，正在进行 " +
+        elaborationProgress.current + "/" + elaborationProgress.total;
+    case "generating_files":
+      return "正在生成课件，已完成 " +
+        filesProgress.current + "/" + filesProgress.total;
+    case "validating":
+      return "正在检查课程完整性";
+    default:
+      return "";
+  }
+});
+
+/** 进度条宽度 */
+const progressBarWidth = computed(() => {
+  const phase = progressData.value?.phase;
+  if (!phase) return "0%";
+
+  switch (phase) {
+    case "outline_generating": {
+      const pct = progressData.value?.outlineProgress?.percentage || 0;
+      return Math.min(100, Math.max(0, pct)) + "%";
+    }
+    case "elaborating": {
+      const prog = progressData.value?.elaborationProgress || {};
+      if (prog.total > 0) {
+        return Math.round((prog.current / prog.total) * 100) + "%";
+      }
+      return "0%";
+    }
+    case "generating_files": {
+      const prog = progressData.value?.filesProgress || {};
+      if (prog.total > 0) {
+        return Math.round((prog.current / prog.total) * 100) + "%";
+      }
+      return "0%";
+    }
+    case "validating":
+      return "80%"; // 校验阶段不确定进度，显示 80%
+    default:
+      return "0%";
+  }
+});
+
+/** 进度计数文字（百分比或 X/Y 格式） */
+const progressCountText = computed(() => {
+  const phase = progressData.value?.phase;
+  if (!phase) return "";
+
+  switch (phase) {
+    case "outline_generating": {
+      const pct = progressData.value?.outlineProgress?.percentage || 0;
+      return pct + "%";
+    }
+    case "elaborating": {
+      const prog = progressData.value?.elaborationProgress || {};
+      return prog.current + "/" + prog.total;
+    }
+    case "generating_files": {
+      const prog = progressData.value?.filesProgress || {};
+      return prog.current + "/" + prog.total;
+    }
+    case "validating":
+      return "";
+    default:
+      return "";
+  }
 });
 
 // ========== 方法 ==========

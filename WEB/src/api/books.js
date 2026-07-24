@@ -117,3 +117,47 @@ export async function getBookFiles(bookId) {
 
   return response.data;
 }
+
+/**
+ * 查询教材生成详细进度
+ * GET /api/v1/book/:book_id/progress
+ * @param {string|number} bookId - 教材 ID
+ * @returns {Promise} 后端返回 { code, data: { courseId, pipelineStatus, progress: { phase, outlineProgress, elaborationProgress, filesProgress }, isTerminal } }
+ */
+export async function getCourseProgress(bookId) {
+  console.log(TAG + "[getCourseProgress] 查询生成进度，bookId: " + bookId);
+
+  const response = await apiClient.get("/book/" + bookId + "/progress");
+  console.log(
+    TAG +
+      "[getCourseProgress] 响应: code=" +
+      response.data.code +
+      ", phase=" +
+      response.data?.data?.progress?.phase
+  );
+
+  return response.data;
+}
+
+/**
+ * 获取章节幻灯片数据（PPT/音频/字幕 URL 列表）
+ * GET /api/v1/courses/:courseId/chapters/:chapterId/slides
+ * @param {string|number} courseId - 课程 ID
+ * @param {string|number} chapterId - 章节 ID
+ * @returns {Promise} 后端返回 { code, message, data: { chapter, slides[] } }
+ *   slides[]: { pageNumber, pptUrl, audioUrl, srtUrl }
+ */
+export async function getChapterSlides(courseId, chapterId) {
+  console.log(TAG + "[getChapterSlides] 请求章节幻灯片，courseId: " + courseId + "，chapterId: " + chapterId);
+
+  const response = await apiClient.get("/courses/" + courseId + "/chapters/" + chapterId + "/slides");
+  console.log(
+    TAG +
+      "[getChapterSlides] 响应: code=" +
+      response.data.code +
+      ", slides=" +
+      (response.data?.data?.slides?.length || 0) + " 页"
+  );
+
+  return response.data;
+}

@@ -32,7 +32,7 @@
         <span>返回</span>
       </button>
       <!-- 中间：课程标题 -->
-      <span class="text-xs text-[var(--color-text-secondary)] truncate max-w-[50%]">高等数学第一章 极限与连续</span>
+      <span class="text-xs text-[var(--color-text-secondary)] truncate max-w-[50%]">{{ courseInfo.name || '加载中...' }}</span>
       <!-- 右侧：主题切换 -->
       <button @click="toggleTheme"
               class="flex items-center justify-center w-6 h-6 rounded-[10px] border border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)] hover:text-blue-500 hover:border-blue-500 dark:hover:text-blue-400 dark:hover:border-blue-400 transition-all duration-500 cursor-pointer"
@@ -73,34 +73,43 @@
         </div>
         <!-- 章节列表 -->
         <nav id="sidebar-nav" class="flex-1 overflow-y-auto no-scrollbar py-1">
+          <!-- 加载中占位 -->
+          <div v-if="courseLoading" class="px-3 py-4 text-center">
+            <span class="text-[10px] text-[var(--color-text-secondary)]">章节加载中...</span>
+          </div>
+          <!-- 章节列表项 -->
           <div v-for="ch in chapters" :key="ch.id"
                class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] hover:bg-[var(--color-card-hover)]"
-               :class="[ch.id === activeChapter ? 'border-l-blue-500 dark:border-l-blue-400 bg-[var(--color-card-hover)]' : 'border-l-transparent']"
-               @click="activeChapter = ch.id">
+               :class="[String(ch.id) === String(activeChapter) ? 'border-l-blue-500 dark:border-l-blue-400 bg-[var(--color-card-hover)]' : 'border-l-transparent']"
+               @click="switchChapter(ch.id)">
             <!-- 状态图标 -->
             <span v-if="ch.status === 'completed'"
                   class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500 text-white text-[10px] font-bold flex-shrink-0">
               &#10003;
             </span>
-            <span v-else-if="ch.status === 'active'"
-                  class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[10px] font-bold flex-shrink-0">
-              &#9654;
+            <span v-else-if="ch.status === 'generating'"
+                  class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex-shrink-0 animate-pulse">
+              &#9881;
+            </span>
+            <span v-else-if="ch.status === 'failed'"
+                  class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex-shrink-0">
+              &#10007;
             </span>
             <span v-else
                   class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-[var(--color-border)] flex-shrink-0"></span>
             <!-- 编号 -->
             <span class="text-[11px] font-mono flex-shrink-0 w-5"
-                  :class="[ch.id === activeChapter ? 'text-blue-500 dark:text-blue-400 font-semibold' : 'text-[var(--color-text-secondary)]']">
-              {{ String(ch.id).padStart(2, '0') }}
+                  :class="[String(ch.id) === String(activeChapter) ? 'text-blue-500 dark:text-blue-400 font-semibold' : 'text-[var(--color-text-secondary)]']">
+              {{ String(ch.sequence).padStart(2, '0') }}
             </span>
             <!-- 标题 -->
             <span class="text-xs flex-1 truncate"
-                  :class="[ch.id === activeChapter ? 'text-black dark:text-white font-medium' : 'text-[var(--color-text-secondary)]']">
+                  :class="[String(ch.id) === String(activeChapter) ? 'text-black dark:text-white font-medium' : 'text-[var(--color-text-secondary)]']">
               {{ ch.title }}
             </span>
             <!-- 时长 -->
             <span class="text-[10px] font-mono flex-shrink-0"
-                  :class="[ch.id === activeChapter ? 'text-blue-500 dark:text-blue-400' : 'text-[var(--color-text-secondary)]']">
+                  :class="[String(ch.id) === String(activeChapter) ? 'text-blue-500 dark:text-blue-400' : 'text-[var(--color-text-secondary)]']">
               {{ ch.duration }}
             </span>
           </div>
@@ -108,8 +117,11 @@
         <!-- 底部状态 -->
         <div class="px-3 py-2 border-t border-[var(--color-border)]">
           <div class="flex items-center gap-1.5 text-[10px] text-[var(--color-text-secondary)]">
-            <span class="inline-block w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400 animate-pulse"></span>
-            <span>下一章生成中...</span>
+            <span v-if="chapterLoading"
+                  class="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <span v-else-if="totalPages > 0"
+                  class="inline-block w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400"></span>
+            <span>{{ chapterLoading ? '内容加载中...' : (totalPages > 0 ? ('共 ' + totalPages + ' 页幻灯片') : '暂无内容') }}</span>
           </div>
         </div>
       </aside>
@@ -141,18 +153,40 @@
 
           <!-- PPT 16:9 容器 -->
           <div id="ppt-container" ref="pptContainer"
-               class="relative w-full aspect-[16/9] border border-[var(--color-border)] flex flex-col items-center justify-center z-10 transition-all duration-500 bg-[var(--color-card-hover)]"
+               class="relative w-full aspect-[16/9] border border-[var(--color-border)] z-10 transition-all duration-500 bg-[var(--color-card-hover)]"
                @mouseenter="showControls"
                @mouseleave="hideControls">
 
             <!-- 内边框 -->
-            <div class="absolute inset-1 border border-[var(--color-border)] pointer-events-none"></div>
-            <!-- 占位图标 -->
-            <svg class="w-12 h-12 text-[var(--color-text-secondary)] mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
-            </svg>
-            <span class="text-sm text-[var(--color-text-secondary)] font-mono tracking-wider">PPT 课件 第 {{ currentPage }} 页</span>
-            <span class="text-[10px] text-[var(--color-text-secondary)] mt-1 opacity-60">{{ currentChapterTitle }}</span>
+            <div class="absolute inset-1 border border-[var(--color-border)] pointer-events-none z-20"></div>
+
+            <!-- PPT 加载中指示器 -->
+            <div v-if="pptLoading" class="absolute inset-0 flex flex-col items-center justify-center z-10">
+              <svg class="w-8 h-8 text-blue-500 dark:text-blue-400 mb-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              <span class="text-xs text-[var(--color-text-secondary)]">幻灯片加载中...</span>
+              <span class="text-[10px] text-[var(--color-text-secondary)] mt-1 opacity-60">{{ currentChapterTitle }}</span>
+            </div>
+
+            <!-- 无内容占位（当 slides 为空且不加载中时） -->
+            <div v-if="!pptLoading && !currentPptUrl" class="absolute inset-0 flex flex-col items-center justify-center z-10">
+              <svg class="w-12 h-12 text-[var(--color-text-secondary)] mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
+              </svg>
+              <span class="text-sm text-[var(--color-text-secondary)] font-mono tracking-wider">请选择一个已完成的章节</span>
+              <span class="text-[10px] text-[var(--color-text-secondary)] mt-1 opacity-60">{{ courseInfo.name }}</span>
+            </div>
+
+            <!-- PPT iframe -->
+            <iframe v-show="!pptLoading && currentPptUrl"
+              :key="currentPptUrl"
+              :src="currentPptUrl"
+              class="absolute inset-0 w-full h-full border-none z-10"
+              sandbox="allow-scripts allow-same-origin"
+              @load="onPptLoad"
+              @error="pptLoading = false"
+            ></iframe>
 
             <!-- 全屏按钮 -->
             <button @click.stop="toggleFullscreen"
@@ -206,7 +240,7 @@
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.934 12.8a1 1 0 010-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zm8 0a1 1 0 010-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/></svg>
                     </button>
                   </div>
-                  <span class="font-mono text-xs text-white/75 tracking-wider">{{ formattedTime }} / {{ totalTime }}</span>
+                  <span class="font-mono text-xs text-white/75 tracking-wider">{{ formattedTime }} / {{ formattedTotalTime }}</span>
                   <div class="flex items-center gap-2">
                     <button @click="toggleAutoPlay" class="flex items-center gap-1 px-2 h-7 rounded-[10px] text-[11px] transition-all cursor-pointer bg-transparent text-white/75 hover:text-white" title="自动播放">
                       <span>自动</span>
@@ -225,6 +259,17 @@
             </div>
           </div>
         </div>
+
+        <!-- 隐藏的音频播放器（每页幻灯片对应一个音频文件） -->
+        <audio ref="audioRef"
+          :src="currentAudioUrl"
+          preload="auto"
+          style="display:none;"
+          @timeupdate="onAudioTimeUpdate"
+          @ended="onAudioEnded"
+          @loadedmetadata="onAudioLoaded"
+          @error="onAudioError"
+        ></audio>
       </section>
 
       <!-- === 右拖动手柄 === -->
@@ -279,9 +324,10 @@
         <!-- 口播稿面板 -->
         <div v-show="activeTab === 'script'" class="flex-1 overflow-y-auto p-4 no-scrollbar">
           <div class="text-xs leading-relaxed text-black dark:text-white space-y-3">
-            <p>导数是微积分的基础概念之一。在数学中，导数被定义为函数输出值的增量与自变量增量的比值在自变量增量趋于零时的极限。</p>
-            <p>设有函数 y = f(x)，在点 x 的某个邻域内有定义。当自变量 x 在 x 处取得增量 Δx 时，函数相应地取得增量 Δy = f(x + Δx) - f(x)。</p>
-            <p>如果当 Δx → 0 时，Δy/Δx 的极限存在，则称该极限为函数 f(x) 在点 x 处的导数。</p>
+            <!-- 有口播稿时显示 -->
+            <p v-if="currentScript">{{ currentScript }}</p>
+            <!-- 无口播稿时显示提示 -->
+            <p v-else class="text-[var(--color-text-secondary)]">该页暂无口播稿</p>
             <hr class="border-[var(--color-border)] my-3">
             <p class="text-[var(--color-text-secondary)] text-[10px]">* 口播稿由 AI 自动生成</p>
           </div>

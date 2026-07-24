@@ -48,6 +48,7 @@ model Course {
   elaborationEnabled Boolean   @default(true) @map("elaboration_enabled")       // 是否开启文本细化（用户上传时勾选，默认 true）
   endline            Int       @default(0) @map("endline") @db.UnsignedInt      // 当前已处理到的行号（流水线从该位置继续提取文本）
   pipelineStatus     String    @default("idle") @map("pipeline_status") @db.VarChar(30) // 流水线状态（idle/extracting/indexing/.../completed）
+  pipelineProgress   String?   @map("pipeline_progress") @db.VarChar(1000)      // 流水线进度 JSON（outlineStartTime/totalSlides/elaborationCompleted/filesCompleted）
   createTime         DateTime  @default(now()) @map("create_time")              // 创建时间
   updateTime         DateTime  @updatedAt @map("update_time")                   // 更新时间
   isDeleted          Boolean   @default(false) @map("is_deleted")               // 软删除标记

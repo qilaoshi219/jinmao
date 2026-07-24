@@ -205,6 +205,8 @@ const authRouter = require("./API/auth");
 const POSTbookRouter = require("./API/POSTbook");
 // 教材 CRUD 路由（待实现）：/api/v1/books
 const bookRouter = require("./API/book");
+// 课程学习路由：章节幻灯片数据（PPT/音频/字幕 URL）
+const courseRouter = require("./API/course");
 // 文件代理路由：代理访问 MinIO 文件，前端通过 /api/v1/files/{path} 访问
 const filesRouter = require("./API/files");
 
@@ -279,6 +281,12 @@ app.use("/api/v1", POSTbookRouter);
 //   PUT    /api/v1/books/:id       — 更新教材信息
 //   DELETE /api/v1/books/:id       — 删除教材
 app.use("/api/v1", bookRouter);
+
+// 课程学习路由挂载到 /api/v1 前缀
+// 实际端点：
+//   GET /api/v1/courses/:courseId/chapters/:chapterId/slides — 获取章节幻灯片数据（PPT/音频/字幕 URL）
+app.use("/api/v1", courseRouter);
+console.log("[app] ✅ 课程学习路由已注册: /api/v1/courses/*");
 
 // 文件代理路由挂载到 /api/v1 前缀
 // 实际端点：
@@ -385,6 +393,7 @@ console.log("[app] ✅ 文件代理路由已注册: /api/v1/files/*");
     console.log("    POST /api/v1/login      — 验证码登录/注册");
     console.log("    POST /api/v1/book/upload          — 上传教材文件");
     console.log("    GET  /api/v1/book/:book_id/status — 查询教材处理状态");
+    console.log("    GET  /api/v1/book/:book_id/progress — 查询教材生成进度");
     console.log("    GET  /api/v1/books                — 教材列表（分页+搜索）");
     console.log("========================================");
   });

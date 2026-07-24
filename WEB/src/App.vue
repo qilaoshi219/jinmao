@@ -36,17 +36,29 @@ const authStore = useAuthStore();
 /** 当前页面路由状态 ('home' | 'study') */
 const currentPage = ref("home");
 
+/** 学习页参数（课程 ID 等），由首页传递，学习页接收 */
+const studyParams = ref(null);
+
 /**
  * 提供 navigate 方法给子组件（通过 provide/inject 或事件）
- * 子组件调用 changePage('study') 或 changePage('home') 来切换页面
+ * 子组件调用 changePage('study', { courseId: 1 }) 或 changePage('home') 来切换页面
+ * @param {string} page - 目标页面标识 ('home' | 'study')
+ * @param {Object|null} params - 可选参数（如 { courseId }），仅 study 页使用
  */
-function changePage(page) {
-  console.log(TAG + " 导航到: " + page);
+function changePage(page, params = null) {
+  console.log(TAG + " 导航到: " + page + (params ? "，参数: " + JSON.stringify(params) : ""));
   currentPage.value = page;
+  if (page === "study") {
+    studyParams.value = params; // 传递参数给学习页
+  } else {
+    studyParams.value = null; // 返回首页时清空参数
+  }
 }
 
 // 提供导航方法给所有子组件
 provide("navigate", changePage);
+// 提供学习页参数给 StudyPage 组件
+provide("studyParams", studyParams);
 
 // 退出登录时重置到首页
 watch(
