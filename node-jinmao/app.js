@@ -207,6 +207,8 @@ const POSTbookRouter = require("./API/POSTbook");
 const bookRouter = require("./API/book");
 // 课程学习路由：章节幻灯片数据（PPT/音频/字幕 URL）
 const courseRouter = require("./API/course");
+// 学习进度路由：保存/获取用户学习进度记录（课程记忆功能）
+const progressRouter = require("./API/progress");
 // 文件代理路由：代理访问 MinIO 文件，前端通过 /api/v1/files/{path} 访问
 const filesRouter = require("./API/files");
 
@@ -287,6 +289,13 @@ app.use("/api/v1", bookRouter);
 //   GET /api/v1/courses/:courseId/chapters/:chapterId/slides — 获取章节幻灯片数据（PPT/音频/字幕 URL）
 app.use("/api/v1", courseRouter);
 console.log("[app] ✅ 课程学习路由已注册: /api/v1/courses/*");
+
+// 学习进度路由挂载到 /api/v1 前缀
+// 实际端点：
+//   PUT /api/v1/progress           — 保存学习进度（需 Token）
+//   GET /api/v1/progress           — 获取学习进度（需 Token，可选 query: courseId）
+app.use("/api/v1", progressRouter);
+console.log("[app] ✅ 学习进度路由已注册: /api/v1/progress");
 
 // 文件代理路由挂载到 /api/v1 前缀
 // 实际端点：

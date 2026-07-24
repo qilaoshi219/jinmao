@@ -39,6 +39,7 @@ import { ElMessage } from "element-plus";
 import { useTheme } from "../../composables/useTheme";
 import { useResize } from "../../composables/useResize";
 import { getBookDetail, getChapterSlides } from "../../api/books";
+import { getProgress, saveProgress } from "../../api/progress"; // 学习进度保存/恢复 API
 
 // ============================================================================
 // 一、常量定义
@@ -49,6 +50,11 @@ const TAG = "[StudyPage]";
 
 /** 每页展示时长（秒），仅在没有音频文件时作为 fallback 使用 */
 const FALLBACK_PAGE_DURATION = 30;
+
+/** 学习进度保存防抖定时器 */
+let saveProgressTimer = null;
+/** 进度保存防抖延迟（毫秒） */
+const SAVE_DEBOUNCE_MS = 2000;
 
 // ============================================================================
 // 二、SRT 字幕解析工具函数
@@ -312,6 +318,32 @@ export default {
     // ========================================================================
 
     /**
+     * 防抖保存学习进度到后端
+     * 在翻页或切换章节后调用，2 秒内多次调用只执行最后一次
+     * 保存失败时静默处理，不影响用户学习体验
+     */
+    function saveProgressDebounced() {
+      // 清除之前的定时器，重新计时
+      if (saveProgressTimer) clearTimeout(saveProgressTimer);
+      saveProgressTimer = setTimeout(async () => {
+        const courseId = studyParams?.value?.courseId;
+        // 缺少必要参数时跳过保存
+        if (!courseId || !activeChapter.value) return;
+        try {
+          await saveProgress({
+            courseId,
+            chapterId: activeChapter.value,
+            progress: currentPage.value,
+          });
+          console.log(TAG + " 学习进度已保存（防抖）");
+        } catch (e) {
+          // 静默失败，不影响用户学习体验
+          console.warn(TAG + " 学习进度保存失败: " + (e?.message || e));
+        }
+      }, SAVE_DEBOUNCE_MS);
+    }
+
+    /**
      * 加载课程数据（章节列表）
      * 调用 GET /api/v1/books/:id 获取课程信息与章节列表
      */
@@ -348,13 +380,50 @@ export default {
 
           console.log(TAG + " 课程数据加载成功，共 " + chapters.value.length + " 个章节");
 
-          // 自动选中第一个已完成状态的章节
+          // ========== 尝试从服务端恢复上次的学习进度（课程记忆功能） ==========
+          let restoredChapter = null;  // 恢复的目标章节
+          let restoredPage = 1;        // 恢复的目标页码
+          try {
+            const progressResult = await getProgress(courseId);
+            // code 200 表示有历史学习记录
+            if (progressResult.code === 200 && progressResult.data) {
+              const { chapterId, progress: savedPage } = progressResult.data;
+              // 查找恢复的章节是否存在且已完成
+              const targetCh = chapters.value.find((c) => String(c.id) === String(chapterId));
+              if (targetCh && targetCh.status === "completed") {
+                restoredChapter = targetCh;
+                restoredPage = savedPage;
+                console.log(TAG + " 检测到上次学习进度：章节 " + targetCh.title + "，第 " + savedPage + " 页");
+              } else {
+                console.log(TAG + " 上次学习的章节已不可用，从默认章节开始");
+              }
+            }
+          } catch (e) {
+            // 查询进度失败不影响正常使用，从默认位置开始
+            console.warn(TAG + " 查询学习进度失败: " + (e?.message || e));
+          }
+
+          // ========== 选中目标章节：优先恢复上次进度，其次选第一个已完成章节 ==========
           if (chapters.value.length > 0) {
-            const firstCompleted = chapters.value.find((c) => c.status === "completed");
-            const targetChapter = firstCompleted || chapters.value[0];
+            let targetChapter;
+            if (restoredChapter) {
+              targetChapter = restoredChapter;
+            } else {
+              const firstCompleted = chapters.value.find((c) => c.status === "completed");
+              targetChapter = firstCompleted || chapters.value[0];
+            }
             activeChapter.value = targetChapter.id;
-            // 自动加载该章节的幻灯片
+            // 加载该章节的幻灯片
             await loadChapterSlides(targetChapter.id);
+
+            // 如果是从进度恢复的，加载完成后跳转到保存的页码
+            if (restoredPage > 1 && restoredPage <= totalPages.value) {
+              currentPage.value = restoredPage;
+              // 页码变更后重新加载字幕
+              await nextTick();
+              await loadCurrentSrt();
+              console.log(TAG + " 已恢复到第 " + restoredPage + " 页");
+            }
           }
         } else {
           console.warn(TAG + " 课程数据加载失败: " + (result.message || "未知错误"));
@@ -550,6 +619,8 @@ export default {
       console.log(TAG + " 切换章节: " + chapterId);
       activeChapter.value = chapterId;
       await loadChapterSlides(chapterId);
+      // 切换章节后保存学习进度（防抖）
+      saveProgressDebounced();
     }
 
     // ========================================================================
@@ -615,6 +686,9 @@ export default {
       // 等待 Vue 响应式更新后加载新字幕
       await nextTick();
       await loadCurrentSrt();
+
+      // 翻页后保存学习进度（防抖）
+      saveProgressDebounced();
 
       // 自动恢复播放：要么之前在播放，要么明确要求自动恢复（如音频结束自动翻页）
       if (wasPlaying || shouldAutoResume) {
@@ -878,7 +952,23 @@ export default {
       }
     });
 
-    onUnmounted(() => {
+    onUnmounted(async () => {
+      // 页面卸载前立即保存当前学习进度（不使用防抖，确保不丢失）
+      if (saveProgressTimer) clearTimeout(saveProgressTimer);
+      const courseId = studyParams?.value?.courseId;
+      if (courseId && activeChapter.value) {
+        try {
+          await saveProgress({
+            courseId,
+            chapterId: activeChapter.value,
+            progress: currentPage.value,
+          });
+          console.log(TAG + " 页面卸载，学习进度已保存");
+        } catch (e) {
+          console.warn(TAG + " 卸载时保存进度失败: " + (e?.message || e));
+        }
+      }
+
       // 清理定时器
       if (hideTimer) { clearTimeout(hideTimer); }
       // 暂停音频

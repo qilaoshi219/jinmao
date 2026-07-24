@@ -28,7 +28,7 @@
 ### 入口文件
 | 文件 | 用途 | 上次修改 |
 |------|------|---------|
-| `app.js` | Express 服务器入口（端口8888），挂载路由和中间件，含启动前自检 + 基于版本号的自动 Prisma migrate/generate | 2026-07-10 |
+| `app.js` | Express 服务器入口（端口8888），挂载路由和中间件，含启动前自检 + 基于版本号的自动 Prisma migrate/generate | 2026-07-24 |
 | `.migration_version` | 运行时版本记录文件（JSON），记录上次成功迁移对应的 package.json 版本号，由 app.js 启动流程自动维护 | 2026-07-10 |
 | `setup.sh` | 宝塔部署一键初始化脚本（检查环境、安装依赖、初始化DB、构建前端） | 2026-07-09 |
 | `ecosystem.config.js` | PM2 进程管理配置（宝塔PM2管理器可识别） | 2026-07-09 |
@@ -39,6 +39,7 @@
 | `auth.js` | 认证路由：发送验证码、登录、获取/更新用户信息 | — |
 | `POSTbook.js` | 教材上传+状态查询路由 | — |
 | `book.js` | 教材 CRUD 路由：列表/详情（已实现），更新/删除（待实现） | 2026-07-06 |
+| `progress.js` | 学习进度路由：PUT 保存进度（需 Token）、GET 获取进度（需 Token，支持单课程/全部） | **新建 2026-07-24** |
 
 ### 中间件 `middleware/`
 | 文件 | 用途 | 上次修改 |
@@ -62,6 +63,7 @@
 | `book_repo.js` | Course 表 CRUD：创建/查询/列表/更新/软删除 | — |
 | `chapter_repo.js` | Chapter 表 CRUD：创建/查询/列表/更新/软删除 | — |
 | `user_repo.js` | User 表查询操作 | — |
+| `progress_repo.js` | UserStudyRecord 表 CRUD：upsertProgress、getProgress、getAllProgress | **新建 2026-07-24** |
 | `update_repo.js` | 流水线进度更新封装 | — |
 
 ### 工具模块 `utils/`
@@ -86,8 +88,8 @@
 ### 数据库
 | 文件 | 用途 | 上次修改 |
 |------|------|---------|
-| `prisma/schema.prisma` | Prisma ORM 数据库模型定义（User/Course/Chapter） | — |
-| `prisma/migrations/` | 数据库迁移脚本（20260704072148_init → User 表；20260709105504_add_course_and_chapter → Course/Chapter 表） | 2026-07-09 |
+| `prisma/schema.prisma` | Prisma ORM 数据库模型定义（User/Course/Chapter/UserStudyRecord） | 2026-07-24 |
+| `prisma/migrations/` | 数据库迁移脚本（20260704072148_init → User 表；20260709105504_add_course_and_chapter → Course/Chapter 表；20260709_add_subtitle_to_course → Course.subtitle；20260724_add_user_study_record → UserStudyRecord 表） | 2026-07-24 |
 
 ### 配置 `config/`
 | 文件 | 用途 | 上次修改 |
@@ -110,13 +112,14 @@
 |------|------|---------|
 | `src/api/auth.js` | 认证 API 封装（登录/注册/用户信息） | — |
 | `src/api/books.js` | 教材 API 封装（上传/列表/详情/状态） | — |
+| `src/api/progress.js` | 学习进度 API 封装（保存/获取单课程/获取全部） | **新建 2026-07-24** |
 | `src/api/client.js` | Axios 实例（baseURL/interceptors/Token 注入） | — |
 | `src/pages/login/index.vue` | 登录页面模板 — NERV 双栏布局 | 2026-07-23 |
 | `src/pages/login/script.js` | 登录页面逻辑 | 2026-07-23 |
 | `src/pages/home/index.vue` | 首页模板 — NERV 蓝色战术风格 | 2026-07-23 |
 | `src/pages/home/script.js` | 首页业务逻辑 | 2026-07-23 |
 | `src/pages/study/index.vue` | 课程学习页模板 — NERV 三栏可拖动布局 | 2026-07-23（新增） |
-| `src/pages/study/script.js` | 课程学习页逻辑 | 2026-07-23（新增） |
+| `src/pages/study/script.js` | 课程学习页逻辑（含播放控制、章节导航、SRT 字幕、学习进度自动保存与恢复） | 2026-07-24 |
 | `src/stores/auth.js` | Pinia 认证状态管理 | — |
 | `src/composables/useTheme.js` | 暗黑模式切换逻辑 | — |
 | `src/composables/useResize.js` | 侧边栏拖动调整宽度 composable | 2026-07-23（新增） |

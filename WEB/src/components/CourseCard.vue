@@ -323,7 +323,7 @@ const statusLabel = computed(() => {
   switch (status) {
     // ── 终端状态 ──
     case "completed":           return "已完成";
-    case "partial_completed":   return "部分完成";
+    case "partial_completed":   return "已完成";
     case "failed":
     case "error":               return "失败";
     // ── 初始状态 ──
@@ -364,7 +364,7 @@ const statusTagType = computed(() => {
     case "completed":
       return "success"; // 绿色
     case "partial_completed":
-      return "warning"; // 橙色
+      return "success"; // 绿色（与 completed 一致，教材已生成完毕）
     case "failed":
     case "error":
       return "danger"; // 红色

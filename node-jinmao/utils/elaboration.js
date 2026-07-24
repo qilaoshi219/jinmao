@@ -1,6 +1,7 @@
 // 该模块负责调用 DeepSeek 大模型对原始口播稿进行扩写细化，仅返回 JSON 内容，不负责文件持久化
-// 输入：原始口播稿(elaboration)、教材原文(original)、预期字数(expectedWords)
-// 提示词从 config/prompt.json 的 elaboration_prompt 字段指定的文件中加载
+// 输入：原始口播稿(elaboration)、教材原文(original)、预期字数(expectedWords)、页码索引(slideIndex)
+// slideIndex 为 0-based 页索引：0 表示第一页（使用 elaboration_prompt_first 提示词），>0 表示其他页
+// 提示词从 config/prompt.json 的 elaboration_prompt / elaboration_prompt_first 字段指定的文件中加载
 // 占位符替换：{{elaboration}}→原始口播稿、{{original}}→教材原文、{{expected_words}}→预期字数
 // DeepSeek 返回 JSON 格式：{"script": "扩写后的口播稿文本..."}
 // 返回值格式：{ code: number, script?: string, message?: string }
@@ -51,12 +52,13 @@ async function getOpenAI() {
  * @param {string} elaboration - 原始口播稿内容
  * @param {string} original - 教材原文内容
  * @param {number|string} expectedWords - 预期字数
+ * @param {number} [slideIndex=-1] - 页码索引（0-based），0 表示第一页使用专用提示词，-1 表示不区分
  * @returns {Promise<{ code: number, script?: string, message?: string }>}
  *   始终返回对象，不会抛出异常。调用方根据 code 判断结果：
  *   - code 200 时 script 有值，可直接使用
  *   - code ≥ 400 时 script 为 undefined，通过 message 了解失败原因
  */
-async function main(elaboration, original, expectedWords) {
+async function main(elaboration, original, expectedWords, slideIndex = -1) {
     // ========== 前置输入验证：使用公共验证模块拦截非法输入 ==========
     const validationResult = validateFields({
         elaboration: {
@@ -88,9 +90,16 @@ async function main(elaboration, original, expectedWords) {
     // ========== 惰性获取 OpenAI 客户端（ESM 动态 import） ==========
     const openai = await getOpenAI();
 
+    // ========== 根据页码选择提示词模板 ==========
+    // 第一页（slideIndex === 0）使用专用的简练提示词，其他页使用通用提示词
+    const isFirstSlide = (slideIndex === 0);
+    const promptKey = isFirstSlide ? "elaboration_prompt_first" : "elaboration_prompt";
+    console.log("[elaboration][main] 页码：" + (slideIndex >= 0 ? "第" + (slideIndex + 1) + "页" : "未知") +
+      " → 使用提示词模板：" + promptKey);
+
     // ========== 读取 Prompt 模板并替换占位符 ==========
-    console.log("[elaboration][main] 正在加载提示词模板：" + prompt.elaboration_prompt);
-    const elaborationPromptPath = path.resolve(__dirname, prompt.elaboration_prompt);
+    console.log("[elaboration][main] 正在加载提示词模板：" + prompt[promptKey]);
+    const elaborationPromptPath = path.resolve(__dirname, prompt[promptKey]);
     const elaborationPrompt = fs.readFileSync(elaborationPromptPath, "utf8");
     // 替换prompt模板中的三个占位符：{{elaboration}}、{{original}}、{{expected_words}}
     let formattedPrompt = elaborationPrompt.replace("{{elaboration}}", elaboration);

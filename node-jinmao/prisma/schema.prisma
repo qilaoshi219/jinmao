@@ -29,6 +29,7 @@ model User {
   isDeleted   Boolean   @default(false) @map("is_deleted")                // 软删除标记
 
   courses     Course[]                                                      // 课程列表（Prisma 虚拟关系，数据库中不产生列）
+  studyRecords UserStudyRecord[]                                           // 用户学习记录（Prisma 虚拟关系）
 
   @@map("User") // 映射数据库表名
 }
@@ -55,6 +56,7 @@ model Course {
 
   chapters           Chapter[]                                                    // 章节列表（Prisma 虚拟关系）
   user               User     @relation(fields: [userId], references: [id])       // 所属用户
+  studyRecords       UserStudyRecord[]                                            // 该课程的学习记录（Prisma 虚拟关系）
 
   @@map("Course")
 }
@@ -79,5 +81,29 @@ model Chapter {
 
   course        Course    @relation(fields: [courseId], references: [id])  // 所属课程
 
+  studyRecords  UserStudyRecord[]                                             // 该章节的学习记录（Prisma 虚拟关系）
+
   @@map("Chapter")
+}
+
+// ==================== 用户学习记录表 UserStudyRecord ====================
+// 参照 数据库结构.md 的设计，记录用户每个课程-章节的学习进度
+// 联合唯一约束：(user_id, course_id, chapter_id)，每个用户每课程每章节仅一条记录
+model UserStudyRecord {
+  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 记录ID，主键自增
+  userId        BigInt    @map("user_id") @db.UnsignedBigInt               // 用户ID，外键引用 User 表
+  courseId      BigInt    @map("course_id") @db.UnsignedBigInt             // 课程ID，外键引用 Course 表
+  chapterId     BigInt    @map("chapter_id") @db.UnsignedBigInt            // 章节ID，外键引用 Chapter 表
+  progress      Int       @default(0) @db.UnsignedInt                      // 用户学到该章节第几页PPT（1-based）
+  studyDuration Int       @default(0) @map("study_duration") @db.UnsignedInt // 学习时长（秒），预留字段，暂不实现
+  createTime    DateTime  @default(now()) @map("create_time")              // 创建时间
+  updateTime    DateTime  @updatedAt @map("update_time")                   // 更新时间
+  isDeleted     Boolean   @default(false) @map("is_deleted")               // 软删除标记
+
+  user          User      @relation(fields: [userId], references: [id])    // 所属用户
+  course        Course    @relation(fields: [courseId], references: [id])  // 所属课程
+  chapter       Chapter   @relation(fields: [chapterId], references: [id]) // 所属章节
+
+  @@unique([userId, courseId, chapterId]) // 联合唯一约束：同一用户同一课程同一章节仅一条记录
+  @@map("UserStudyRecord")
 }

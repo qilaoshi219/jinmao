@@ -137,6 +137,12 @@ async function phase2_extractAndIndex(courseId, course, tempMDPath) {
   console.log("[course_pipeline][Phase2] 文本提取成功，长度: " + extractedText.length + " 字符" +
     (extractedResult.code === 206 ? "（已截断到文件末尾）" : ""));
 
+  // 检测是否为最后一章：extractLines 返回 206 表示已到文件末尾，本次提取覆盖了剩余全部内容
+  const isLastChapter = extractedResult.code === 206;
+  if (isLastChapter) {
+    console.log("[course_pipeline][Phase2] 检测到文件末尾 → 标记为最后一章，保存到 pipelineProgress");
+    await bookRepo.updatePipelineProgress(courseId, { isLastChapter: true });
+  }
   // 2.2 更新状态：提取完成 → 编号中
   await bookRepo.updatePipelineStatus(courseId, "1000_extracted");
   await bookRepo.updatePipelineStatus(courseId, "1000_indexing");
@@ -297,9 +303,10 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
         // 输出当前扩写进度，让用户知道程序仍在运行
         console.log("[course_pipeline][Phase3] 扩写进度 " + slideNum + "/" + totalSlidesCount + " — 正在调用大模型扩写幻灯片...");
         try {
-          // 预期字数：根据现有脚本长度估算，范围 100~5000
-          const expectedWords = Math.max(100, Math.min(5000, slideScript.length * 3));
-          const elaborationResult = await elaborateText(slideScript, chapterText, expectedWords);
+          // 预期字数：第一页（i=0）用1.5倍系数（概述页简练），其他页用3倍系数
+          const wordMultiplier = (i === 0) ? 1.5 : 3;
+          const expectedWords = Math.max(100, Math.min(5000, Math.round(slideScript.length * wordMultiplier)));
+          const elaborationResult = await elaborateText(slideScript, chapterText, expectedWords, i);
 
           if (elaborationResult.code === 200 && elaborationResult.script) {
             slide.script = elaborationResult.script; // 用扩写后的脚本替换原脚本
@@ -576,7 +583,20 @@ async function phase6_validate(courseId, chapter, outline, pptAllSuccess, ttsAll
 
   // 6.1 更新状态：校验中
   await bookRepo.updatePipelineStatus(courseId, "data_validating");
+
+  // 在校验阶段清理进度数据之前，先读取 isLastChapter 标记（后续判断最终状态时需要）
+  let progressData_phase6 = {};
+  const courseForProgress = await bookRepo.getCourseById(courseId);
+  if (courseForProgress.code === 200 && courseForProgress.course.pipelineProgress) {
+    try {
+      progressData_phase6 = JSON.parse(courseForProgress.course.pipelineProgress);
+    } catch (_) { /* JSON 解析失败时使用空对象 */ }
+  }
+  const isLastChapter = progressData_phase6.isLastChapter || false;
+  console.log("[course_pipeline][Phase6] isLastChapter: " + isLastChapter);
+
   // 清除流水线进度数据（进入校验阶段，前端显示"正在检查课程完整性"）
+  // 注意：保留 isLastChapter 标记以便后续章节判断
   await bookRepo.updatePipelineProgress(courseId, { outlineStartTime: null, totalSlides: null, elaborationCompleted: null, filesCompleted: null });
 
   const slides = outline.slides || [];
@@ -634,7 +654,11 @@ async function phase6_validate(courseId, chapter, outline, pptAllSuccess, ttsAll
 
   // 6.4 根据校验结果设置最终状态
   let finalStatus;
-  if (missingFiles.length === 0 && pptAllSuccess && ttsAllSuccess) {
+  if (isLastChapter) {
+    // 最后一章：教材全部生成完毕，无论文件完整度如何都标记为 completed
+    finalStatus = "completed";
+    console.log("[course_pipeline][Phase6] 最后一章，设置状态为 completed（教材全部生成完毕）");
+  } else if (missingFiles.length === 0 && pptAllSuccess && ttsAllSuccess) {
     // 全部文件完整且各阶段均成功
     finalStatus = "completed";
     console.log("[course_pipeline][Phase6] 校验通过，所有文件完整");

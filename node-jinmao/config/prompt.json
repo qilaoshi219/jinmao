@@ -2,6 +2,7 @@
     "outline_prompt": "./../config/outline_prompt.txt",
     "getline_prompt": "./../config/getline_prompt.txt",
     "elaboration_prompt": "./../config/elaboration_prompt.txt",
+    "elaboration_prompt_first": "./../config/elaboration_prompt_first.txt",
     "html_ppt_prompt": "./../config/html_ppt_prompt.txt",
     "cover_prompt": "./../config/cover_prompt.txt",
     "title_prompt": "./../config/title_prompt.txt"
