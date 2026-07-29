@@ -27,9 +27,13 @@ model User {
   isBanned    Boolean   @default(false) @map("is_banned")                 // 是否被禁用
   banReason   String?   @db.VarChar(255) @map("ban_reason")               // 禁用原因
   isDeleted   Boolean   @default(false) @map("is_deleted")                // 软删除标记
+  vipLevel    String    @default("free") @map("vip_level") @db.VarChar(20) // VIP 等级：free / vip1 / vip2 / vip3
+  balance     Decimal   @default(0) @db.Decimal(18, 7)                     // 余额（元），精确到小数点后 7 位
+  plan        String?   @db.VarChar(50)                                    // 开通计划：null(未开通) / "basic" / "pro"
 
   courses          Course[]               // 课程列表
   studyRecords     UserStudyRecord[]    // 用户学习记录
+  dailyActivities  UserDailyActivity[]  // 用户每日活动记录
   quizTextbooks    QuizTextbook[]       // 题库列表
   quizSessions     QuizSession[]        // 刷题会话
   quizReports      QuizReport[]         // 刷题报告
@@ -114,6 +118,21 @@ model UserStudyRecord {
   @@map("UserStudyRecord")
 }
 
+// ==================== 用户每日活动记录表 UserDailyActivity ====================
+// 记录用户每天是否有学习/刷题活动，用于计算连续学习天数
+// 联合唯一约束：(userId, activityDate)，同一用户同一天仅一条记录
+model UserDailyActivity {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt // 记录ID，主键自增
+  userId       BigInt   @map("user_id") @db.UnsignedBigInt               // 用户ID，外键引用 User 表
+  activityDate DateTime @map("activity_date") @db.Date                   // 活动日期（精确到天）
+  createTime   DateTime @default(now()) @map("create_time")              // 创建时间
+
+  user User @relation(fields: [userId], references: [id])               // 所属用户
+
+  @@unique([userId, activityDate]) // 联合唯一约束：同一用户同一天仅一条记录
+  @@map("UserDailyActivity")
+}
+
 // ==================== 计费记录表 billing_record ====================
 // 记录用户使用 LLM / TTS / 文生图等 API 的每次调用费用明细
 // user_id 存储 JWT 中的 userId 字符串值（与 User 表 BigInt id 的字符串形式一致）
@@ -134,14 +153,14 @@ model billing_record {
   text_length          Int?                                                // 文本长度（字符数，TTS 专用）
   audio_duration       Float?                                              // 音频时长（秒，TTS 专用，可选）
   time_period          String    @default("default") @db.VarChar(20)       // 计费时段名称
-  input_unit_price     Float?                                              // 输入单价（元/百万tokens，缓存未命中）
-  input_cache_hit_price Float?                                             // 输入单价（元/百万tokens，缓存命中，LLM 专用）
-  output_unit_price    Float?                                              // 输出单价（元/百万tokens，LLM 专用）
-  image_unit_price     Float?                                              // 图片单价（元/张，文生图专用）
-  tts_unit_price       Float?                                              // TTS 单价（元/字符，TTS 专用）
-  input_cost           Float?                                              // 输入费用（元）
-  output_cost          Float?                                              // 输出费用（元）
-  total_cost           Float                                               // 总费用（元）
+  input_unit_price     Decimal?  @db.Decimal(18, 7)                        // 输入单价（元/百万tokens，缓存未命中）
+  input_cache_hit_price Decimal? @db.Decimal(18, 7)                        // 输入单价（元/百万tokens，缓存命中，LLM 专用）
+  output_unit_price    Decimal?  @db.Decimal(18, 7)                        // 输出单价（元/百万tokens，LLM 专用）
+  image_unit_price     Decimal?  @db.Decimal(18, 7)                        // 图片单价（元/张，文生图专用）
+  tts_unit_price       Decimal?  @db.Decimal(18, 7)                        // TTS 单价（元/字符，TTS 专用）
+  input_cost           Decimal?  @db.Decimal(18, 7)                        // 输入费用（元）
+  output_cost          Decimal?  @db.Decimal(18, 7)                        // 输出费用（元）
+  total_cost           Decimal   @db.Decimal(18, 7)                        // 总费用（元）
   created_at           DateTime  @default(now())                           // 创建时间
 
   @@index([user_id])
@@ -161,6 +180,7 @@ model QuizTextbook {
   createTime     DateTime  @default(now()) @map("create_time")              // 创建时间
   updateTime     DateTime  @updatedAt @map("update_time")                   // 更新时间
   isDeleted      Boolean   @default(false) @map("is_deleted")               // 软删除标记
+  generatingTaskId String? @map("generating_task_id") @db.VarChar(36)       // 关联的后台生成任务ID（有值时表示正在生成中）
 
   user           User      @relation(fields: [userId], references: [id])    // 所属用户
   exams          QuizExam[]                                                  // 试卷列表

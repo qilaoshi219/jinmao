@@ -8,6 +8,7 @@
 const express = require("express"); // Express 框架
 const router = express.Router(); // 创建路由实例
 const progressRepo = require("../utils/repo/progress_repo"); // 学习进度数据访问层
+const activityRepo = require("../utils/repo/activity_repo"); // 每日活动记录数据访问层
 const { authenticateToken } = require("../middleware/auth"); // JWT 鉴权中间件
 
 // 日志前缀
@@ -31,16 +32,19 @@ const TAG = "[API_progress]";
  *           schema:
  *             type: object
  *             required: [courseId, chapterId, progress]
- *             properties:
- *               courseId:
- *                 type: string
- *                 description: 课程 ID
- *               chapterId:
- *                 type: string
- *                 description: 章节 ID
- *               progress:
- *                 type: integer
- *                 description: 当前页码（1-based）
+             properties:
+               courseId:
+                 type: string
+                 description: 课程 ID
+               chapterId:
+                 type: string
+                 description: 章节 ID
+               progress:
+                 type: integer
+                 description: 当前页码（1-based）
+               studyDuration:
+                 type: integer
+                 description: 本次学习时长增量(秒)，可选
  *           example:
  *             courseId: "1"
  *             chapterId: "2"
@@ -104,7 +108,7 @@ router.put("/progress", authenticateToken, async (req, res) => {
   console.log(TAG + "[PUT /progress] 收到保存学习进度请求，userId: " + req.userId);
 
   // ========== 参数校验 ==========
-  const { courseId, chapterId, progress } = req.body;
+  const { courseId, chapterId, progress, studyDuration } = req.body;
 
   // 缺少必填参数
   if (!courseId) {
@@ -120,9 +124,21 @@ router.put("/progress", authenticateToken, async (req, res) => {
     console.log(TAG + "[PUT /progress] 参数校验失败：progress 无效，值为: " + progress);
     return res.status(400).json({ code: 400, message: "progress 必须为正整数。" });
   }
+  // studyDuration 如果传入，必须是大于 0 的整数
+  if (studyDuration !== undefined && (typeof studyDuration !== "number" || studyDuration < 0 || !Number.isInteger(studyDuration))) {
+    console.log(TAG + "[PUT /progress] 参数校验失败：studyDuration 无效，值为: " + studyDuration);
+    return res.status(400).json({ code: 400, message: "studyDuration 必须为非负整数。" });
+  }
 
   // ========== 调用 Repository 层保存 ==========
-  const result = await progressRepo.upsertProgress(req.userId, courseId, chapterId, progress);
+  const result = await progressRepo.upsertProgress(req.userId, courseId, chapterId, progress, studyDuration);
+
+  // 保存成功后记录每日活动（不阻塞响应，失败不影响主流程）
+  if (result.code === 200) {
+    activityRepo.recordDailyActivity(req.userId).catch((err) => {
+      console.error(TAG + "[PUT /progress] 记录每日活动失败（非关键）: " + err.message);
+    });
+  }
 
   // 根据业务结果返回对应的 HTTP 状态码
   const statusMap = { 200: 200, 500: 500 };

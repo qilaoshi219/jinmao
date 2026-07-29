@@ -50,6 +50,45 @@ export function importQuiz(payload) {
     .then((res) => res.data);
 }
 
+// ==================== MD→JSON 任务 ====================
+
+/**
+ * 创建 MD→JSON 生成任务
+ * @param {Object} payload - { fileName, markdownContent, textbookName, examName, description?, generationConfig }
+ */
+export function createMd2QuizTask(payload) {
+  console.log("[quiz_api] 创建 MD→JSON 任务，题库名:", payload.textbookName);
+  return apiClient
+    .post("/quiz/md2json/tasks", payload)
+    .then((res) => res.data);
+}
+
+/**
+ * 查询 MD→JSON 任务进度（前端轮询用）
+ * @param {string} taskId
+ */
+export function getMd2QuizTaskProgress(taskId) {
+  return apiClient
+    .get("/quiz/md2json/tasks/" + taskId + "/progress")
+    .then((res) => res.data);
+}
+
+// ==================== PDF→Quiz 上传 ====================
+
+/**
+ * 上传 PDF 文件并自动创建题库生成任务
+ * @param {FormData} formData - 包含 file, textbookName, examName 等字段
+ */
+export function uploadPdfForQuiz(formData) {
+  console.log("[quiz_api] 上传 PDF 生成题库");
+  return apiClient
+    .post("/quiz/pdf2quiz/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 600000, // 10 分钟超时（Doc2x 转换需要时间）
+    })
+    .then((res) => res.data);
+}
+
 // ==================== 刷题会话 ====================
 
 /**

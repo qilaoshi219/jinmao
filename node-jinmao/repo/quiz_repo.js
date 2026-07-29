@@ -172,9 +172,10 @@ async function deleteTextbook(textbookId, userId) {
  * @param {string} examName - 试卷名称
  * @param {string} userId - 用户ID
  * @param {string} [description] - 题库描述
+ * @param {string} [generatingTaskId] - 关联的后台生成任务ID（有值时表示正在生成中）
  * @returns {Promise<{textbookId: bigint, examId: bigint}>}
  */
-async function createTextbookAndExam(textbookName, examName, userId, description) {
+async function createTextbookAndExam(textbookName, examName, userId, description, generatingTaskId) {
   const bigUserId = BigInt(userId);
 
   const result = await prisma.$transaction(async (tx) => {
@@ -185,6 +186,7 @@ async function createTextbookAndExam(textbookName, examName, userId, description
         description: description || null,
         totalQuestions: 0,
         totalExams: 1,
+        generatingTaskId: generatingTaskId || null,
       },
     });
 

@@ -17,6 +17,9 @@
   <!-- 已登录 + 刷题页（含报告子页）-->
   <QuizPage v-else-if="currentPage === 'quiz'" />
 
+  <!-- 已登录 + 账单页 -->
+  <BillingPage v-else-if="currentPage === 'billing'" />
+
   <!-- ========== 前端版本号 ========== -->
   <div class="fixed bottom-2 right-3 z-50 text-[11px] text-[var(--color-text-secondary)] select-none pointer-events-none transition-colors duration-500">
     v{{ appVersion }}
@@ -30,6 +33,7 @@ import LoginPage from "./pages/login/index.vue";
 import HomePage from "./pages/home/index.vue";
 import StudyPage from "./pages/study/index.vue";
 import QuizPage from "./pages/quiz/index.vue";
+import BillingPage from "./pages/billing/index.vue"; // 账单页面
 import pkg from "../package.json";
 
 const TAG = "[App]";
@@ -59,6 +63,8 @@ function changePage(page, params = null) {
     studyParams.value = params; // 传递参数给学习页
   } else if (page === "quiz") {
     quizParams.value = params; // 传递参数给刷题页
+  } else if (page === "billing") {
+    // 账单页无需参数
   } else {
     studyParams.value = null;
     quizParams.value = null; // 返回首页时清空参数

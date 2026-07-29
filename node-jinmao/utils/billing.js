@@ -21,6 +21,7 @@ const PRICING_CONFIG_PATH = path.join(__dirname, "..", "config", "billing_pricin
 
 // ==================== 计费标签映射 ====================
 // callTag → 日志中显示的中文名称
+// 注意：此映射表被 API/billing.js 引用，修改时需保持同步
 const CALL_TAG_LABELS = {
     elaboration: "口播稿扩写",
     outline: "大纲生成",
@@ -30,6 +31,25 @@ const CALL_TAG_LABELS = {
     create_image: "文生图",
     tts: "文本转语音",
 };
+
+// ==================== 金额向上取整工具函数 ====================
+
+/**
+ * 将金额向上取整到 7 位小数（Decimal(18,7)精度）
+ * 策略：如果计算值超过 7 位小数，将第 8 位及之后进位到第 7 位
+ * 例如：0.00001234 → 0.0000124（第 8 位是 4，进 1 到第 7 位）
+ *      0.05000000 → 0.0500000（正好 7 位，不变）
+ * 目的：确保平台不会因四舍五入而少收费用
+ *
+ * @param {number} value - 原始计算金额
+ * @returns {number} 向上取整到 7 位小数的金额
+ */
+function ceilTo7Decimals(value) {
+    if (typeof value !== "number" || value === 0) return value;
+    // 将数值放大 10^7 倍，向上取整后再缩回
+    const multiplier = 10000000; // 10^7
+    return Math.ceil(value * multiplier) / multiplier;
+}
 
 // ==================== 核心函数：读取定价配置 ====================
 
@@ -211,10 +231,10 @@ async function recordTokenUsage(data) {
     const missTokens = cacheMissTokens || 0;
     const outTokens = completionTokens || 0;
 
-    const inputCost = (hitTokens / 1000000) * (price.input_cache_hit || 0)
-                    + (missTokens / 1000000) * (price.input_cache_miss || 0);
-    const outputCost = (outTokens / 1000000) * (price.output || 0);
-    const totalCost = inputCost + outputCost;
+    const inputCost = ceilTo7Decimals((hitTokens / 1000000) * (price.input_cache_hit || 0)
+                    + (missTokens / 1000000) * (price.input_cache_miss || 0));
+    const outputCost = ceilTo7Decimals((outTokens / 1000000) * (price.output || 0));
+    const totalCost = ceilTo7Decimals(inputCost + outputCost);
 
     // 构建数据库记录
     const record = {
@@ -302,13 +322,13 @@ async function recordExternalCost(data) {
         // 文生图：按张数计费
         const count = imageCount || 1;
         unitPrice = price.per_image || 0;
-        totalCost = count * unitPrice;
+        totalCost = ceilTo7Decimals(count * unitPrice);
         unitLabel = "元/张";
     } else if (callTag === "tts") {
         // TTS：按字符数计费
         const chars = textLength || 0;
         unitPrice = price.per_char || 0;
-        totalCost = chars * unitPrice;
+        totalCost = ceilTo7Decimals(chars * unitPrice);
         unitLabel = "元/字符";
     } else {
         console.warn(TAG + " 未知的 callTag: " + callTag + "，跳过计费。");
@@ -354,4 +374,4 @@ async function recordExternalCost(data) {
 }
 
 // ==================== 模块导出 ====================
-module.exports = { recordTokenUsage, recordExternalCost, getActivePeriod };
+module.exports = { recordTokenUsage, recordExternalCost, getActivePeriod, CALL_TAG_LABELS, ceilTo7Decimals };

@@ -29,6 +29,7 @@
       :active-menu="activeMenu"
       @select="setActiveMenu"
       @upload="openUploadDialog"
+      @navigate-billing="navigateToBilling"
     />
 
     <!-- ========== 右侧主区域 ========== -->
@@ -73,11 +74,11 @@
               </div>
               <p class="mt-2.5 text-[22px] font-black text-black dark:text-white
                         transition-colors duration-500">
-                --
+                {{ formatDuration(stats.totalStudyDuration) }}
               </p>
               <p class="mt-2 text-xs font-semibold text-green-500 dark:text-green-400
                         transition-colors duration-500">
-                即将上线
+                {{ stats.totalStudyDuration > 0 ? '已记录' : '暂无数据' }}
               </p>
             </div>
 
@@ -103,11 +104,11 @@
               </div>
               <p class="mt-2.5 text-[22px] font-black text-black dark:text-white
                         transition-colors duration-500">
-                --
+                {{ stats.completedChapters }} <span class="text-sm font-normal text-gray-400">个</span>
               </p>
               <p class="mt-2 text-xs font-semibold text-green-500 dark:text-green-400
                         transition-colors duration-500">
-                即将上线
+                {{ stats.completedChapters > 0 ? '已完成' : '暂无数据' }}
               </p>
             </div>
 
@@ -133,11 +134,11 @@
               </div>
               <p class="mt-2.5 text-[22px] font-black text-black dark:text-white
                         transition-colors duration-500">
-                --
+                {{ stats.totalQuizCount > 0 ? stats.quizAccuracy + '%' : '--' }}
               </p>
               <p class="mt-2 text-xs font-semibold text-green-500 dark:text-green-400
                         transition-colors duration-500">
-                即将上线
+                {{ stats.totalQuizCount > 0 ? stats.totalQuizCount + ' 题作答' : '暂无数据' }}
               </p>
             </div>
 
@@ -163,11 +164,11 @@
               </div>
               <p class="mt-2.5 text-[22px] font-black text-black dark:text-white
                         transition-colors duration-500">
-                --
+                {{ stats.consecutiveDays }} <span class="text-sm font-normal text-gray-400">天</span>
               </p>
               <p class="mt-2 text-xs font-semibold text-amber-500 dark:text-amber-400
                         transition-colors duration-500">
-                即将上线
+                {{ stats.consecutiveDays > 0 ? (stats.consecutiveDays >= 7 ? '太棒了！继续保持' : '坚持学习中') : '暂无数据' }}
               </p>
             </div>
 
@@ -374,6 +375,7 @@
               v-for="tb in quizTextbooks"
               :key="tb.id"
               :textbook="tb"
+              :task-progress="tb.generatingTaskId ? quizProgressMap[tb.generatingTaskId] : null"
               @start="onStartQuiz"
               @delete="onDeleteQuizTextbook"
             />

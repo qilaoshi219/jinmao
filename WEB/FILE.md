@@ -1,6 +1,6 @@
 # FILE.md - WEB 前端项目文件索引
 
-> 最后更新：2026-07-09
+> 最后更新：2026-07-29
 
 ## 项目目录结构
 
@@ -12,6 +12,7 @@ WEB/
 │   ├── api/                         # API 请求层
 │   │   ├── client.js                # Axios 实例（baseURL、拦截器、Token 注入、401 处理）
 │   │   ├── auth.js                  # 认证相关 API：sendCode、login、getProfile、updateProfile
+│   │   ├── billing.js               # 账单相关 API：getBilling（获取用户账务摘要+扣费记录分页列表）（2026-07-29 新建）
 │   │   └── books.js                 # 教材相关 API：uploadBook、listBooks、getBookDetail、getBookStatus
 │   ├── composables/                 # 组合式函数（Composables）
 │   │   └── useTheme.js              # 主题切换：封装 VueUse useDark，导出 isDark 和 toggleTheme
@@ -19,9 +20,20 @@ WEB/
 │   │   ├── login/                    # 登录注册页面专属文件夹
 │   │   │   ├── index.vue             # 登录页入口：Element Plus 组件 + Tailwind 布局（符合 design-spec）
 │   │   │   └── script.js             # 登录页逻辑：isSending/isSubmitting 独立 loading 状态
-│   │   └── home/                     # 首页专属文件夹（2026-07-06 新建）
-│   │       ├── index.vue             # 首页入口：全屏flex三块式布局（侧边栏+顶部栏+内容区）
-│   │       └── script.js             # 首页逻辑：教材列表加载、上传/删除、状态轮询、用户信息
+│   │   ├── home/                     # 首页专属文件夹（2026-07-06 新建）
+│   │   │   ├── index.vue             # 首页入口：全屏flex三块式布局（侧边栏+顶部栏+内容区）
+│   │   │   └── script.js             # 首页逻辑：教材列表加载、上传/删除、状态轮询、用户信息
+│   │   ├── billing/                  # 账单页面专属文件夹（2026-07-29 新建）
+│   │   │   ├── index.vue             # 账单页入口：VIP/计划/余额/已用金额卡片 + 扣费明细表格 + 分页
+│   │   │   └── script.js             # 账单页逻辑：数据加载、分页、金额格式化、"去充值"按钮
+│   │   ├── study/                    # 课程学习页专属文件夹
+│   │   │   ├── index.vue             # 学习页入口：三栏可拖动布局（PPT + 音频 + 字幕）
+│   │   │   └── script.js             # 学习页逻辑：章节切换、播放控制、进度保存
+│   │   └── quiz/                     # 刷题页专属文件夹
+│   │       ├── index.vue             # 刷题页入口：答题区 + 答题卡 + 底部栏
+│   │       ├── script.js             # 刷题页逻辑：会话管理、作答保存、SSE 判题
+│   │       ├── report.vue            # 报告页入口：分数环 + 统计卡 + 题目解析
+│   │       └── report-script.js      # 报告页逻辑：图表计算、判题进度展示
 │   ├── components/                  # 可复用组件
 │   │   ├── HomeSidebar.vue          # 首页侧边栏：品牌LOGO、导航菜单（骨架占位）、用户信息（2026-07-06 新建）
 │   │   ├── HomeTopbar.vue           # 首页顶部栏：搜索框（占位）、主题切换、用户头像、退出（2026-07-06 新建）
@@ -65,7 +77,10 @@ WEB/
 | `src/pages/login/script.js` | 登录页逻辑：验证码发送、登录、表单校验 | `api/auth.js`, `stores/auth.js` | 2026-07-06 |
 | `src/pages/home/index.vue` | **首页模板**：统计卡片+教材列表+排序+添加卡片 | `script.js` | **2026-07-09 重构** |
 | `src/pages/home/script.js` | **首页逻辑**：教材列表、上传/删除、状态轮询、用户信息、排序 | `api/books.js`, `api/auth.js`, `stores/auth.js` | **2026-07-09 修改** |
-| `src/components/HomeSidebar.vue` | **首页侧边栏**：品牌LOGO+徽章+上传按钮+分隔线+主次菜单+用户 | - | **2026-07-09 重构** |
+| `src/pages/billing/index.vue` | **账单页模板**：VIP/计划/余额/已用金额卡片 + 扣费明细表格 + 分页 + "去充值"按钮 | `script.js` | **新建 2026-07-29** |
+| `src/pages/billing/script.js` | **账单页逻辑**：数据加载、分页、金额格式化、返回导航 | `api/billing.js` | **新建 2026-07-29** |
+| `src/api/billing.js` | 账单 API：getBilling（获取用户账务摘要+扣费记录分页列表） | `client.js` | **新建 2026-07-29** |
+| `src/components/HomeSidebar.vue` | **首页侧边栏**：品牌LOGO+徽章+上传按钮+分隔线+主次菜单+用户+余额入口 | `api/billing.js` | **修改 2026-07-29** |
 | `src/components/HomeTopbar.vue` | **首页顶部栏**：搜索框+通知铃铛+主题切换+用户下拉菜单 | `composables/useTheme.js` | **2026-07-09 重构** |
 | `src/components/CourseCard.vue` | **教材卡片**：16:9封面+遮罩层+进度条+三点操作菜单 | - | **2026-07-09 重构** |
 | `src/components/UploadBookDialog.vue` | **上传弹窗**：左右两栏（模式选择+上传区）+AI模型选择+860px宽 | `api/books.js` | **2026-07-09 重构** |

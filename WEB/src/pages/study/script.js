@@ -59,6 +59,12 @@ let saveProgressTimer = null;
 /** 进度保存防抖延迟（毫秒） */
 const SAVE_DEBOUNCE_MS = 2000;
 
+/** 本次学习页面打开的时间戳（用于计算学习时长增量） */
+let studySessionStart = Date.now();
+
+/** 从上次保存到现在的累计学习秒数（每次保存后清零） */
+let accumulatedStudySeconds = 0;
+
 // ============================================================================
 // 二、SRT 字幕解析工具函数
 // ============================================================================
@@ -380,14 +386,24 @@ export default {
         // 缺少必要参数时跳过保存
         if (!courseId || !activeChapter.value) return;
         try {
+          // 计算自上次保存以来的学习时间增量
+          const now = Date.now();
+          const elapsedSeconds = Math.floor((now - studySessionStart) / 1000) + accumulatedStudySeconds;
+          // 重置计时起点，准备下一段计时
+          studySessionStart = now;
+          accumulatedStudySeconds = 0;
+
           await saveProgress({
             courseId,
             chapterId: activeChapter.value,
             progress: currentPage.value,
+            studyDuration: elapsedSeconds > 0 ? elapsedSeconds : undefined, // 仅在有实际时长时发送
           });
-          console.log(TAG + " 学习进度已保存（防抖）");
+          console.log(TAG + " 学习进度已保存（防抖），时长增量: " + elapsedSeconds + "s");
         } catch (e) {
-          // 静默失败，不影响用户学习体验
+          // 保存失败时保留累计时长，下次保存时一并发送
+          accumulatedStudySeconds += Math.floor((Date.now() - studySessionStart) / 1000);
+          studySessionStart = Date.now();
           console.warn(TAG + " 学习进度保存失败: " + (e?.message || e));
         }
       }, SAVE_DEBOUNCE_MS);
@@ -1516,12 +1532,16 @@ export default {
       const courseId = studyParams?.value?.courseId;
       if (courseId && activeChapter.value) {
         try {
+          // 计算页面关闭前的剩余学习时长
+          const finalElapsed = Math.floor((Date.now() - studySessionStart) / 1000) + accumulatedStudySeconds;
+
           await saveProgress({
             courseId,
             chapterId: activeChapter.value,
             progress: currentPage.value,
+            studyDuration: finalElapsed > 0 ? finalElapsed : undefined,
           });
-          console.log(TAG + " 页面卸载，学习进度已保存");
+          console.log(TAG + " 页面卸载，学习进度已保存，剩余时长: " + finalElapsed + "s");
         } catch (e) {
           console.warn(TAG + " 卸载时保存进度失败: " + (e?.message || e));
         }

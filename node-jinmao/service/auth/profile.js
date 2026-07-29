@@ -55,6 +55,9 @@ async function getProfile(userId) {
     email: user.email,               // 一定存在
     phone: user.phone,               // 可能为 null
     role: user.role,                 // 默认 "user"
+    vipLevel: user.vipLevel,         // VIP 等级：free / vip1 / vip2 / vip3
+    balance: String(user.balance),   // 余额（Decimal → String，精确到小数点后 7 位）
+    plan: user.plan,                 // 开通计划：null / "basic" / "pro"
     create_time: user.createTime,    // ISO 时间字符串
   };
 
@@ -203,6 +206,9 @@ async function updateProfile(userId, body) {
     email: updatedUser.email,                  // 一定存在
     phone: updatedUser.phone,                  // 可能为 null
     role: updatedUser.role,                    // 默认 "user"
+    vipLevel: updatedUser.vipLevel,            // VIP 等级
+    balance: String(updatedUser.balance),      // 余额（Decimal → String）
+    plan: updatedUser.plan,                    // 开通计划
     create_time: updatedUser.createTime,       // ISO 时间字符串
     update_time: updatedUser.updateTime,       // 更新时间
   };

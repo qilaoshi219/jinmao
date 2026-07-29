@@ -30,18 +30,30 @@ if (!prisma.userStudyRecord) {
  * @param {string} courseId - 课程 ID
  * @param {string} chapterId - 章节 ID
  * @param {number} progress - 页码（1-based）
+ * @param {number} [studyDuration] - 可选，本次学习的时长增量（秒），累加到已有 studyDuration 字段
  * @returns {Promise<{ code: number, data?: Object, message?: string }>}
  *   - code 200: 保存成功，data 为保存后的记录
  *   - code 500: 数据库异常
  */
-async function upsertProgress(userId, courseId, chapterId, progress) {
-  console.log(TAG + "[upsertProgress] 保存学习进度，userId: " + userId + "，courseId: " + courseId + "，chapterId: " + chapterId + "，progress: " + progress);
+async function upsertProgress(userId, courseId, chapterId, progress, studyDuration) {
+  console.log(TAG + "[upsertProgress] 保存学习进度，userId: " + userId + "，courseId: " + courseId + "，chapterId: " + chapterId + "，progress: " + progress + (studyDuration ? "，时长增量: " + studyDuration + "s" : ""));
 
   try {
     // 将字符串类型的 ID 转换为 BigInt
     const uid = BigInt(userId);
     const cid = BigInt(courseId);
     const chid = BigInt(chapterId);
+
+    // 构建 update 对象（除了 progress，还可累加 studyDuration）
+    const updateData = {
+      progress: progress, // 更新页码
+      isDeleted: false,   // 如果之前被软删除，恢复记录
+    };
+
+    // 如果传入了学习时长增量，使用 increment 累加到 studyDuration 字段
+    if (studyDuration && studyDuration > 0) {
+      updateData.studyDuration = { increment: studyDuration };
+    }
 
     // 使用 Prisma upsert 实现"存在则更新，不存在则创建"
     // where 条件使用联合唯一约束
@@ -58,14 +70,12 @@ async function upsertProgress(userId, courseId, chapterId, progress) {
         courseId: cid,
         chapterId: chid,
         progress: progress,
+        studyDuration: studyDuration || 0, // 新建记录时设置初始学习时长
       },
-      update: {
-        progress: progress, // 更新页码
-        isDeleted: false,   // 如果之前被软删除，恢复记录
-      },
+      update: updateData,
     });
 
-    console.log(TAG + "[upsertProgress] 学习进度保存成功，记录ID: " + record.id + "，页码: " + record.progress);
+    console.log(TAG + "[upsertProgress] 学习进度保存成功，记录ID: " + record.id + "，页码: " + record.progress + "，累计时长: " + record.studyDuration + "s");
 
     return {
       code: 200,
@@ -74,6 +84,7 @@ async function upsertProgress(userId, courseId, chapterId, progress) {
         courseId: String(record.courseId),
         chapterId: String(record.chapterId),
         progress: record.progress,
+        studyDuration: record.studyDuration,
         updateTime: record.updateTime,
       },
     };

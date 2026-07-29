@@ -325,6 +325,8 @@ const bookRouter = require("./API/book");
 const courseRouter = require("./API/course");
 // 学习进度路由：保存/获取用户学习进度记录（课程记忆功能）
 const progressRouter = require("./API/progress");
+// 统计数据路由：首页 4 项统计指标（学习时长/已完成章节/正确率/连续天数）
+const statsRouter = require("./API/stats");
 // 文件代理路由：代理访问 MinIO 文件，前端通过 /api/v1/files/{path} 访问
 const filesRouter = require("./API/files");
 // 题库管理路由：/api/v1/quiz/textbooks
@@ -337,6 +339,12 @@ const quizSessionRouter = require("./API/quiz/session");
 const quizReportRouter = require("./API/quiz/report");
 // 错题本路由：/api/v1/quiz/wrongbook*
 const quizWrongbookRouter = require("./API/quiz/wrongbook");
+// 账单查询路由：/api/v1/billing（需 Token）
+const billingRouter = require("./API/billing");
+// MD→JSON 生成任务路由：/api/v1/quiz/md2json/*
+const quizMd2jsonRouter = require("./API/quiz/md2json");
+// PDF→Quiz 上传路由：/api/v1/quiz/pdf2quiz/*
+const quizPdf2QuizRouter = require("./API/quiz/pdf2quiz");
 
 // ==================== 创建 Express 应用 ====================
 const app = express();
@@ -423,6 +431,12 @@ console.log("[app] ✅ 课程学习路由已注册: /api/v1/courses/*");
 app.use("/api/v1", progressRouter);
 console.log("[app] ✅ 学习进度路由已注册: /api/v1/progress");
 
+// 统计数据路由挂载到 /api/v1 前缀
+// 实际端点：
+//   GET /api/v1/stats — 获取首页 4 项统计数据（需 Token）
+app.use("/api/v1", statsRouter);
+console.log("[app] ✅ 统计数据路由已注册: /api/v1/stats");
+
 // 文件代理路由挂载到 /api/v1 前缀
 // 实际端点：
 //   GET /api/v1/files/{path} — 代理访问 MinIO 文件（图片、PDF 等）
@@ -435,7 +449,12 @@ app.use("/api/v1/quiz", quizImportRouter);
 app.use("/api/v1/quiz", quizSessionRouter);
 app.use("/api/v1/quiz", quizReportRouter);
 app.use("/api/v1/quiz", quizWrongbookRouter);
+app.use("/api/v1/quiz/md2json", quizMd2jsonRouter);
+app.use("/api/v1/quiz/pdf2quiz", quizPdf2QuizRouter);
 console.log("[app] ✅ 题库刷题路由已注册: /api/v1/quiz/*");
+// 账单查询路由挂载到 /api/v1 前缀
+app.use("/api/v1", billingRouter);
+console.log("[app] ✅ 账单查询路由已注册: /api/v1/billing");
 
 // ==================== 启动 HTTP 服务器 ====================
 // 404 和全局错误处理中间件已移入 async IIFE 内部（在 Scalar 路由之后注册），
@@ -500,6 +519,12 @@ console.log("[app] ✅ 题库刷题路由已注册: /api/v1/quiz/*");
       message: "服务器内部错误，请稍后再试。",
     });
   });
+
+  // ==================== 初始化 MD→JSON 任务存储 ====================
+  // 从持久化文件恢复服务重启前未完成的任务，标记为 failed
+  const { initializeTaskStore } = require("./service/md2quiz/task-store");
+  await initializeTaskStore();
+  console.log("[app] ✅ MD→JSON 任务存储已初始化");
 
   const server = app.listen(port, () => {
     // ==================== 读取版本号和最后修改时间 ====================

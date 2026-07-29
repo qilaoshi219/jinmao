@@ -9,7 +9,8 @@ import { useAuthStore } from "../../stores/auth";
 import { useTheme } from "../../composables/useTheme";
 import { getProfile } from "../../api/auth";
 import { listBooks, getBookStatus, getCourseProgress } from "../../api/books";
-import { listQuizTextbooks, deleteQuizTextbook, startRandomSession } from "../../api/quiz";
+import { listQuizTextbooks, deleteQuizTextbook, startRandomSession, getMd2QuizTaskProgress } from "../../api/quiz";
+import { getStats } from "../../api/stats"; // 首页统计数据 API
 import apiClient from "../../api/client";
 
 // 导入子组件（供模板使用）
@@ -109,6 +110,51 @@ export default {
     const quizLoading = ref(false);
     /** 题库导入弹窗可见性 */
     const quizImportDialogVisible = ref(false);
+
+    // ==================== 题库生成进度轮询 ====================
+    /** 题库生成进度映射表（key: generatingTaskId, value: 进度对象） */
+    const quizProgressMap = reactive({});
+
+    /** 题库生成进度轮询定时器 */
+    let quizPollTimer = null;
+
+    /** 是否有题库正在后台生成中 */
+    const hasGeneratingQuizzes = computed(() => {
+      return quizTextbooks.value.some((t) => t.generatingTaskId);
+    });
+
+    // ==================== 首页统计数据 ====================
+    /** 首页 4 项统计指标 */
+    const stats = ref({
+      totalStudyDuration: 0,  // 累计学习时长（秒）
+      completedChapters: 0,   // 已完成章节数
+      quizAccuracy: 0,        // 习题正确率（百分比）
+      totalQuizCount: 0,      // 总答题数
+      correctQuizCount: 0,    // 答对题数
+      consecutiveDays: 0,     // 连续学习天数
+    });
+
+    /**
+     * 加载首页统计数据
+     * 调用 GET /api/v1/stats
+     */
+    async function loadStats() {
+      console.log(TAG + " 加载首页统计数据");
+
+      try {
+        const result = await getStats();
+
+        if (result.code === 200 && result.data) {
+          stats.value = result.data;
+          console.log(TAG + " 统计数据加载成功");
+        } else {
+          console.warn(TAG + " 统计数据加载失败: " + result.message);
+        }
+      } catch (error) {
+        console.error(TAG + " 统计数据加载异常: " + (error?.message || error));
+        // stats 保持默认值 0，不弹错误提示
+      }
+    }
 
     // ========== 计算属性 ==========
 
@@ -383,11 +429,21 @@ export default {
     }
 
     /**
+     * 导航到账单页面
+     * 由 HomeSidebar 底部"余额"入口触发
+     */
+    function navigateToBilling() {
+      console.log(TAG + " 导航到账单页面");
+      navigate("billing");
+    }
+
+    /**
      * 退出登录
      */
     function handleLogout() {
       console.log(TAG + " 用户退出登录");
-      stopPolling(); // 停止轮询
+      stopPolling();
+      stopQuizPolling();
       authStore.logout();
     }
 
@@ -414,16 +470,78 @@ export default {
         quizTextbooks.value = [];
       } finally {
         quizLoading.value = false;
+        // 加载完成后检查是否需要启动进度轮询
+        startQuizPollingIfNeeded();
+      }
+    }
+
+    /**
+     * 题库生成进度轮询（参照课程进度轮询模式）
+     */
+    function startQuizPollingIfNeeded() {
+      stopQuizPolling();
+
+      if (hasGeneratingQuizzes.value) {
+        console.log(TAG + " 检测到生成中的题库，启动轮询");
+        quizPollTimer = setInterval(async () => {
+          // 刷新题库列表
+          try {
+            const result = await listQuizTextbooks({ page: 1, pageSize: 50 });
+            if (result.code === 0 && result.data) {
+              quizTextbooks.value = result.data.items || [];
+            }
+          } catch (_) {}
+
+          // 为每个生成中的题库获取进度
+          const generating = quizTextbooks.value.filter((t) => t.generatingTaskId);
+          const newMap = {};
+
+          for (const t of generating) {
+            try {
+              const r = await getMd2QuizTaskProgress(t.generatingTaskId);
+              if (r.code === 0 && r.data) {
+                newMap[t.generatingTaskId] = r.data;
+              }
+            } catch (_) {
+              // 获取进度失败静默处理
+            }
+          }
+
+          // 合并进度数据
+          Object.keys(quizProgressMap).forEach((k) => {
+            if (!newMap[k]) delete quizProgressMap[k];
+          });
+          Object.entries(newMap).forEach(([k, v]) => {
+            quizProgressMap[k] = v;
+          });
+
+          // 全部完成后停止轮询
+          if (!hasGeneratingQuizzes.value) {
+            console.log(TAG + " 所有题库生成完毕，停止轮询");
+            stopQuizPolling();
+          }
+        }, POLL_INTERVAL);
+      }
+    }
+
+    /** 停止题库进度轮询 */
+    function stopQuizPolling() {
+      if (quizPollTimer) {
+        clearInterval(quizPollTimer);
+        quizPollTimer = null;
+        console.log(TAG + " 题库轮询已停止");
       }
     }
 
     /**
      * 题库导入成功回调
      */
-    function onQuizImportSuccess() {
+    function onQuizImportSuccess(data) {
       console.log(TAG + " 题库导入成功，刷新列表");
       quizImportDialogVisible.value = false;
-      loadQuizTextbooks();
+      loadQuizTextbooks().then(() => {
+        startQuizPollingIfNeeded();
+      });
     }
 
     /**
@@ -470,6 +588,31 @@ export default {
       }
     }
 
+    /**
+     * 格式化学习时长为可读字符串
+     * 根据秒数自动选择"小时 分钟"或"分钟 秒"或"秒"格式
+     * @param {number} totalSeconds - 总秒数
+     * @returns {string} 格式化后的时长字符串
+     */
+    function formatDuration(totalSeconds) {
+      if (!totalSeconds || totalSeconds <= 0) return "--";
+
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+
+      if (hours > 0) {
+        // >= 1 小时：显示"X 小时 Y 分钟"
+        return hours + " 小时 " + (minutes > 0 ? minutes + " 分钟" : "");
+      } else if (minutes > 0) {
+        // >= 1 分钟：显示"X 分钟 Y 秒"
+        return minutes + " 分钟 " + (seconds > 0 ? seconds + " 秒" : "");
+      } else {
+        // < 1 分钟：显示秒数
+        return seconds + " 秒";
+      }
+    }
+
     // ========== 生命周期 ==========
 
     onMounted(async () => {
@@ -481,13 +624,17 @@ export default {
       // 2. 加载教材列表
       await loadCourses();
 
-      // 3. 检查是否需要轮询
+      // 3. 加载首页统计数据
+      await loadStats();
+
+      // 4. 检查是否需要轮询
       startPollingIfNeeded();
     });
 
     onUnmounted(() => {
       console.log(TAG + " 首页即将卸载");
       stopPolling();
+      stopQuizPolling();
     });
 
     // ========== 导出给模板使用 ==========
@@ -505,6 +652,9 @@ export default {
       isDark,
       sortBy,
 
+      // ===== 首页统计数据 =====
+      stats,
+
       // ===== 【临时】教材文件列表弹窗状态（未来会删除） =====
       courseFilesDialogVisible,
       currentCourseId,
@@ -517,6 +667,7 @@ export default {
       quizTextbooks,
       quizLoading,
       quizImportDialogVisible,
+      quizProgressMap,
       onQuizImportSuccess,
       onStartQuiz,
       onDeleteQuizTextbook,
@@ -530,7 +681,11 @@ export default {
       onOpenCourse,
       onDeleteCourse,
       setActiveMenu,
+      navigateToBilling,
       handleLogout,
+
+      // ===== 工具函数 =====
+      formatDuration,
     };
   },
 };

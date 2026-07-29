@@ -3,6 +3,7 @@
 // 移植自金毛刷题 test/金毛刷题/backend/src/modules/quiz/service.ts
 
 const quizRepo = require("../repo/quiz_repo");
+const activityRepo = require("../utils/repo/activity_repo"); // 每日活动记录仓库
 
 // 日志前缀
 const TAG = "[quiz_service]";
@@ -473,6 +474,11 @@ async function saveRandomSessionProgress(userId, sessionId, payload) {
 
   console.log(TAG + " 作答已保存 — questionId: " + payload.questionId + ", correct: " + isCorrect);
 
+  // 记录每日活动（不阻塞响应，失败不影响主流程）
+  activityRepo.recordDailyActivity(userId).catch((err) => {
+    console.error(TAG + " 记录每日活动失败（非关键）: " + err.message);
+  });
+
   return { sessionId, currentQuestionIndex: currentIndex };
 }
 
@@ -511,6 +517,11 @@ async function completeRandomSession(userId, sessionId) {
   const report = await reportService.createQuizReport(userId, sessionId);
 
   console.log(TAG + " 交卷完成 — answerCount: " + answeredCount + ", reportId: " + report.reportId);
+
+  // 记录每日活动（不阻塞响应，失败不影响主流程）
+  activityRepo.recordDailyActivity(userId).catch((err) => {
+    console.error(TAG + " 记录每日活动失败（非关键）: " + err.message);
+  });
 
   return {
     sessionId: session.id.toString(),

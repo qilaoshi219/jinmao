@@ -149,30 +149,26 @@
       </ul>
     </nav>
 
-    <!-- ===== 底部区域：积分进度 + 用户信息 ===== -->
+    <!-- ===== 底部区域：余额 + 用户信息 ===== -->
     <div class="border-t px-3 py-3 transition-colors duration-500"
          :style="{ borderColor: 'var(--color-border)' }">
 
-      <!-- 积分进度（仅展开态显示） -->
-      <div v-show="!collapsed" class="mb-3 px-1 transition-colors duration-500">
-        <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-black dark:text-white font-mono transition-colors duration-500">
-            320/500 积分
-          </span>
-          <a href="#"
-             class="text-blue-500 dark:text-blue-400 hover:underline
-                    transition-colors duration-500 font-medium">
-            升级会员 &rarr;
-          </a>
-        </div>
-        <!-- 积分进度条 -->
-        <div class="h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden
-                    transition-colors duration-500">
-          <div class="h-full rounded-full bg-blue-500 dark:bg-blue-400
-                      transition-all duration-500"
-               style="width: 64%" />
-        </div>
-      </div>
+      <!-- 余额入口（点击进入账单页面） -->
+      <button
+        @click="$emit('navigate-billing')"
+        :class="[
+          'w-full flex items-center justify-between px-2.5 py-2 mb-2 rounded-[10px]',
+          'transition-all duration-500',
+          'hover:bg-blue-50 dark:hover:bg-blue-900/20',
+          'text-black dark:text-white'
+        ]">
+        <span class="text-xs font-medium transition-colors duration-500">余额</span>
+        <span class="text-xs font-mono font-bold
+                     text-blue-500 dark:text-blue-400
+                     transition-colors duration-500">
+          ¥{{ formattedBalance }}
+        </span>
+      </button>
 
       <!-- 用户信息（收缩时仅显示头像） -->
       <div class="flex items-center gap-2 px-1 transition-colors duration-500">
@@ -200,6 +196,7 @@
 // 响应式：窗口宽度 < 860px 时自动收缩侧边栏
 
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { getBilling } from "../api/billing"; // 账单 API（获取余额）
 
 // 日志前缀
 const TAG = "[HomeSidebar]";
@@ -217,10 +214,27 @@ const props = defineProps({
 });
 
 // ========== Emits ==========
-defineEmits(["select", "upload"]);
+defineEmits(["select", "upload", "navigate-billing"]);
 
 // ========== 响应式收缩状态 ==========
 const collapsed = ref(false);
+
+// ========== 余额状态 ==========
+const balance = ref("0"); // 用户余额（字符串）
+
+/**
+ * 加载用户余额（从 billing API 获取账务摘要）
+ */
+async function loadBalance() {
+  try {
+    const res = await getBilling(1, 1); // 仅获取摘要数据（pageSize=1 最小化开销）
+    if (res.code === 0 && res.data) {
+      balance.value = res.data.balance || "0";
+    }
+  } catch (err) {
+    console.log(TAG + " 余额加载失败: " + (err.message || err));
+  }
+}
 
 /**
  * 窗口 resize 时判断是否收缩侧边栏
@@ -233,6 +247,7 @@ function handleResize() {
 onMounted(() => {
   handleResize(); // 初始化检查
   window.addEventListener("resize", handleResize);
+  loadBalance(); // 加载余额
   console.log(TAG + " 侧边栏已挂载，窗口宽度: " + window.innerWidth + "px");
 });
 
@@ -256,5 +271,10 @@ const userName = computed(() => {
 /** 用户邮箱 */
 const userEmail = computed(() => {
   return props.user?.email || "";
+});
+
+/** 格式化后的余额（保留 2 位小数） */
+const formattedBalance = computed(() => {
+  return parseFloat(balance.value).toFixed(2);
 });
 </script>
