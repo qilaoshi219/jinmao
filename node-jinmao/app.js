@@ -68,7 +68,123 @@ require("dotenv").config();
     }
   }
 
-  // --- 3.5 基于版本号的数据库迁移检查 ---
+  // --- 3.5 基于 schema 哈希的 Prisma Client 同步检查 ---
+  // prisma migrate deploy 内部会自动 generate，但当版本未变跳过迁移时不会执行
+  // ftp_upload.ps1 排除了 node_modules，服务器上的 Client 可能落后于上传的 schema.prisma
+  // 此处对比 schema.prisma 的 MD5 哈希，仅在变更时运行 prisma generate，避免每次重启都重新生成
+  var schemaPath = path.join(__dirname, "prisma", "schema.prisma");
+  var schemaHashFile = path.join(__dirname, ".schema_hash"); // schema 哈希记录文件
+  var currentSchemaHash = null;
+  try {
+    if (fs.existsSync(schemaPath)) {
+      var crypto = require("crypto");
+      var schemaContent = fs.readFileSync(schemaPath, "utf-8");
+      currentSchemaHash = crypto.createHash("md5").update(schemaContent).digest("hex");
+      console.log("[app] 📐 当前 schema 哈希: " + currentSchemaHash.substring(0, 8) + "...");
+    } else {
+      console.warn("[app] ⚠ schema.prisma 文件不存在: " + schemaPath);
+    }
+  } catch (hashErr) {
+    console.warn("[app] ⚠ 计算 schema 哈希失败: " + hashErr.message);
+  }
+
+  // 读取上次记录的 schema 哈希
+  var lastSchemaHash = null;
+  try {
+    if (fs.existsSync(schemaHashFile)) {
+      var hashContent = fs.readFileSync(schemaHashFile, "utf-8");
+      var hashData = JSON.parse(hashContent);
+      lastSchemaHash = hashData.hash || null;
+      console.log("[app] 📐 上次 schema 哈希: " + (lastSchemaHash ? lastSchemaHash.substring(0, 8) + "..." : "无"));
+    } else {
+      console.log("[app] 📐 .schema_hash 不存在，将生成 Prisma Client");
+    }
+  } catch (readErr) {
+    console.warn("[app] ⚠ 读取 .schema_hash 失败: " + readErr.message);
+  }
+
+  // 判断是否需要重新生成 Prisma Client
+  // 即使 schema 哈希匹配，也需要验证生成的 Prisma Client 是否包含所有 schema 中定义的模型
+  // 场景：ftp_upload.ps1 会排除 node_modules 但可能上传 .schema_hash，导致服务器上的
+  //       Prisma Client 落后于 schema.prisma 但哈希仍匹配，进而跳过 generate
+  var needRegenerate = true; // 默认需要重新生成
+  var regenerateReason = ""; // 记录需要重新生成的原因
+  if (currentSchemaHash && lastSchemaHash === currentSchemaHash) {
+    // 哈希匹配，但还需要验证生成的 Prisma Client 模型完整性
+    var schemaContentCheck = fs.readFileSync(schemaPath, "utf-8");
+    // 提取 schema 中定义的 model 名称（正则匹配 "model ModelName {"）
+    var modelMatches = schemaContentCheck.match(/^model\s+(\w+)\s*\{/gm);
+    if (modelMatches) {
+      var schemaModelNames = modelMatches.map(function (m) { return m.replace(/^model\s+/, "").replace(/\s*\{/, ""); });
+      // 创建临时 PrismaClient 验证所有模型是否已生成
+      try {
+        var { PrismaClient: TempPrismaClient } = require("@prisma/client");
+        var tempPrisma = new TempPrismaClient();
+        var missingModels = schemaModelNames.filter(function (modelName) {
+          // 将 PascalCase model 名转换为 camelCase（Prisma Client 的访问方式）
+          var camelName = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+          return !tempPrisma[camelName];
+        });
+        if (missingModels.length > 0) {
+          console.log("[app] ⚠ schema 哈希匹配，但 Prisma Client 缺少以下模型: " + missingModels.join(", "));
+          console.log("[app]    原因：服务器上的 Prisma Client 是用旧版 schema 生成的（node_modules 未更新）。");
+          regenerateReason = "Prisma Client 模型缺失（" + missingModels.join(", ") + "）";
+        } else {
+          needRegenerate = false;
+          console.log("[app] ✅ schema 未变，Prisma Client 已是最新（模型完整性校验通过），跳过生成");
+        }
+        // 断开临时连接，避免资源泄漏
+        tempPrisma.$disconnect().catch(function () {});
+      } catch (verifyErr) {
+        // 验证失败（如 @prisma/client 不存在），视为需要重新生成
+        console.log("[app] ⚠ Prisma Client 模型验证失败: " + verifyErr.message + "，将重新生成");
+        regenerateReason = "Prisma Client 模型验证失败";
+      }
+    } else {
+      needRegenerate = false;
+      console.log("[app] ✅ schema 未变，Prisma Client 已是最新，跳过生成");
+    }
+  }
+  if (needRegenerate) {
+    var hashReason = regenerateReason || (lastSchemaHash === null
+      ? "首次启动或哈希记录缺失"
+      : "schema 已变更");
+    console.log("[app] ⏳ " + hashReason + "，正在同步 Prisma Client（prisma generate）...");
+    try {
+      var genOutput2 = require("child_process").execSync("npx prisma generate", {
+        cwd: __dirname,
+        encoding: "utf-8",
+        timeout: 60000
+      });
+      console.log("[app] ✅ Prisma Client 已同步");
+      // 清除 Node.js require 缓存，确保后续模块加载的是新生成的 Prisma Client
+      // 因为上方的模型验证代码（require("@prisma/client")）已缓存了旧版本
+      // 必须在 prisma generate 之后清除，否则后续 require 仍会得到旧版本
+      Object.keys(require.cache).forEach(function (cacheKey) {
+        if (cacheKey.includes(".prisma") || cacheKey.includes("@prisma")) {
+          delete require.cache[cacheKey];
+        }
+      });
+      console.log("[app] 🧹 已清除 Prisma Client require 缓存");
+      // 生成成功后更新哈希记录
+      try {
+        if (currentSchemaHash) {
+          var hashRecord = { hash: currentSchemaHash, updatedAt: new Date().toISOString() };
+          fs.writeFileSync(schemaHashFile, JSON.stringify(hashRecord, null, 2), "utf-8");
+          console.log("[app] 📝 .schema_hash 已更新");
+        }
+      } catch (writeErr) {
+        console.warn("[app] ⚠ 无法写入 .schema_hash: " + writeErr.message);
+      }
+    } catch (genErr) {
+      console.error("[app] ❌ Prisma Client 生成失败！");
+      console.error("[app]    错误信息：" + (genErr.stderr || genErr.message || genErr));
+      console.error("[app]    请手动运行 npx prisma generate");
+      process.exit(1);
+    }
+  }
+
+  // --- 3.6 基于版本号的数据库迁移检查 ---
   // 读取 package.json 版本号，与 .migration_version 文件对比
   // 仅在版本变更时执行 prisma migrate deploy，避免每次启动都运行
   // 迁移失败时阻止启动（process.exit(1)），防止 schema 不同步导致 API 500 错误

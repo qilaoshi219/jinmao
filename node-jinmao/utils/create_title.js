@@ -1,7 +1,8 @@
 // ==================== 标题生成模块 ====================
 // 调用 DeepSeek 小模型（deepseek-v4-flash）为教材内容生成标题和副标题
-// 输入：文件名（filename）、原文内容（content）
+// 输入：用户ID（userId）、文件名（filename）、原文内容（content）
 // 输出：标题和副标题 JSON，交由调用者进行后续处理和落盘
+// 计费：通过 llm_client 统一管理，自动记录 token 费用到 billing_record 表
 //
 // 返回值格式：{ code: number, title?: string, subtitle?: string, message?: string }
 //   code 200 — 成功生成标题，title 和 subtitle 包含生成的内容
@@ -10,29 +11,11 @@
 //   code 502 — DeepSeek 返回内容不是合法 JSON，解析失败
 //   code 503 — DeepSeek 返回 JSON 不包含 title 或 subtitle 字段
 
-// 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
-const { deepseek: config, DEEPSEEK_TIMEOUT } = require("../config");
+const llmClient = require("./llm_client");
 const prompt = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
 const { validateFields } = require("./input_validator");
-
-// ==================== 惰性初始化 OpenAI 客户端 ====================
-// openai v6+ 是 ESM-only 模块，在 CommonJS 中无法 require，必须使用动态 import()
-// 使用惰性初始化模式：首次调用时 import 并缓存，后续复用
-let _openai = null;
-async function getOpenAI() {
-    if (!_openai) {
-        const OpenAI = (await import("openai")).default;
-        // 使用小模型配置（deepseek-v4-flash），速度快成本低
-        _openai = new OpenAI({
-            baseURL: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_BASE,
-            apiKey: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_KEY,
-        });
-        console.log("[create_title] OpenAI 客户端已初始化（惰性加载，使用小模型）");
-    }
-    return _openai;
-}
 
 /**
  * 调用 DeepSeek 小模型为教材内容生成标题和副标题（仅返回数据，不负责文件持久化）
@@ -46,6 +29,7 @@ async function getOpenAI() {
  *   code 502 — DeepSeek 返回内容不是合法 JSON，解析失败
  *   code 503 — DeepSeek 返回 JSON 不包含 title 或 subtitle 字段
  *
+ * @param {string} userId - 用户 ID（用于计费关联）
  * @param {string} filename - 文件名，用于提示词上下文
  * @param {string} content - 教材原文内容（纯文本）
  * @returns {Promise<{ code: number, title?: string, subtitle?: string, message?: string }>}
@@ -53,7 +37,7 @@ async function getOpenAI() {
  *   - code 200 时 title 和 subtitle 有值，可直接使用
  *   - code ≥ 400 时 title 和 subtitle 为 undefined，通过 message 了解失败原因
  */
-async function createTitle(filename, content) {
+async function createTitle(userId, filename, content) {
     const TAG = "[create_title]";
 
     // ========== 前置输入验证：使用公共验证模块拦截非法输入 ==========
@@ -78,9 +62,6 @@ async function createTitle(filename, content) {
     }
     console.log(TAG + " 输入验证通过，开始执行标题生成流程。");
 
-    // ========== 惰性获取 OpenAI 客户端（ESM 动态 import） ==========
-    const openai = await getOpenAI();
-
     // ========== 读取 Prompt 模板并替换占位符 ==========
     console.log(TAG + " 正在加载提示词模板：" + prompt.title_prompt);
     const titlePromptPath = path.resolve(__dirname, prompt.title_prompt);
@@ -97,47 +78,25 @@ async function createTitle(filename, content) {
     formattedPrompt = formattedPrompt.replace("{{content}}", content);
     console.log(TAG + " 提示词模板已加载并替换占位符，准备调用 DeepSeek API（小模型）。");
 
-    // ========== 调用 DeepSeek API 生成标题 ==========
-    // ========== 看门狗定时器：5 分钟（小模型速度快，5 分钟为极端情况兜底） ==========
-    const watchdogTimer = setTimeout(() => {
-        console.error(TAG + " !!! 看门狗超时 !!! DeepSeek API 在 " + (DEEPSEEK_TIMEOUT.SMALL_MODEL / 1000) + " 秒内无任何响应，可能发生了极端异常（网络黑洞/SDK卡死等）。");
-    }, DEEPSEEK_TIMEOUT.SMALL_MODEL);
+    // ========== 通过统一 llm_client 调用 DeepSeek API（自动计费） ==========
+    const chatResult = await llmClient.chat(userId, "title", {
+        modelSize: "small",
+        messages: [{ role: "system", content: formattedPrompt }],
+        response_format: { type: "json_object" },
+        stream: false,
+    });
 
-    let completion;
-    try {
-        completion = await openai.chat.completions.create({
-            messages: [{ role: "system", content: formattedPrompt }],  // 系统提示词
-            model: config.DEEPSEEK_API_SMALL.DEEPSEEK_API_MODEL,       // 小模型（deepseek-v4-flash）
-            response_format: { "type": "json_object" },                // JSON 格式优化输出
-            stream: false,
-            timeout: DEEPSEEK_TIMEOUT.SMALL_MODEL, // HTTP 请求级超时 5 分钟，小模型速度快，5 分钟为极端情况兜底
-        });
-    } catch (apiError) {
-        // API 调用失败，清除看门狗定时器
-        clearTimeout(watchdogTimer);
-        // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
-        console.error(TAG + " DeepSeek API 调用失败：" + apiError.message);
+    // ========== 处理 API 调用结果 ==========
+    if (chatResult.code !== 200) {
+        console.error(TAG + " DeepSeek API 调用失败：" + chatResult.message);
         return {
-            code: 500,
-            message: "DeepSeek API 调用失败：" + apiError.message
-        };
-    }
-
-    // API 调用成功返回，清除看门狗定时器
-    clearTimeout(watchdogTimer);
-
-    // ========== 校验 API 返回结构的完整性 ==========
-    // 确保 choices 数组存在且不为空
-    if (!completion || !completion.choices || completion.choices.length === 0) {
-        console.error(TAG + " DeepSeek API 返回内容为空或缺少 choices 字段。");
-        return {
-            code: 500,
-            message: "DeepSeek API 返回内容为空，未能获取有效的标题数据。"
+            code: chatResult.code,
+            message: "DeepSeek API 调用失败：" + chatResult.message
         };
     }
 
     // ========== 解析 DeepSeek 返回的 JSON ==========
-    const resultText = completion.choices[0].message.content;
+    const resultText = chatResult.message.content;
     console.log(TAG + " DeepSeek API 调用成功，返回内容长度：" + resultText.length + " 字符。");
 
     let result;

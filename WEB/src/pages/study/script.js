@@ -3,6 +3,9 @@
 // 所属组件：pages/study/index.vue（课程学习页面）
 // 所属目录：src/pages/study/
 // 文件作用：课程学习页的全部业务逻辑模块
+// 超长说明：本文件因学习页功能高度内聚（章节导航、PPT播放器、音频同步、
+//           SRT字幕、AI助教、学习进度、下一章生成与自动轮询等），且各功能模块
+//           共享同一组响应式状态，不宜拆分，特批允许超过 300 行限制
 //
 // 实现功能：
 //   1. 主题切换（复用 useTheme）
@@ -34,11 +37,11 @@
 // 上次修改：2026-07-23（完善 PPT/Audio/SRT 真实数据展示）
 // ============================================================================
 
-import { ref, computed, watch, onMounted, onUnmounted, inject, nextTick } from "vue";
+import { ref, reactive, computed, watch, onMounted, onUnmounted, inject, nextTick } from "vue";
 import { ElMessage } from "element-plus";
 import { useTheme } from "../../composables/useTheme";
 import { useResize } from "../../composables/useResize";
-import { getBookDetail, getChapterSlides } from "../../api/books";
+import { getBookDetail, getChapterSlides, generateNextChapter, getChapterGenerationProgress, fixMissingFiles, getFixStatus } from "../../api/books";
 import { getProgress, saveProgress } from "../../api/progress"; // 学习进度保存/恢复 API
 
 // ============================================================================
@@ -234,6 +237,14 @@ export default {
     // ---- 控件显示 ----
     let hideTimer = null;
 
+    // ---- PPT 固定尺寸缩放渲染 ----
+    /** iframe 基准渲染宽度（px），iframe 内容始终以该宽度作为内部视口，保持布局稳定 */
+    const pptBaseWidth = ref(1920);
+    /** iframe 基准渲染高度（px），16:9 比例 = 1920 * 9 / 16 */
+    const pptBaseHeight = ref(1080);
+    /** 当前缩放比例，由 updatePptScale() 根据容器实际宽度动态计算 */
+    const pptScale = ref(1);
+
     // ---- AI 对话（后续对接） ----
     const aiMessages = ref([
       { role: "user", text: "这页的导数定义不太理解" },
@@ -246,10 +257,36 @@ export default {
     // ---- Tab ----
     const activeTab = ref("ai");
 
+    // ---- 下一章生成相关 ----
+    /** 是否正在调用生成 API（按钮 loading 状态） */
+    const isGeneratingChapter = ref(false);
+    /** 自动生成模式开关（从 localStorage 读取，每个课程独立记忆） */
+    const autoGenerateEnabled = ref(false);
+    /** 章节生成进度映射表 { [chapterId]: { progress, isTerminal } } */
+    const chapterProgressMap = reactive({});
+    /** 章节进度轮询定时器引用 */
+    let chapterProgressTimer = null;
+    /** 轮询间隔（毫秒），与首页保持一致 */
+    const CHAPTER_POLL_INTERVAL = 3000;
+
+    // ---- 文件补全相关 ----
+    /** 是否正在补全缺失文件 */
+    const isFixingMissing = ref(false);
+    /** 补全横幅提示文字 */
+    const fixingBannerText = ref("");
+    /** 补全状态轮询定时器 */
+    let fixStatusTimer = null;
+    /** 当前章节是否已触发过补全检测（防止重复触发） */
+    const fixCheckTriggered = ref(false);
+
     // ---- DOM 引用 ----
     const pptContainer = ref(null);
     const playerControls = ref(null);
     const audioRef = ref(null);
+    /** PPT 缩放：ResizeObserver 实例引用，用于监听容器尺寸变化并动态计算缩放比 */
+    let pptResizeObserver = null;
+    /** PPT 缩放：requestAnimationFrame ID，用于防抖合并 resize 回调 */
+    let pptResizeRafId = null;
 
     // ========================================================================
     // 3.5 计算属性
@@ -279,6 +316,20 @@ export default {
     /** 当前助教提示（从大纲 JSON 的 zjts 字段获取） */
     const currentZjts = computed(() => {
       return currentSlide.value?.zjts || "";
+    });
+
+    /** 已完成或部分完成的有效章节状态集合（均可进入学习并可触发生成下一章） */
+    const VALID_COMPLETED_STATUSES = ["completed", "partial_completed"];
+
+    /** 是否可以生成下一章（无生成中的章节，且至少有一个已完成/部分完成章节） */
+    const canGenerateNext = computed(() => {
+      if (courseLoading.value) return false; // 还在加载中
+      if (isGeneratingChapter.value) return false; // 正在创建中
+      const hasGenerating = chapters.value.some(c => c.status === "generating");
+      if (hasGenerating) return false; // 已有章节在生成中
+      // 至少有一个已完成或部分完成章节（说明课程流水线已结束）
+      const hasCompleted = chapters.value.some(c => VALID_COMPLETED_STATUSES.includes(c.status));
+      return hasCompleted;
     });
 
     /** 当前章节标题 */
@@ -388,9 +439,9 @@ export default {
             // code 200 表示有历史学习记录
             if (progressResult.code === 200 && progressResult.data) {
               const { chapterId, progress: savedPage } = progressResult.data;
-              // 查找恢复的章节是否存在且已完成
+              // 查找恢复的章节是否存在且已完成/部分完成
               const targetCh = chapters.value.find((c) => String(c.id) === String(chapterId));
-              if (targetCh && targetCh.status === "completed") {
+              if (targetCh && VALID_COMPLETED_STATUSES.includes(targetCh.status)) {
                 restoredChapter = targetCh;
                 restoredPage = savedPage;
                 console.log(TAG + " 检测到上次学习进度：章节 " + targetCh.title + "，第 " + savedPage + " 页");
@@ -403,13 +454,13 @@ export default {
             console.warn(TAG + " 查询学习进度失败: " + (e?.message || e));
           }
 
-          // ========== 选中目标章节：优先恢复上次进度，其次选第一个已完成章节 ==========
+          // ========== 选中目标章节：优先恢复上次进度，其次选第一个已完成/部分完成章节 ==========
           if (chapters.value.length > 0) {
             let targetChapter;
             if (restoredChapter) {
               targetChapter = restoredChapter;
             } else {
-              const firstCompleted = chapters.value.find((c) => c.status === "completed");
+              const firstCompleted = chapters.value.find((c) => VALID_COMPLETED_STATUSES.includes(c.status));
               targetChapter = firstCompleted || chapters.value[0];
             }
             activeChapter.value = targetChapter.id;
@@ -478,6 +529,9 @@ export default {
 
           // 重置 PPT iframe 加载状态
           pptLoading.value = true;
+
+          // 幻灯片加载完成后，检测文件完整性（仅 partial_completed 章节）
+          detectAndFixMissingFiles();
         } else {
           console.warn(TAG + " 章节幻灯片加载失败: " + (result.message || "未知错误"));
           ElMessage.error("章节内容加载失败");
@@ -491,6 +545,122 @@ export default {
         totalPages.value = 0;
       } finally {
         chapterLoading.value = false;
+      }
+    }
+
+    /**
+     * 检测当前章节文件完整性，对缺失文件触发自动补全
+     * 仅在章节状态为 partial_completed 且尚未触发过检测时执行
+     * 采用轻量抽样探测：只检查第一页、中间页、最后一页的 SRT 文件是否存在
+     */
+    async function detectAndFixMissingFiles() {
+      // 守卫：仅 partial_completed 章节触发
+      const currentChapter = chapters.value.find(c => String(c.id) === String(activeChapter.value));
+      if (!currentChapter || currentChapter.status !== "partial_completed") {
+        return;
+      }
+      // 守卫：已触发过不再重复
+      if (fixCheckTriggered.value) {
+        return;
+      }
+      fixCheckTriggered.value = true;
+      console.log(TAG + " [文件补全] 检测 partial_completed 章节文件完整性...");
+
+      const courseId = studyParams?.value?.courseId;
+      if (!courseId || !activeChapter.value) return;
+
+      // 轻量抽样探测：取第一页、中间页、最后一页的 SRT 做 HEAD 请求
+      const testIndices = [];
+      if (slides.value.length > 0) testIndices.push(0); // 第一页
+      if (slides.value.length > 2) testIndices.push(Math.floor(slides.value.length / 2)); // 中间页
+      if (slides.value.length > 1) testIndices.push(slides.value.length - 1); // 最后一页
+
+      let hasMissing = false;
+      for (const idx of testIndices) {
+        const srtUrl = slides.value[idx]?.srtUrl;
+        if (!srtUrl) continue;
+        try {
+          const resp = await fetch(srtUrl, { method: "HEAD" });
+          if (!resp.ok) {
+            console.log(TAG + " [文件补全] 抽样检测到缺失: " + srtUrl + " (HTTP " + resp.status + ")");
+            hasMissing = true;
+            break; // 发现一处缺失即触发补全
+          }
+        } catch (e) {
+          console.log(TAG + " [文件补全] 抽样检测网络异常: " + (e?.message || e));
+          hasMissing = true;
+          break;
+        }
+      }
+
+      if (!hasMissing) {
+        console.log(TAG + " [文件补全] 抽样检测通过，无需补全");
+        return;
+      }
+
+      // 触发补全
+      console.log(TAG + " [文件补全] 检测到文件缺失，触发自动补全...");
+      isFixingMissing.value = true;
+      fixingBannerText.value = "检测到部分文件缺失，正在自动补全...";
+
+      try {
+        const result = await fixMissingFiles(courseId, activeChapter.value);
+        if (result.code === 0 || result.code === 409) {
+          // 任务已启动或已有进行中任务，开始轮询
+          startFixStatusPolling(courseId, activeChapter.value);
+        } else {
+          // 失败时隐藏横幅
+          console.warn(TAG + " [文件补全] 触发失败: " + (result.message || "未知错误"));
+          isFixingMissing.value = false;
+          fixingBannerText.value = "";
+        }
+      } catch (e) {
+        console.warn(TAG + " [文件补全] 触发异常: " + (e?.message || e));
+        isFixingMissing.value = false;
+        fixingBannerText.value = "";
+      }
+    }
+
+    /**
+     * 启动文件补全状态轮询
+     * 每 3 秒查询补全状态，完成后刷新 slides 数据并隐藏横幅
+     * @param {string} courseId - 课程 ID
+     * @param {string} chapterId - 章节 ID
+     */
+    function startFixStatusPolling(courseId, chapterId) {
+      if (fixStatusTimer) clearInterval(fixStatusTimer);
+
+      console.log(TAG + " [文件补全] 开始轮询补全状态（间隔 3 秒）");
+      fixStatusTimer = setInterval(async () => {
+        try {
+          const result = await getFixStatus(courseId, chapterId);
+          if (result.code === 0 && result.data) {
+            const { isFixing } = result.data;
+            if (!isFixing) {
+              // 补全已完成
+              console.log(TAG + " [文件补全] 补全完成，刷新章节数据");
+              stopFixStatusPolling();
+              // 刷新 slides 数据
+              await loadChapterSlides(chapterId);
+              // 刷新课程数据以更新章节状态
+              await loadCourseData();
+              // 隐藏横幅
+              isFixingMissing.value = false;
+              fixingBannerText.value = "";
+            }
+          }
+        } catch (_) {
+          // 轮询失败静默处理
+        }
+      }, 3000);
+    }
+
+    /** 停止文件补全状态轮询 */
+    function stopFixStatusPolling() {
+      if (fixStatusTimer) {
+        clearInterval(fixStatusTimer);
+        fixStatusTimer = null;
+        console.log(TAG + " [文件补全] 轮询已停止");
       }
     }
 
@@ -615,12 +785,295 @@ export default {
      * @param {string|number} chapterId - 章节 ID
      */
     async function switchChapter(chapterId) {
+      // 守卫：查找目标章节状态，非 completed 或 partial_completed 阻止切换
+      const targetChapter = chapters.value.find(c => String(c.id) === String(chapterId));
+      if (!targetChapter) {
+        console.warn(TAG + " 章节不存在: " + chapterId);
+        return;
+      }
+      if (!VALID_COMPLETED_STATUSES.includes(targetChapter.status)) {
+        showGeneratingTip(targetChapter);
+        return;
+      }
       if (chapterId === activeChapter.value) return; // 已经是当前章节，不重复加载
       console.log(TAG + " 切换章节: " + chapterId);
       activeChapter.value = chapterId;
+      fixCheckTriggered.value = false; // 重置补全检测标记
       await loadChapterSlides(chapterId);
       // 切换章节后保存学习进度（防抖）
       saveProgressDebounced();
+
+      // 自动生成检查：如果开启了自动生成，检查是否需要生成下一章
+      if (autoGenerateEnabled.value) {
+        autoGenerateCheck(targetChapter);
+      }
+    }
+
+    /**
+     * 自动生成检查：学习第 N 章时，检查是否需要生成第 N+1 章
+     * @param {Object} currentChapter - 当前正在学习的章节对象
+     */
+    function autoGenerateCheck(currentChapter) {
+      const currentSeq = currentChapter.sequence;
+      const nextSeq = currentSeq + 1;
+
+      // 查找是否已存在第 N+1 章
+      const nextChapter = chapters.value.find(c => c.sequence === nextSeq);
+
+      if (!nextChapter) {
+        // 不存在 → 自动生成
+        console.log(TAG + " [自动生成] 检测到第 " + currentSeq + " 章，自动生成第 " + nextSeq + " 章");
+        handleGenerateNextChapter(true); // silent=true，不显示错误消息
+      }
+      // 存在且 generating → 启动轮询（由 startChapterProgressPolling 处理）
+      // 存在且 completed → 无需操作
+    }
+
+    /**
+     * 点击生成中章节时的提示
+     * @param {Object} chapter - 章节对象
+     */
+    function showGeneratingTip(chapter) {
+      if (chapter.status === "generating") {
+        ElMessage.warning("该章节正在生成中，请稍候...");
+      } else if (chapter.status === "pending") {
+        ElMessage.warning(`该章节尚未生成，请点击"生成下一章"按钮`);
+      } else if (chapter.status === "failed") {
+        ElMessage.warning(`该章节生成失败，请点击"生成下一章"重新生成`);
+      }
+    }
+
+    /**
+     * 处理"生成下一章"按钮点击
+     * @param {boolean} silent - 静默模式（自动生成时不显示错误消息）
+     */
+    async function handleGenerateNextChapter(silent = false) {
+      const courseId = studyParams?.value?.courseId;
+      if (!courseId) {
+        if (!silent) ElMessage.error("无法获取课程信息");
+        return;
+      }
+
+      if (isGeneratingChapter.value) return; // 防止重复点击
+      isGeneratingChapter.value = true;
+      console.log(TAG + " [生成下一章] 开始，courseId: " + courseId);
+
+      try {
+        const result = await generateNextChapter(courseId);
+
+        if (result.code === 0 && result.data) {
+          const { chapterId, sequence, name, status } = result.data;
+          console.log(TAG + " [生成下一章] 创建成功，chapterId: " + chapterId + "，sequence: " + sequence);
+
+          // 将新章节添加到列表中
+          chapters.value.push({
+            id: chapterId,
+            title: name,
+            duration: "—",
+            status: status,
+            sequence: sequence,
+            totalPages: 0,
+          });
+          // 按 sequence 排序
+          chapters.value.sort((a, b) => a.sequence - b.sequence);
+
+          // 启动进度轮询
+          startChapterProgressPolling();
+
+          if (!silent) {
+            ElMessage.success("第 " + sequence + " 章已开始生成");
+          }
+        } else {
+          if (!silent) {
+            ElMessage.warning(result.message || "生成下一章失败");
+          }
+          console.warn(TAG + " [生成下一章] 失败: " + (result.message || "未知错误"));
+        }
+      } catch (error) {
+        console.error(TAG + " [生成下一章] 异常: " + (error?.message || error));
+        if (!silent) {
+          ElMessage.error("生成下一章失败，请稍后重试");
+        }
+      } finally {
+        isGeneratingChapter.value = false;
+      }
+    }
+
+    /**
+     * 自动生成开关变更回调
+     * @param {boolean} enabled - 开关状态
+     */
+    function onAutoGenerateToggle(enabled) {
+      const courseId = studyParams?.value?.courseId;
+      if (!courseId) return;
+      const key = "auto_generate_" + courseId;
+      if (enabled) {
+        localStorage.setItem(key, "1");
+        console.log(TAG + " 自动生成模式已开启");
+      } else {
+        localStorage.removeItem(key);
+        console.log(TAG + " 自动生成模式已关闭");
+      }
+    }
+
+    // ===== 章节进度轮询函数 =====
+
+    /**
+     * 启动章节进度轮询（检测到 generating 状态的章节时调用）
+     */
+    function startChapterProgressPolling() {
+      if (chapterProgressTimer) {
+        clearInterval(chapterProgressTimer); // 先清除已有定时器
+      }
+      chapterProgressTimer = null;
+
+      const courseId = studyParams?.value?.courseId;
+      if (!courseId) return;
+
+      console.log(TAG + " 启动章节进度轮询（间隔 " + CHAPTER_POLL_INTERVAL + "ms）");
+      chapterProgressTimer = setInterval(async () => {
+        // 查找所有 generating 状态的章节
+        const generatingChapters = chapters.value.filter(c => c.status === "generating");
+        if (generatingChapters.length === 0) {
+          console.log(TAG + " 无生成中章节，停止轮询");
+          stopChapterProgressPolling();
+          return;
+        }
+
+        // 轮询每个生成中章节的进度
+        for (const ch of generatingChapters) {
+          try {
+            const result = await getChapterGenerationProgress(courseId, ch.id);
+            if (result.code === 0 && result.data) {
+              const { chapterStatus, progress, isTerminal } = result.data;
+
+              // 更新进度映射表
+              chapterProgressMap[ch.id] = { progress, isTerminal };
+
+              // 如果章节生成完成，更新本地状态并刷新课程数据
+              if (isTerminal) {
+                console.log(TAG + " 章节 " + ch.id + " 已结束，状态: " + chapterStatus);
+                // 更新本地章节状态
+                ch.status = chapterStatus;
+                if (chapterStatus === "completed") {
+                  ElMessage.success("「" + ch.title + "」已生成完成");
+                }
+                // 清除该章节的进度数据
+                delete chapterProgressMap[ch.id];
+              }
+            }
+          } catch (_) {
+            // 轮询失败静默处理
+          }
+        }
+
+        // 检查是否还有生成中的章节
+        const stillGenerating = chapters.value.some(c => c.status === "generating");
+        if (!stillGenerating) {
+          stopChapterProgressPolling();
+        }
+      }, CHAPTER_POLL_INTERVAL);
+    }
+
+    /** 停止章节进度轮询 */
+    function stopChapterProgressPolling() {
+      if (chapterProgressTimer) {
+        clearInterval(chapterProgressTimer);
+        chapterProgressTimer = null;
+        console.log(TAG + " 章节进度轮询已停止");
+      }
+    }
+
+    // ===== 章节进度条辅助函数（供模板调用） =====
+
+    /**
+     * 获取章节进度阶段文字
+     * @param {Object} chapter - 章节对象
+     * @returns {string} 阶段文字
+     */
+    function getChapterProgressLabel(chapter) {
+      const data = chapterProgressMap[chapter.id];
+      if (!data || !data.progress) return "正在准备中...";
+
+      const phase = data.progress.phase;
+      const ep = data.progress.elaborationProgress || {};
+      const fp = data.progress.filesProgress || {};
+
+      switch (phase) {
+        case "outline_generating":
+          return "正在生成大纲";
+        case "elaborating":
+          return "正在扩写口播稿 " + (ep.current || 0) + "/" + (ep.total || "?");
+        case "ppt_generating":
+          return "正在生成课件 " + (fp.current || 0) + "/" + (fp.total || "?");
+        case "validating":
+          return "正在检查完整性";
+        default:
+          return "正在生成中...";
+      }
+    }
+
+    /**
+     * 获取章节进度条宽度百分比
+     * @param {Object} chapter - 章节对象
+     * @returns {string} CSS 宽度值（如 "45%"）
+     */
+    function getChapterProgressBarWidth(chapter) {
+      const data = chapterProgressMap[chapter.id];
+      if (!data || !data.progress) return "0%";
+
+      const phase = data.progress.phase;
+      switch (phase) {
+        case "outline_generating": {
+          const op = data.progress.outlineProgress || {};
+          const pct = op.percentage || 0;
+          return Math.min(100, Math.max(0, pct)) + "%";
+        }
+        case "elaborating": {
+          const ep = data.progress.elaborationProgress || {};
+          if (ep.total > 0) return Math.round((ep.current / ep.total) * 100) + "%";
+          return "0%";
+        }
+        case "ppt_generating": {
+          const fp = data.progress.filesProgress || {};
+          if (fp.total > 0) return Math.round((fp.current / fp.total) * 100) + "%";
+          return "0%";
+        }
+        case "validating":
+          return "80%";
+        default:
+          return "0%";
+      }
+    }
+
+    /**
+     * 获取章节进度百分比/计数文字
+     * @param {Object} chapter - 章节对象
+     * @returns {string} 百分比或计数文字
+     */
+    function getChapterProgressCountText(chapter) {
+      const data = chapterProgressMap[chapter.id];
+      if (!data || !data.progress) return "";
+
+      const phase = data.progress.phase;
+      switch (phase) {
+        case "outline_generating": {
+          const op = data.progress.outlineProgress || {};
+          return (op.percentage || 0) + "%";
+        }
+        case "elaborating": {
+          const ep = data.progress.elaborationProgress || {};
+          return (ep.current || 0) + "/" + (ep.total || "?");
+        }
+        case "ppt_generating": {
+          const fp = data.progress.filesProgress || {};
+          return (fp.current || 0) + "/" + (fp.total || "?");
+        }
+        case "validating":
+          return "";
+        default:
+          return "";
+      }
     }
 
     // ========================================================================
@@ -822,6 +1275,35 @@ export default {
     function onPptLoad() {
       pptLoading.value = false;
       console.log(TAG + " PPT 幻灯片加载完成，第 " + currentPage.value + " 页");
+      // iframe 加载后重新计算缩放比（容器尺寸可能已变化）
+      updatePptScale();
+    }
+
+    /**
+     * 根据容器实际尺寸动态计算 iframe 缩放比
+     * iframe 内部始终以 1920×1080 视口渲染（不受容器大小影响），
+     * 通过 CSS transform: scale() 缩放到容器尺寸，避免内部响应式布局变形
+     * 使用 requestAnimationFrame 防抖，避免频繁重排
+     */
+    function updatePptScale() {
+      // 取消之前的 RAF，合并多次调用为一次
+      if (pptResizeRafId) {
+        cancelAnimationFrame(pptResizeRafId);
+        pptResizeRafId = null;
+      }
+      pptResizeRafId = requestAnimationFrame(() => {
+        pptResizeRafId = null;
+        const container = pptContainer.value;
+        if (!container) return;
+        // 获取容器实际渲染尺寸
+        const cw = container.clientWidth;
+        const ch = container.clientHeight;
+        if (cw <= 0 || ch <= 0) return;
+        // 计算缩放比：取宽高缩放比的较小值（contain 策略），保证内容完全可见
+        const scaleX = cw / pptBaseWidth.value;
+        const scaleY = ch / pptBaseHeight.value;
+        pptScale.value = Math.min(scaleX, scaleY);
+      });
     }
 
     // ========================================================================
@@ -865,6 +1347,11 @@ export default {
           controls.style.pointerEvents = "none";
         }
       }
+
+      // 全屏切换后容器尺寸改变，延迟一帧重新计算缩放比
+      nextTick(() => {
+        updatePptScale();
+      });
     }
 
     // ========================================================================
@@ -925,7 +1412,8 @@ export default {
     function mapChapterStatus(status) {
       switch (status) {
         case "completed":
-          return "completed";
+        case "partial_completed":
+          return "completed"; // 已完成或部分完成，均显示为可学习状态
         case "generating":
           return "pending"; // 生成中显示为 pending
         case "failed":
@@ -942,10 +1430,36 @@ export default {
     onMounted(async () => {
       console.log(TAG + " NERV 三栏播放器学习页初始化完成");
 
+      // ========== PPT 容器缩放监听 ==========
+      // 使用 ResizeObserver 监听 pptContainer 尺寸变化，动态更新 iframe 缩放比
+      // 这样即使容器因侧边栏拖动、窗口缩放等变化，PPT 内容也能正确缩放
+      if (pptContainer.value) {
+        pptResizeObserver = new ResizeObserver(() => {
+          updatePptScale();
+        });
+        pptResizeObserver.observe(pptContainer.value);
+        // 首次计算缩放比
+        updatePptScale();
+        console.log(TAG + " PPT 缩放监听已启动，基准尺寸: " + pptBaseWidth.value + "x" + pptBaseHeight.value + "px");
+      }
+
       // 如果有课程参数，自动加载课程数据
       if (studyParams?.value?.courseId) {
         console.log(TAG + " 检测到课程参数，自动加载: courseId=" + studyParams.value.courseId);
+
+        // 从 localStorage 恢复自动生成开关状态
+        const key = "auto_generate_" + studyParams.value.courseId;
+        autoGenerateEnabled.value = localStorage.getItem(key) === "1";
+        console.log(TAG + " 自动生成模式: " + (autoGenerateEnabled.value ? "已开启" : "已关闭"));
+
         await loadCourseData();
+
+        // 加载完成后，检查是否有正在生成的章节，启动轮询
+        const hasGenerating = chapters.value.some(c => c.status === "generating");
+        if (hasGenerating) {
+          console.log(TAG + " 检测到生成中章节，启动进度轮询");
+          startChapterProgressPolling();
+        }
       } else {
         courseLoading.value = false;
         console.warn(TAG + " 未接收到课程参数，页面为空状态");
@@ -953,6 +1467,24 @@ export default {
     });
 
     onUnmounted(async () => {
+      // 清理 PPT 缩放监听
+      if (pptResizeObserver) {
+        pptResizeObserver.disconnect();
+        pptResizeObserver = null;
+        console.log(TAG + " PPT 缩放监听已清理");
+      }
+      // 清理 RAF 定时器
+      if (pptResizeRafId) {
+        cancelAnimationFrame(pptResizeRafId);
+        pptResizeRafId = null;
+      }
+
+      // 停止章节进度轮询
+      stopChapterProgressPolling();
+
+      // 停止文件补全状态轮询
+      stopFixStatusPolling();
+
       // 页面卸载前立即保存当前学习进度（不使用防抖，确保不丢失）
       if (saveProgressTimer) clearTimeout(saveProgressTimer);
       const courseId = studyParams?.value?.courseId;
@@ -1043,6 +1575,11 @@ export default {
       hideControls,
       cancelHideTimer,
 
+      // PPT 缩放渲染
+      pptScale,
+      pptBaseWidth,
+      pptBaseHeight,
+
       // AI
       aiMessages,
       aiInput,
@@ -1057,6 +1594,22 @@ export default {
       toggleAutoPlay,
       toggleFullscreen,
       seekProgress,
+
+      // 下一章生成
+      canGenerateNext,
+      isGeneratingChapter,
+      autoGenerateEnabled,
+      chapterProgressMap,
+      handleGenerateNextChapter,
+      onAutoGenerateToggle,
+      showGeneratingTip,
+      getChapterProgressLabel,
+      getChapterProgressBarWidth,
+      getChapterProgressCountText,
+
+      // 文件补全
+      isFixingMissing,
+      fixingBannerText,
     };
   },
 };

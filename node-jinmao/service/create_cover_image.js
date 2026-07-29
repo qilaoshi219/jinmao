@@ -244,7 +244,7 @@ async function createCoverImage(courseId, userId, title, sample) {
 
         // ============ 步骤 3：调用文生图 API ============
         console.log(TAG + " 步骤 3/6: 调用文生图 API...");
-        const imageResult = await createImage(prompt, {
+        const imageResult = await createImage(userId, prompt, {
             aspectRatio: DEFAULT_ASPECT_RATIO
         });
 

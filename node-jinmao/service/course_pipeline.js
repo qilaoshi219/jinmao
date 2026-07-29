@@ -160,7 +160,7 @@ async function phase2_extractAndIndex(courseId, course, tempMDPath) {
   await bookRepo.updatePipelineStatus(courseId, "getting_line");
 
   // 2.5 调用 AI 识别章节的起始行号和结束行号
-  const lineResult = await getLine(indexedText);
+  const lineResult = await getLine(course.userId, indexedText);
   if (lineResult.code !== 200) {
     throw new Error("行号识别失败: " + (lineResult.message || "未知错误"));
   }
@@ -234,8 +234,8 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
   await bookRepo.updatePipelineProgress(courseId, { outlineStartTime: Date.now() });
 
   // 3.2 调用 AI 生成 PPT 大纲
-  // generateOutline 参数：(yuanwen, pptother)，pptother 传课程名称
-  const outlineResult = await generateOutline(chapterText, course.name || "课程");
+  // generateOutline 参数：(userId, yuanwen, pptother)，pptother 传课程名称
+  const outlineResult = await generateOutline(course.userId, chapterText, course.name || "课程");
   if (outlineResult.code !== 200) {
     throw new Error("大纲生成失败: " + (outlineResult.message || "未知错误"));
   }
@@ -306,7 +306,7 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
           // 预期字数：第一页（i=0）用1.5倍系数（概述页简练），其他页用3倍系数
           const wordMultiplier = (i === 0) ? 1.5 : 3;
           const expectedWords = Math.max(100, Math.min(5000, Math.round(slideScript.length * wordMultiplier)));
-          const elaborationResult = await elaborateText(slideScript, chapterText, expectedWords, i);
+          const elaborationResult = await elaborateText(course.userId, slideScript, chapterText, expectedWords, i);
 
           if (elaborationResult.code === 200 && elaborationResult.script) {
             slide.script = elaborationResult.script; // 用扩写后的脚本替换原脚本
@@ -370,11 +370,13 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
  * 遍历所有幻灯片，并行调用 AI 生成 HTML PPT 并上传 MinIO
  *
  * @param {string|number} courseId - 课程 ID
- * @param {string} chapterRoot - 章节 MinIO 根路径
- * @param {Object} outline - PPT 大纲对象（含 slides 数组）
+ * @param {string|number} userId - 用户 ID（用于 llm_client 计费关联）
+ * @param {string} chapterRoot - 章节 MinIO 根路径（用于上传 PPT 文件）
+ * @param {Object} outline - PPT 大纲对象（含 slides 数组，每页含 PIC 图片信息）
+ * @param {string} imageBaseUrl - 图片基础代理 URL（如 "/api/v1/files/usercourse/1/42/xxx/image"），用于构造完整图片 URL
  * @returns {Promise<boolean>} 全部成功返回 true，部分失败返回 false
  */
-async function phase4_generatePpt(courseId, chapterRoot, outline) {
+async function phase4_generatePpt(courseId, userId, chapterRoot, outline, imageBaseUrl) {
   const startTime = Date.now();
   console.log("[course_pipeline][Phase4] ========== 阶段四：PPT 生成（并发5） ==========");
 
@@ -401,11 +403,35 @@ async function phase4_generatePpt(courseId, chapterRoot, outline) {
       console.log("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 生成开始...");
 
       try {
-        // 4.3a 调用 AI 生成 HTML PPT
-        // generateHtmlPpt 参数：(pptGuide, originalText, imageUrls)
+        // 4.3a 构造图片信息列表：从 PIC 字段读取图片路径和描述，转为完整代理 URL
+        // 兼容旧格式（string[]）和新格式（object[]: {path, desc}）
+        const rawPic = slide.PIC || [];
+        const imageInfos = rawPic.map((item) => {
+            if (typeof item === "string") {
+                // 旧格式：纯路径字符串 → 构造完整代理 URL，无描述
+                return {
+                    url: imageBaseUrl + "/" + item.replace(/^image\//, ""),
+                    desc: "" // 旧格式无描述
+                };
+            } else if (item && typeof item === "object") {
+                // 新格式：{ path, desc } → 构造完整代理 URL，保留描述
+                return {
+                    url: imageBaseUrl + "/" + (item.path || "").replace(/^image\//, ""),
+                    desc: item.desc || ""
+                };
+            }
+            return { url: "", desc: "" };
+        }).filter(info => info.url); // 过滤掉空 URL
+
+        console.log("[course_pipeline][Phase4] 幻灯片 " + slideNum + " 图片信息: " +
+            imageInfos.length + " 张" +
+            (imageInfos.length > 0 ? "（含描述=" + imageInfos.filter(i => i.desc).length + "）" : "（无配图）"));
+
+        // 4.3b 调用 AI 生成 HTML PPT
+        // generateHtmlPpt 参数：(userId, pptGuide, originalText, imageInfos)
         const pptGuide = slide.pptGuide || slide.ppt_guide || "";
         const slideText = slide.script || slide.content || "";
-        const htmlResult = await generateHtmlPpt(pptGuide, slideText, []);
+        const htmlResult = await generateHtmlPpt(userId, pptGuide, slideText, imageInfos);
 
         if (htmlResult.code !== 200 || !htmlResult.html) {
           console.error("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 生成失败: " +
@@ -469,7 +495,7 @@ async function phase4_generatePpt(courseId, chapterRoot, outline) {
  * @param {Object} outline - PPT 大纲对象（含 slides 数组）
  * @returns {Promise<boolean>} 全部成功返回 true，部分失败返回 false
  */
-async function phase5_generateTts(courseId, chapterRoot, outline) {
+async function phase5_generateTts(courseId, userId, chapterRoot, outline) {
   const startTime = Date.now();
   console.log("[course_pipeline][Phase5] ========== 阶段五：TTS 生成（并发3） ==========");
 
@@ -505,7 +531,7 @@ async function phase5_generateTts(courseId, chapterRoot, outline) {
 
       try {
         // 5.3a 调用 TTS 合成 API
-        const ttsResult = await synthesize(script);
+        const ttsResult = await synthesize(userId, script);
 
         if (ttsResult.code !== 200) {
           console.error("[course_pipeline][Phase5] 幻灯片 " + slideNum + " TTS 合成失败: " +
@@ -743,9 +769,16 @@ async function pipeline(courseId) {
     console.log("[course_pipeline][pipeline] ========== 阶段四&五：PPT + TTS 并行启动 ==========");
     const chapterRoot = chapter.chapterRoot;
 
+    // 从 textbookPath 推导图片基础代理 URL，供 Phase4 构造完整图片 URL
+    // textbookPath 格式: /usercourse/{userId}/{bookId}/{归一产物目录}/{filename}.md
+    // imageBaseUrl 格式: /api/v1/files/usercourse/{userId}/{bookId}/{归一产物目录}/image
+    const mdDir = course.textbookPath.replace(/\/[^/]+\.md$/, '');
+    const imageBaseUrl = '/api/v1/files' + mdDir + '/image';
+    console.log("[course_pipeline][pipeline] 图片基础 URL 已推导: " + imageBaseUrl);
+
     // 两个阶段同时开始，互不等待
-    const pptPromise = phase4_generatePpt(courseId, chapterRoot, outline);
-    const ttsPromise = phase5_generateTts(courseId, chapterRoot, outline);
+    const pptPromise = phase4_generatePpt(courseId, course.userId, chapterRoot, outline, imageBaseUrl);
+    const ttsPromise = phase5_generateTts(courseId, course.userId, chapterRoot, outline);
 
     const [pptAllSuccess, ttsAllSuccess] = await Promise.all([pptPromise, ttsPromise]);
 
@@ -777,5 +810,659 @@ async function pipeline(courseId) {
   }
 }
 
+// ==================== 单章节生成流水线 ====================
+
+/**
+ * 单章节生成流水线（Phase 2-6）
+ * 用于"下一章生成"功能，针对已创建的章节记录执行完整的生成流程
+ * 与主流水线 pipeline() 的区别：
+ *   - 跳过 Phase 1（数据获取）：课程已存在，MD 已在 MinIO
+ *   - 跳过异步标题/封面生成：仅在首次上传时触发
+ *   - 进度写入 Chapter.generationProgress 而非 Course.pipelineProgress
+ *
+ * @param {string|number} courseId - 课程 ID
+ * @param {string|number} chapterId - 已创建的章节 ID（status 应为 "generating"）
+ * @returns {Promise<{ code: number, status?: string, message?: string }>}
+ */
+async function generateChapter(courseId, chapterId) {
+  const startTime = Date.now();
+  const TAG = "[course_pipeline][generateChapter]";
+  console.log(TAG + " ========== 单章生成流水线启动 ==========");
+  console.log(TAG + " 课程 ID: " + courseId + "，章节 ID: " + chapterId);
+
+  try {
+    // ───── Step 1：查询课程和章节数据 ─────
+    const courseResult = await bookRepo.getCourseById(courseId);
+    if (courseResult.code !== 200) {
+      throw new Error("课程查询失败: " + (courseResult.message || "未知错误"));
+    }
+    const course = courseResult.course;
+
+    const chapterResult = await chapterRepo.getChapterById(chapterId);
+    if (chapterResult.code !== 200) {
+      throw new Error("章节查询失败: " + (chapterResult.message || "未知错误"));
+    }
+    const chapter = chapterResult.chapter;
+
+    console.log(TAG + " 课程: " + course.name + "，章节: " + chapter.name + "（sequence=" + chapter.sequence + "）");
+
+    // 初始化章节进度
+    await chapterRepo.updateChapterProgress(chapterId, {
+      phase: "outline_generating",
+      outlineProgress: { percentage: 0, isComplete: false },
+      elaborationProgress: { current: 0, total: 0, isComplete: false },
+      filesProgress: { current: 0, total: 0, isComplete: false },
+    });
+
+    // ───── Step 2：从 MinIO 下载 MD 文件 ─────
+    console.log(TAG + " [Step2] 从 MinIO 下载 MD 文件: " + course.textbookPath);
+    const tempMDPath = path.join(os.tmpdir(), "jinmao-chapter-" + courseId + "-" + chapterId + ".md");
+    await minioClient.fGetObject(BUCKET, course.textbookPath, tempMDPath);
+    console.log(TAG + " [Step2] MD 文件下载完成: " + tempMDPath);
+
+    // ───── Step 3：提取文本 + AI 识别行号 ─────
+    console.log(TAG + " [Step3] 提取文本范围: [" + (course.endline + 1) + ", " + (course.endline + 1000) + "]");
+    const extractStart = (course.endline || 0) + 1;
+    const extractEnd = (course.endline || 0) + 1000;
+    const extractedResult = await extractLines(tempMDPath, extractStart, extractEnd);
+    if (extractedResult.code !== 200 && extractedResult.code !== 206) {
+      throw new Error("文本提取失败: " + (extractedResult.message || "未知错误"));
+    }
+    const extractedText = extractedResult.text;
+    const isLastChapter = extractedResult.code === 206;
+    console.log(TAG + " [Step3] 文本提取成功，长度: " + extractedText.length + " 字符" +
+      (isLastChapter ? "（已截断到文件末尾）" : ""));
+
+    // 添加行号
+    const indexedResult = await addLineNumbers(extractedText);
+    if (indexedResult.code !== 200) {
+      throw new Error("行号添加失败: " + (indexedResult.message || "未知错误"));
+    }
+    const indexedText = indexedResult.text;
+
+    // AI 识别章节行号
+    const lineResult = await getLine(course.userId, indexedText);
+    if (lineResult.code !== 200) {
+      throw new Error("行号识别失败: " + (lineResult.message || "未知错误"));
+    }
+    const { startline, endline } = lineResult;
+    console.log(TAG + " [Step3] 行号识别完成: startline=" + startline + ", endline=" + endline);
+
+    // 更新章节行号信息
+    await chapterRepo.updateChapter(chapterId, { startline, endline });
+
+    // 更新课程 endline（推进进度）
+    await bookRepo.updateEndline(courseId, endline);
+
+    // 提取章节原文
+    const indexedLines = indexedText.split("\n");
+    const chapterLines = [];
+    for (const line of indexedLines) {
+      const match = line.match(/^\s*(\d+)\s*\|/);
+      if (match) {
+        const lineNum = parseInt(match[1], 10);
+        if (lineNum >= startline && lineNum <= endline) {
+          const contentIdx = line.indexOf("|");
+          chapterLines.push(line.substring(contentIdx + 1).trim());
+        }
+      }
+    }
+    const chapterText = chapterLines.join("\n");
+    console.log(TAG + " [Step3] 章节原文提取完成，共 " + chapterLines.length + " 行");
+
+    // 清理临时 MD 文件
+    try { fs.unlinkSync(tempMDPath); } catch (_) { /* 忽略清理错误 */ }
+
+    // ───── Step 4：大纲生成 ─────
+    console.log(TAG + " [Step4] 开始生成大纲...");
+    await chapterRepo.updateChapterProgress(chapterId, {
+      phase: "outline_generating",
+      outlineProgress: { percentage: 0, isComplete: false, startTime: Date.now() },
+    });
+
+    const outlineResult = await generateOutline(course.userId, chapterText, course.name || "课程");
+    if (outlineResult.code !== 200) {
+      throw new Error("大纲生成失败: " + (outlineResult.message || "未知错误"));
+    }
+    let outline = outlineResult.outline;
+    console.log(TAG + " [Step4] 大纲生成成功，共 " + (outline.slides ? outline.slides.length : 0) + " 张幻灯片");
+
+    // 字段名规范化（同主流水线 Phase 3）
+    if (outline.slides && outline.slides.length > 0) {
+      outline.slides = outline.slides.map(slide => ({
+        ...slide,
+        pptGuide: slide.pptGuide || slide.ppt_guide || slide.ppt || "",
+        script: slide.script || slide.elaboration || slide.kbg || ""
+      }));
+    }
+
+    const totalSlides = outline.slides ? outline.slides.length : 0;
+    await chapterRepo.updateChapterProgress(chapterId, {
+      outlineProgress: { percentage: 100, isComplete: true },
+    });
+
+    // ───── Step 5：条件性口播稿扩写 ─────
+    if (course.elaborationEnabled && outline.slides && outline.slides.length > 0) {
+      console.log(TAG + " [Step5] 扩写功能已开启，开始并发扩写口播稿（并发上限 5）...");
+      await chapterRepo.updateChapterProgress(chapterId, {
+        phase: "elaborating",
+        elaborationProgress: { current: 0, total: totalSlides, isComplete: false },
+      });
+
+      let enrichedCount = 0;
+      const PQueue = await getPQueue();
+      const elaborationQueue = new PQueue({ concurrency: 5 });
+
+      const tasks = outline.slides.map((slide, i) => {
+        return elaborationQueue.add(async () => {
+          const slideScript = slide.script || slide.elaboration || "";
+          if (!slideScript.trim()) {
+            enrichedCount++;
+            await chapterRepo.updateChapterProgress(chapterId, {
+              elaborationProgress: { current: enrichedCount, total: totalSlides, isComplete: false },
+            });
+            return;
+          }
+          try {
+            const wordMultiplier = (i === 0) ? 1.5 : 3;
+            const expectedWords = Math.max(100, Math.min(5000, Math.round(slideScript.length * wordMultiplier)));
+            const elaborationResult = await elaborateText(course.userId, slideScript, chapterText, expectedWords, i);
+            if (elaborationResult.code === 200 && elaborationResult.script) {
+              slide.script = elaborationResult.script;
+            }
+            enrichedCount++;
+            await chapterRepo.updateChapterProgress(chapterId, {
+              elaborationProgress: { current: enrichedCount, total: totalSlides, isComplete: false },
+            });
+          } catch (err) {
+            console.warn(TAG + " [Step5] 幻灯片 " + (i + 1) + " 扩写异常: " + err.message);
+            enrichedCount++;
+            await chapterRepo.updateChapterProgress(chapterId, {
+              elaborationProgress: { current: enrichedCount, total: totalSlides, isComplete: false },
+            });
+          }
+        });
+      });
+      await Promise.all(tasks);
+      console.log(TAG + " [Step5] 口播稿扩写完成，成功 " + enrichedCount + "/" + totalSlides + " 页");
+    }
+
+    await chapterRepo.updateChapterProgress(chapterId, {
+      elaborationProgress: { current: totalSlides, total: totalSlides, isComplete: true },
+    });
+
+    // ───── Step 6：上传大纲 JSON ─────
+    console.log(TAG + " [Step6] 上传大纲 JSON...");
+    const chapterRoot = chapter.chapterRoot;
+    const outlineJsonPath = chapterRoot + "chapter_" + pad(chapter.sequence) + ".json";
+    const outlineJsonStr = JSON.stringify(outline, null, 2);
+    const tempOutlinePath = path.join(os.tmpdir(), "jinmao-outline-ch" + chapterId + ".json");
+    fs.writeFileSync(tempOutlinePath, outlineJsonStr, "utf-8");
+    const uploadResult = await uploadMinio.upload(tempOutlinePath, outlineJsonPath);
+    if (uploadResult.code !== 200) {
+      throw new Error("大纲上传 MinIO 失败: " + (uploadResult.message || "未知错误"));
+    }
+    try { fs.unlinkSync(tempOutlinePath); } catch (_) { /* 忽略清理错误 */ }
+    console.log(TAG + " [Step6] 大纲已上传: " + outlineJsonPath);
+
+    // 更新章节 totalPages + outlinePath
+    await chapterRepo.updateChapterTotalPages(chapterId, totalSlides, outlineJsonPath);
+
+    // ───── Step 7：PPT + TTS 并行生成 ─────
+    console.log(TAG + " [Step7] PPT + TTS 并行生成启动...");
+
+    // 初始化文件进度
+    await chapterRepo.updateChapterProgress(chapterId, {
+      phase: "ppt_generating",
+      filesProgress: { current: 0, total: totalSlides * 3, isComplete: false },
+    });
+
+    // 推导图片基础 URL
+    const mdDir = course.textbookPath.replace(/\/[^/]+\.md$/, "");
+    const imageBaseUrl = "/api/v1/files" + mdDir + "/image";
+
+    // PPT 生成（复用 Phase 4，但进度写 chapter 而非 course）
+    const pptAllSuccess = await (async () => {
+      if (totalSlides === 0) { return true; }
+      const PQueue = await getPQueue();
+      const pptQueue = new PQueue({ concurrency: 5 });
+      let pptSuccessCount = 0, pptFailCount = 0;
+
+      const tasks = outline.slides.map((slide, idx) => {
+        return pptQueue.add(async () => {
+          const slideNum = pad(idx + 1);
+          try {
+            const pptGuide = slide.pptGuide || slide.ppt_guide || "";
+            const slideText = slide.script || slide.content || "";
+            const htmlResult = await generateHtmlPpt(course.userId, pptGuide, slideText, []);
+            if (htmlResult.code !== 200 || !htmlResult.html) {
+              pptFailCount++;
+              return;
+            }
+            let htmlContent = htmlResult.html;
+            if (typeof htmlContent === "string") {
+              htmlContent = htmlContent.replace(/\\n/g, "\n");
+            }
+            const tempHtmlPath = path.join(os.tmpdir(), "jinmao-ppt-ch" + chapterId + "-" + slideNum + ".html");
+            fs.writeFileSync(tempHtmlPath, htmlContent, "utf-8");
+            const minioPath = chapterRoot + "PPT/slide_" + slideNum + ".html";
+            const upResult = await uploadMinio.upload(tempHtmlPath, minioPath);
+            try { fs.unlinkSync(tempHtmlPath); } catch (_) { /* 忽略 */ }
+            if (upResult.code !== 200) { pptFailCount++; return; }
+            pptSuccessCount++;
+            // 原子递增加载章节进度（PPT 每文件计 1）
+            chapterRepo.incrementChapterProgress(chapterId, "filesCompleted", 1).catch(() => {});
+          } catch (err) {
+            console.error(TAG + " [Step7] PPT 幻灯片 " + slideNum + " 异常: " + err.message);
+            pptFailCount++;
+          }
+        });
+      });
+      await Promise.all(tasks);
+      console.log(TAG + " [Step7] PPT 生成完成，成功 " + pptSuccessCount + " / 失败 " + pptFailCount);
+      return pptFailCount === 0;
+    })();
+
+    // TTS 生成（复用 Phase 5，但进度写 chapter 而非 course）
+    const ttsAllSuccess = await (async () => {
+      if (totalSlides === 0) { return true; }
+      const PQueue = await getPQueue();
+      const ttsQueue = new PQueue({ concurrency: 3 });
+      let ttsSuccessCount = 0, ttsFailCount = 0;
+
+      const tasks = outline.slides.map((slide, idx) => {
+        return ttsQueue.add(async () => {
+          const slideNum = pad(idx + 1);
+          const script = slide.script || slide.elaboration || "";
+          if (!script.trim()) { return; }
+          try {
+            const ttsResult = await synthesize(course.userId, script);
+            if (ttsResult.code !== 200) { ttsFailCount++; return; }
+            const { mp3Path, srtPath } = ttsResult;
+            const mp3MinioPath = chapterRoot + "Audio/slide_" + slideNum + ".mp3";
+            const srtMinioPath = chapterRoot + "SRT/slide_" + slideNum + ".srt";
+            const mp3Up = await uploadMinio.upload(mp3Path, mp3MinioPath);
+            const srtUp = await uploadMinio.upload(srtPath, srtMinioPath);
+            try { fs.unlinkSync(mp3Path); } catch (_) { /* 忽略 */ }
+            try { fs.unlinkSync(srtPath); } catch (_) { /* 忽略 */ }
+            if (mp3Up.code === 200 && srtUp.code === 200) {
+              ttsSuccessCount++;
+              // 原子递增加载章节进度（MP3 + SRT 各计 1，共 +2）
+              chapterRepo.incrementChapterProgress(chapterId, "filesCompleted", 2).catch(() => {});
+            } else {
+              ttsFailCount++;
+            }
+          } catch (err) {
+            console.error(TAG + " [Step7] TTS 幻灯片 " + slideNum + " 异常: " + err.message);
+            ttsFailCount++;
+          }
+        });
+      });
+      await Promise.all(tasks);
+      console.log(TAG + " [Step7] TTS 生成完成，成功 " + ttsSuccessCount + " / 失败 " + ttsFailCount);
+      return ttsFailCount === 0;
+    })();
+
+    // ───── Step 8：校验与最终状态 ─────
+    console.log(TAG + " [Step8] 数据完整性校验...");
+    await chapterRepo.updateChapterProgress(chapterId, { phase: "validating" });
+
+    let finalStatus;
+    if (isLastChapter) {
+      finalStatus = "completed";
+      console.log(TAG + " [Step8] 最后一章，标记为 completed");
+      // 同时更新课程状态
+      await bookRepo.updatePipelineStatus(courseId, "completed");
+    } else if (pptAllSuccess && ttsAllSuccess) {
+      finalStatus = "completed";
+      console.log(TAG + " [Step8] 校验通过，所有文件完整");
+    } else {
+      finalStatus = "partial_completed";
+      console.warn(TAG + " [Step8] 部分文件缺失（PPT全部成功=" + pptAllSuccess + ", TTS全部成功=" + ttsAllSuccess + "）");
+    }
+
+    // 更新章节状态 + 清空进度数据
+    await chapterRepo.updateChapter(chapterId, { status: finalStatus, generationProgress: null });
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(TAG + " ========== 单章生成完成 ==========");
+    console.log(TAG + " 最终状态: " + finalStatus + "，耗时: " + elapsed + " 秒");
+
+    return { code: 200, status: finalStatus };
+
+  } catch (err) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.error(TAG + " ========== 单章生成致命错误 ==========");
+    console.error(TAG + " 错误信息: " + err.message);
+    console.error(TAG + " 已耗时: " + elapsed + " 秒");
+
+    // 将章节标记为失败
+    try {
+      await chapterRepo.updateChapter(chapterId, { status: "failed", generationProgress: null });
+    } catch (statusErr) {
+      console.error(TAG + " 更新失败状态时出错: " + statusErr.message);
+    }
+
+    return { code: 500, message: "章节生成失败: " + err.message };
+  }
+}
+
+// ==================== 文件补全去重 Map ====================
+// key = chapterId（字符串），value = { isFixing: true, startTime, missingFiles: [...] }
+// 用于防止用户多次刷新/重复请求时创建多个补全任务
+const fixingChapters = new Map();
+
+// ==================== 文件补全函数 ====================
+
+/**
+ * 检查章节下所有文件完整性，对缺失的 PPT/MP3/SRT 文件进行异步补全
+ * 用于 partial_completed 状态章节的自动修复
+ *
+ * @param {string|number} courseId - 课程 ID
+ * @param {string|number} chapterId - 章节 ID
+ * @returns {Promise<{ code: number, status: string, missingFiles: string[], message: string }>}
+ *   code=200 补全任务已启动，code=409 已有进行中任务
+ */
+async function fixMissingFilesForChapter(courseId, chapterId) {
+  const FIX_TAG = "[fix_missing]";
+  console.log(FIX_TAG + " 收到补全请求: courseId=" + courseId + ", chapterId=" + chapterId);
+
+  // ========== 去重检查 ==========
+  if (fixingChapters.has(String(chapterId))) {
+    const existing = fixingChapters.get(String(chapterId));
+    console.log(FIX_TAG + " 章节 " + chapterId + " 已有补全任务进行中，跳过");
+    return {
+      code: 409,
+      status: "already_fixing",
+      missingFiles: existing.missingFiles || [],
+      message: "该章节已有文件补全任务在进行中",
+    };
+  }
+
+  // ========== 设置去重标记 ==========
+  fixingChapters.set(String(chapterId), { isFixing: true, startTime: Date.now(), missingFiles: [] });
+  console.log(FIX_TAG + " 开始异步补全章节 " + chapterId);
+
+  // ========== 异步执行补全（不阻塞 API 响应） ==========
+  (async () => {
+    try {
+      // ---- a. 查 DB 获取章节信息 ----
+      const chapterResult = await chapterRepo.getChapterById(chapterId);
+      if (chapterResult.code !== 200) {
+        console.error(FIX_TAG + " 章节查询失败: " + (chapterResult.message || "未知错误"));
+        fixingChapters.delete(String(chapterId));
+        return;
+      }
+      const chapter = chapterResult.chapter;
+      const chapterRoot = chapter.chapterRoot;           // 如 "/usercourse/1/19/chapter_01/"
+      const outlinePath = chapter.outlinePath;            // 如 "/usercourse/1/19/chapter_01/chapter_01.json"
+      const totalPages = chapter.totalPages || 0;
+
+      console.log(FIX_TAG + " 章节信息: name=" + chapter.name + ", totalPages=" + totalPages +
+        ", chapterRoot=" + chapterRoot + ", outlinePath=" + outlinePath);
+
+      if (!outlinePath || totalPages === 0) {
+        console.warn(FIX_TAG + " 章节缺少大纲路径或总页数，无法补全");
+        fixingChapters.delete(String(chapterId));
+        return;
+      }
+
+      // ---- b. 从 MinIO 读取大纲 JSON ----
+      let outline;
+      try {
+        const cleanPath = outlinePath.replace(/^\/+/, "");
+        console.log(FIX_TAG + " 读取大纲: " + cleanPath);
+        const stream = await minioClient.getObject(BUCKET, cleanPath);
+        const chunks = [];
+        for await (const chunk of stream) {
+          chunks.push(chunk);
+        }
+        const jsonStr = Buffer.concat(chunks).toString("utf-8");
+        outline = JSON.parse(jsonStr);
+        console.log(FIX_TAG + " 大纲解析成功，slides 数量: " + (outline?.slides?.length || 0));
+      } catch (err) {
+        console.error(FIX_TAG + " 大纲读取失败: " + err.message);
+        fixingChapters.delete(String(chapterId));
+        return;
+      }
+
+      const slides = outline.slides || [];
+      if (slides.length === 0) {
+        console.warn(FIX_TAG + " 大纲中无幻灯片数据");
+        fixingChapters.delete(String(chapterId));
+        return;
+      }
+
+      // ---- c. 逐页检查 MinIO 文件是否存在 ----
+      const missingFiles = [];
+      const cleanRoot = chapterRoot.replace(/^\/+/, ""); // "usercourse/1/19/chapter_01/"
+
+      for (let i = 0; i < slides.length; i++) {
+        const slideNum = pad(i + 1);
+
+        // 检查 PPT 文件
+        const pptKey = cleanRoot + "PPT/slide_" + slideNum + ".html";
+        try {
+          await minioClient.statObject(BUCKET, pptKey);
+        } catch {
+          missingFiles.push({ type: "ppt", page: i + 1, key: pptKey });
+        }
+
+        // 检查 MP3 文件（仅对有脚本的 slide）
+        const slideScript = slides[i].script || slides[i].elaboration || "";
+        if (slideScript.trim()) {
+          const mp3Key = cleanRoot + "Audio/slide_" + slideNum + ".mp3";
+          try {
+            await minioClient.statObject(BUCKET, mp3Key);
+          } catch {
+            missingFiles.push({ type: "mp3", page: i + 1, key: mp3Key });
+          }
+
+          // 检查 SRT 文件
+          const srtKey = cleanRoot + "SRT/slide_" + slideNum + ".srt";
+          try {
+            await minioClient.statObject(BUCKET, srtKey);
+          } catch {
+            missingFiles.push({ type: "srt", page: i + 1, key: srtKey });
+          }
+        }
+      }
+
+      if (missingFiles.length === 0) {
+        console.log(FIX_TAG + " 所有文件完整，无需补全");
+        // 如果章节是 partial_completed，更新为 completed
+        if (chapter.status === "partial_completed") {
+          await chapterRepo.updateChapter(chapterId, { status: "completed" });
+          console.log(FIX_TAG + " 章节状态已更新为 completed");
+        }
+        fixingChapters.delete(String(chapterId));
+        return;
+      }
+
+      // 更新去重 Map 中的缺失文件列表
+      const missingFileKeys = missingFiles.map(f => f.key);
+      fixingChapters.set(String(chapterId), {
+        isFixing: true,
+        startTime: Date.now(),
+        missingFiles: missingFileKeys,
+      });
+
+      console.log(FIX_TAG + " 发现 " + missingFiles.length + " 个缺失文件，开始补全...");
+      missingFiles.forEach(f => console.log(FIX_TAG + "  缺失: " + f.key + " (类型: " + f.type + ", 页码: " + f.page + ")"));
+
+      // ---- d. 按页分组补全文件 ----
+      // 按页码分组，同一页的 MP3+SRT 可共享一次 TTS 调用
+      const pagesNeedingFix = new Map(); // key=page, value={ needPpt, needTts }
+      for (const missing of missingFiles) {
+        if (!pagesNeedingFix.has(missing.page)) {
+          pagesNeedingFix.set(missing.page, { needPpt: false, needTts: false });
+        }
+        const entry = pagesNeedingFix.get(missing.page);
+        if (missing.type === "ppt") entry.needPpt = true;
+        if (missing.type === "mp3" || missing.type === "srt") entry.needTts = true;
+      }
+
+      let fixedCount = 0;
+      let failCount = 0;
+
+      // 获取课程信息（用于 PPT 生成时的图片引用 + userId 计费关联）
+      const courseResult = await bookRepo.getCourseById(courseId);
+      let imageBaseUrl = "";
+      let fixUserId = "unknown"; // 默认值，后续从 course 对象中提取
+      if (courseResult.code === 200 && courseResult.course) {
+        const mdDir = (courseResult.course.textbookPath || "").replace(/\/[^/]+\.md$/, "");
+        imageBaseUrl = "/api/v1/files" + mdDir + "/image";
+        fixUserId = String(courseResult.course.userId || "unknown");
+      }
+
+      for (const [page, needs] of pagesNeedingFix) {
+        const slideNum = pad(page);
+        const slide = slides[page - 1];
+        const slideScript = slide.script || slide.elaboration || "";
+
+        // ---- 修复 TTS 文件（MP3+SRT） ----
+        if (needs.needTts && slideScript.trim()) {
+          try {
+            console.log(FIX_TAG + " 补全 TTS: 第 " + page + " 页...");
+            const ttsResult = await synthesize(fixUserId, slideScript);
+            if (ttsResult.code !== 200) {
+              console.warn(FIX_TAG + " TTS 合成失败 第 " + page + " 页: code=" + ttsResult.code);
+              failCount++;
+            } else {
+              const { mp3Path: localMp3, srtPath: localSrt } = ttsResult;
+
+              // 上传 MP3
+              if (needs.needTts || missingFiles.some(f => f.page === page && f.type === "mp3")) {
+                const mp3MinioPath = cleanRoot + "Audio/slide_" + slideNum + ".mp3";
+                try {
+                  const mp3Up = await uploadMinio.upload(localMp3, mp3MinioPath);
+                  if (mp3Up.code === 200) {
+                    fixedCount++;
+                    console.log(FIX_TAG + "  已补全 MP3: " + mp3MinioPath);
+                  } else {
+                    failCount++;
+                  }
+                } catch (err) {
+                  console.warn(FIX_TAG + " MP3 上传失败: " + err.message);
+                  failCount++;
+                }
+              }
+
+              // 上传 SRT
+              if (needs.needTts || missingFiles.some(f => f.page === page && f.type === "srt")) {
+                const srtMinioPath = cleanRoot + "SRT/slide_" + slideNum + ".srt";
+                try {
+                  const srtUp = await uploadMinio.upload(localSrt, srtMinioPath);
+                  if (srtUp.code === 200) {
+                    fixedCount++;
+                    console.log(FIX_TAG + "  已补全 SRT: " + srtMinioPath);
+                  } else {
+                    failCount++;
+                  }
+                } catch (err) {
+                  console.warn(FIX_TAG + " SRT 上传失败: " + err.message);
+                  failCount++;
+                }
+              }
+
+              // 清理 TTS 本地临时文件
+              try { fs.unlinkSync(localMp3); } catch (_) { /* 忽略 */ }
+              try { fs.unlinkSync(localSrt); } catch (_) { /* 忽略 */ }
+            }
+          } catch (err) {
+            console.error(FIX_TAG + " TTS 补全异常 第 " + page + " 页: " + err.message);
+            failCount++;
+          }
+        }
+
+        // ---- 修复 PPT 文件 ----
+        if (needs.needPpt) {
+          try {
+            console.log(FIX_TAG + " 补全 PPT: 第 " + page + " 页...");
+            const pptGuide = slide.pptGuide || slide.ppt_guide || "";
+            const slideText = slideScript || slide.content || "";
+            const htmlResult = await generateHtmlPpt(fixUserId, pptGuide, slideText, []);
+            if (htmlResult.code !== 200 || !htmlResult.html) {
+              console.warn(FIX_TAG + " PPT 生成失败 第 " + page + " 页");
+              failCount++;
+            } else {
+              let htmlContent = htmlResult.html;
+              if (typeof htmlContent === "string") {
+                htmlContent = htmlContent.replace(/\\n/g, "\n");
+              }
+              const tempHtmlPath = path.join(os.tmpdir(), "jinmao-fix-ppt-ch" + chapterId + "-" + slideNum + ".html");
+              fs.writeFileSync(tempHtmlPath, htmlContent, "utf-8");
+              const pptMinioPath = cleanRoot + "PPT/slide_" + slideNum + ".html";
+              const upResult = await uploadMinio.upload(tempHtmlPath, pptMinioPath);
+              try { fs.unlinkSync(tempHtmlPath); } catch (_) { /* 忽略 */ }
+              if (upResult.code === 200) {
+                fixedCount++;
+                console.log(FIX_TAG + "  已补全 PPT: " + pptMinioPath);
+              } else {
+                failCount++;
+              }
+            }
+          } catch (err) {
+            console.error(FIX_TAG + " PPT 补全异常 第 " + page + " 页: " + err.message);
+            failCount++;
+          }
+        }
+      }
+
+      console.log(FIX_TAG + " 补全完成: 成功 " + fixedCount + " / 失败 " + failCount);
+
+      // ---- e. 补全后再次检查完整性，更新章节状态 ----
+      let allComplete = true;
+      // 重新检查所有文件
+      for (const missing of missingFiles) {
+        try {
+          await minioClient.statObject(BUCKET, missing.key);
+        } catch {
+          allComplete = false;
+          break;
+        }
+      }
+
+      if (allComplete && chapter.status === "partial_completed") {
+        await chapterRepo.updateChapter(chapterId, { status: "completed" });
+        console.log(FIX_TAG + " 章节状态已更新为 completed");
+      }
+
+    } catch (err) {
+      console.error(FIX_TAG + " 补全过程异常: " + err.message);
+      console.error(err.stack);
+    } finally {
+      // ---- f. 清除去重标记 ----
+      fixingChapters.delete(String(chapterId));
+      console.log(FIX_TAG + " 补全任务结束，去重标记已清除");
+    }
+  })();
+
+  // ========== 立即返回（补全在后台异步执行） ==========
+  return {
+    code: 200,
+    status: "fixing",
+    missingFiles: [],
+    message: "文件补全任务已启动，正在后台执行",
+  };
+}
+
+/**
+ * 查询章节文件补全状态（供前端轮询）
+ */
+function getFixStatus(chapterId) {
+  const entry = fixingChapters.get(String(chapterId));
+  if (entry && entry.isFixing) {
+    return {
+      isFixing: true,
+      missingFiles: entry.missingFiles || [],
+    };
+  }
+  return {
+    isFixing: false,
+    missingFiles: [],
+  };
+}
+
 // ==================== 模块导出 ====================
-module.exports = { pipeline };
+module.exports = { pipeline, generateChapter, fixMissingFilesForChapter, getFixStatus };

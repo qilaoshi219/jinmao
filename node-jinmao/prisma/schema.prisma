@@ -28,8 +28,13 @@ model User {
   banReason   String?   @db.VarChar(255) @map("ban_reason")               // 禁用原因
   isDeleted   Boolean   @default(false) @map("is_deleted")                // 软删除标记
 
-  courses     Course[]                                                      // 课程列表（Prisma 虚拟关系，数据库中不产生列）
-  studyRecords UserStudyRecord[]                                           // 用户学习记录（Prisma 虚拟关系）
+  courses          Course[]               // 课程列表
+  studyRecords     UserStudyRecord[]    // 用户学习记录
+  quizTextbooks    QuizTextbook[]       // 题库列表
+  quizSessions     QuizSession[]        // 刷题会话
+  quizReports      QuizReport[]         // 刷题报告
+  quizUserAnswers  QuizUserAnswer[]     // 作答记录
+  quizWrongQuestions QuizWrongQuestion[] // 错题本
 
   @@map("User") // 映射数据库表名
 }
@@ -75,6 +80,7 @@ model Chapter {
   totalPages    Int       @default(0) @map("total_pages") @db.UnsignedInt  // 本章 PPT 总页数
   outlinePath   String?   @map("outline_path") @db.VarChar(512)            // 大纲 JSON 路径，如 /usercourse/1001/2001/chapter_01/chapter_01.json
   status        String    @default("pending") @db.VarChar(20)              // 章节状态：pending/generating/completed/failed
+  generationProgress String? @map("generation_progress") @db.VarChar(1000) // 章节生成流水线进度 JSON（{ phase, outlineProgress, elaborationProgress, filesProgress }），仅 generating 状态时有值，完成后清空
   createTime    DateTime  @default(now()) @map("create_time")              // 创建时间
   updateTime    DateTime  @updatedAt @map("update_time")                   // 更新时间
   isDeleted     Boolean   @default(false) @map("is_deleted")               // 软删除标记
@@ -106,4 +112,258 @@ model UserStudyRecord {
 
   @@unique([userId, courseId, chapterId]) // 联合唯一约束：同一用户同一课程同一章节仅一条记录
   @@map("UserStudyRecord")
+}
+
+// ==================== 计费记录表 billing_record ====================
+// 记录用户使用 LLM / TTS / 文生图等 API 的每次调用费用明细
+// user_id 存储 JWT 中的 userId 字符串值（与 User 表 BigInt id 的字符串形式一致）
+model billing_record {
+  id                   Int      @id @default(autoincrement())
+  user_id              String   @db.VarChar(50)                            // 用户 ID（JWT 中的 userId 字符串）
+  provider             String   @db.VarChar(20)                            // 提供商：deepseek / grsai / volcengine
+  model                String   @db.VarChar(50)                            // 模型名称
+  call_tag             String   @db.VarChar(30)                            // 调用标签：elaboration / outline / title / getline / htmlppt / create_image / tts
+  status               String   @default("success") @db.VarChar(10)        // success / failed
+  prompt_tokens        Int?                                                // 输入总 token 数（LLM 专用）
+  cache_hit_tokens     Int?                                                // 缓存命中 token 数（LLM 专用）
+  cache_miss_tokens    Int?                                                // 缓存未命中 token 数（LLM 专用）
+  completion_tokens    Int?                                                // 输出 token 数（LLM 专用）
+  total_tokens         Int?                                                // 总 token 数（LLM 专用）
+  image_count          Int?                                                // 图片数量（文生图专用）
+  image_resolution     String?   @db.VarChar(20)                           // 图片分辨率（文生图专用，仅日志记录）
+  text_length          Int?                                                // 文本长度（字符数，TTS 专用）
+  audio_duration       Float?                                              // 音频时长（秒，TTS 专用，可选）
+  time_period          String    @default("default") @db.VarChar(20)       // 计费时段名称
+  input_unit_price     Float?                                              // 输入单价（元/百万tokens，缓存未命中）
+  input_cache_hit_price Float?                                             // 输入单价（元/百万tokens，缓存命中，LLM 专用）
+  output_unit_price    Float?                                              // 输出单价（元/百万tokens，LLM 专用）
+  image_unit_price     Float?                                              // 图片单价（元/张，文生图专用）
+  tts_unit_price       Float?                                              // TTS 单价（元/字符，TTS 专用）
+  input_cost           Float?                                              // 输入费用（元）
+  output_cost          Float?                                              // 输出费用（元）
+  total_cost           Float                                               // 总费用（元）
+  created_at           DateTime  @default(now())                           // 创建时间
+
+  @@index([user_id])
+  @@index([created_at])
+  @@map("billing_record")
+}
+
+// ==================== 题库表 QuizTextbook ====================
+// 存储用户导入的题库元数据，与 Course 表独立，互不干扰
+model QuizTextbook {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 题库ID，主键自增
+  userId         BigInt    @map("user_id") @db.UnsignedBigInt               // 用户ID，外键引用 User 表
+  name           String    @db.VarChar(100)                                 // 题库名称
+  description    String?   @db.Text                                         // 题库描述
+  totalQuestions Int       @default(0) @map("total_questions")              // 题目总数
+  totalExams     Int       @default(0) @map("total_exams")                  // 试卷总数
+  createTime     DateTime  @default(now()) @map("create_time")              // 创建时间
+  updateTime     DateTime  @updatedAt @map("update_time")                   // 更新时间
+  isDeleted      Boolean   @default(false) @map("is_deleted")               // 软删除标记
+
+  user           User      @relation(fields: [userId], references: [id])    // 所属用户
+  exams          QuizExam[]                                                  // 试卷列表
+  questions      QuizQuestion[]                                              // 题目列表
+  wrongQuestions QuizWrongQuestion[]                                         // 错题关联
+  quizSessions   QuizSession[]                                               // 刷题会话
+  quizReports    QuizReport[]                                                // 刷题报告
+
+  @@map("QuizTextbook")
+}
+
+// ==================== 试卷表 QuizExam ====================
+// 一个题库可以有多张试卷
+model QuizExam {
+  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 试卷ID，主键自增
+  textbookId    BigInt    @map("textbook_id") @db.UnsignedBigInt           // 题库ID，外键引用 QuizTextbook 表
+  name          String    @db.VarChar(100)                                 // 试卷名称
+  questionCount Int       @default(0) @map("question_count")              // 题目数量
+  createTime    DateTime  @default(now()) @map("create_time")              // 创建时间
+  updateTime    DateTime  @updatedAt @map("update_time")                   // 更新时间
+
+  textbook      QuizTextbook   @relation(fields: [textbookId], references: [id]) // 所属题库
+  questions     QuizQuestion[]                                                   // 题目列表
+  quizSessions  QuizSession[]                                                    // 刷题会话
+
+  @@map("QuizExam")
+}
+
+// ==================== 题目表 QuizQuestion ====================
+// 存储每道题目的完整信息，支持 5 种题型
+model QuizQuestion {
+  id          BigInt       @id @default(autoincrement()) @db.UnsignedBigInt // 题目ID，主键自增
+  examId      BigInt       @map("exam_id") @db.UnsignedBigInt              // 试卷ID，外键引用 QuizExam 表
+  textbookId  BigInt       @map("textbook_id") @db.UnsignedBigInt          // 题库ID，外键引用 QuizTextbook 表
+  type        QuizQuestionType                                             // 题型枚举
+  content     String       @db.Text                                         // 题干内容
+  options     Json?                                                         // 选项 JSON [{key, value}]，仅单选/多选题使用
+  answer      String       @db.Text                                         // 正确答案（单选:A, 多选:A,B, 判断:正确/错误, 填空/简答:文本）
+  analysis    String?      @db.Text                                         // 题目解析
+  difficulty  Int          @default(1)                                      // 难度等级 1-5
+  sortOrder   Int          @default(0) @map("sort_order")                  // 排序序号
+  createTime  DateTime     @default(now()) @map("create_time")              // 创建时间
+  updateTime  DateTime     @updatedAt @map("update_time")                   // 更新时间
+
+  exam             QuizExam           @relation(fields: [examId], references: [id])      // 所属试卷
+  textbook         QuizTextbook       @relation(fields: [textbookId], references: [id])  // 所属题库
+  userAnswers      QuizUserAnswer[]                                                      // 作答记录
+  wrongQuestions   QuizWrongQuestion[]                                                    // 错题关联
+  quizReportItems  QuizReportItem[]                                                       // 报告题目明细
+
+  @@map("QuizQuestion")
+}
+
+// 题目类型枚举
+enum QuizQuestionType {
+  SINGLE    // 单选题
+  MULTIPLE  // 多选题
+  JUDGE     // 判断题
+  FILL      // 填空题
+  ESSAY     // 简答题
+}
+
+// ==================== 作答记录表 QuizUserAnswer ====================
+// 记录用户每次作答的详细信息
+model QuizUserAnswer {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 记录ID，主键自增
+  userId      BigInt    @map("user_id") @db.UnsignedBigInt               // 用户ID
+  questionId  BigInt    @map("question_id") @db.UnsignedBigInt           // 题目ID
+  sessionId   BigInt?   @map("session_id") @db.UnsignedBigInt            // 会话ID（可选，用于关联刷题会话）
+  userAnswer  String    @map("user_answer") @db.Text                     // 用户答案
+  isCorrect   Boolean   @map("is_correct") @db.TinyInt                   // 是否正确
+  timeSpent   Int       @default(0) @map("time_spent")                   // 答题耗时（秒），预留字段
+  createTime  DateTime  @default(now()) @map("create_time")              // 创建时间
+
+  user      User          @relation(fields: [userId], references: [id])       // 所属用户
+  question  QuizQuestion  @relation(fields: [questionId], references: [id])   // 关联题目
+  session   QuizSession?  @relation(fields: [sessionId], references: [id])    // 关联会话
+
+  @@map("QuizUserAnswer")
+}
+
+// ==================== 错题本表 QuizWrongQuestion ====================
+// 用户做错的题目记录，userId + questionId 联合唯一
+model QuizWrongQuestion {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 记录ID，主键自增
+  userId      BigInt    @map("user_id") @db.UnsignedBigInt               // 用户ID
+  questionId  BigInt    @map("question_id") @db.UnsignedBigInt           // 题目ID
+  textbookId  BigInt    @map("textbook_id") @db.UnsignedBigInt           // 题库ID
+  wrongCount  Int       @default(1) @map("wrong_count")                  // 错误次数
+  createTime  DateTime  @default(now()) @map("create_time")              // 创建时间
+  updateTime  DateTime  @updatedAt @map("update_time")                   // 更新时间
+
+  user      User          @relation(fields: [userId], references: [id])       // 所属用户
+  question  QuizQuestion  @relation(fields: [questionId], references: [id])   // 关联题目
+  textbook  QuizTextbook  @relation(fields: [textbookId], references: [id])   // 关联题库
+
+  @@unique([userId, questionId]) // 同一用户同一题目仅一条错题记录
+  @@map("QuizWrongQuestion")
+}
+
+// ==================== 刷题会话表 QuizSession ====================
+// 记录用户每次刷题会话的状态和进度
+model QuizSession {
+  id                   BigInt        @id @default(autoincrement()) @db.UnsignedBigInt // 会话ID，主键自增
+  userId               BigInt        @map("user_id") @db.UnsignedBigInt               // 用户ID
+  textbookId           BigInt?       @map("textbook_id") @db.UnsignedBigInt           // 题库ID（随机刷题时有值）
+  examId               BigInt?       @map("exam_id") @db.UnsignedBigInt               // 试卷ID（预留，暂不使用）
+  mode                 QuizMode                                                       // 刷题模式枚举
+  questionIds          Json          @map("question_ids")                             // 题目ID数组 [id1, id2, ...]
+  totalCount           Int           @default(0) @map("total_count")                  // 题目总数
+  correctCount         Int           @default(0) @map("correct_count")                // 正确题目数
+  currentQuestionIndex Int           @default(1) @map("current_question_index")       // 当前题目序号 (1-based)
+  lastAnsweredAt       DateTime?     @map("last_answered_at")                         // 最后作答时间
+  status               QuizSessionStatus @default(IN_PROGRESS)                        // 会话状态
+  createTime           DateTime      @default(now()) @map("create_time")              // 创建时间
+  updateTime           DateTime      @updatedAt @map("update_time")                   // 更新时间
+
+  user        User              @relation(fields: [userId], references: [id])       // 所属用户
+  textbook    QuizTextbook?     @relation(fields: [textbookId], references: [id])   // 关联题库
+  exam        QuizExam?         @relation(fields: [examId], references: [id])       // 关联试卷
+  userAnswers QuizUserAnswer[]                                                       // 作答记录
+  report      QuizReport?                                                            // 刷题报告（一对一）
+
+  @@map("QuizSession")
+}
+
+// 刷题模式枚举
+enum QuizMode {
+  RANDOM      // 随机刷题
+  REVIEW      // 错题复习
+  SEQUENTIAL  // 顺序刷题（预留）
+  EXAM        // 试卷模式（预留）
+}
+
+// 会话状态枚举
+enum QuizSessionStatus {
+  IN_PROGRESS // 进行中
+  COMPLETED   // 已完成
+  ABANDONED   // 已放弃
+}
+
+// ==================== 刷题报告表 QuizReport ====================
+// 记录每次刷题交卷后的成绩报告
+model QuizReport {
+  id              BigInt            @id @default(autoincrement()) @db.UnsignedBigInt // 报告ID，主键自增
+  userId          BigInt            @map("user_id") @db.UnsignedBigInt               // 用户ID
+  sessionId       BigInt            @unique @map("session_id") @db.UnsignedBigInt    // 会话ID（一对一）
+  textbookId      BigInt?           @map("textbook_id") @db.UnsignedBigInt           // 题库ID
+  status          QuizReportStatus  @default(PENDING)                                // 报告状态
+  totalCount      Int               @default(0) @map("total_count")                  // 题目总数
+  objectiveCount  Int               @default(0) @map("objective_count")              // 客观题数量
+  essayCount      Int               @default(0) @map("essay_count")                  // 简答题数量
+  scoreObjective  Float             @default(0) @map("score_objective")              // 客观题得分
+  scoreEssay      Float             @default(0) @map("score_essay")                  // 简答题得分
+  scoreTotal      Float             @default(0) @map("score_total")                  // 总分（满分100）
+  createTime      DateTime          @default(now()) @map("create_time")              // 创建时间
+  updateTime      DateTime          @updatedAt @map("update_time")                   // 更新时间
+
+  user      User              @relation(fields: [userId], references: [id])        // 所属用户
+  session   QuizSession       @relation(fields: [sessionId], references: [id])     // 关联会话
+  textbook  QuizTextbook?     @relation(fields: [textbookId], references: [id])    // 关联题库
+  items     QuizReportItem[]                                                         // 报告题目明细
+
+  @@map("QuizReport")
+}
+
+// 报告状态枚举
+enum QuizReportStatus {
+  PENDING   // 待批改
+  GRADING   // 批改中
+  COMPLETED // 已完成
+  FAILED    // 失败
+}
+
+// ==================== 报告题目明细表 QuizReportItem ====================
+// 记录报告中每道题目的评分详情
+model QuizReportItem {
+  id              BigInt                @id @default(autoincrement()) @db.UnsignedBigInt // 明细ID，主键自增
+  reportId        BigInt                @map("report_id") @db.UnsignedBigInt             // 报告ID
+  questionId      BigInt                @map("question_id") @db.UnsignedBigInt           // 题目ID
+  questionType    QuizQuestionType      @map("question_type")                            // 题型
+  maxScore        Float                 @default(0) @map("max_score")                    // 满分值
+  score           Float                 @default(0)                                      // 实际得分
+  isCorrect       Boolean?              @map("is_correct") @db.TinyInt                   // 是否正确（客观题有值，简答题为null）
+  userAnswer      String?               @map("user_answer") @db.Text                     // 用户答案
+  referenceAnswer String?               @map("reference_answer") @db.Text                // 参考答案
+  aiPercent       Float?                @map("ai_percent")                               // AI判题百分比（简答题专用）
+  aiCommentary    String?               @map("ai_commentary") @db.Text                   // AI判题评语（简答题专用）
+  status          QuizReportItemStatus  @default(PENDING)                                // 判题状态
+  createTime      DateTime              @default(now()) @map("create_time")              // 创建时间
+  updateTime      DateTime              @updatedAt @map("update_time")                   // 更新时间
+
+  report   QuizReport   @relation(fields: [reportId], references: [id])    // 关联报告
+  question QuizQuestion @relation(fields: [questionId], references: [id])  // 关联题目
+
+  @@unique([reportId, questionId]) // 同一报告同一题目仅一条明细
+  @@map("QuizReportItem")
+}
+
+// 报告题目判题状态枚举
+enum QuizReportItemStatus {
+  PENDING // 待批改
+  RUNNING // 批改中
+  DONE    // 已完成
+  FAILED  // 失败
 }

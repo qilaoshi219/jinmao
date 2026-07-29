@@ -9,6 +9,16 @@ const prisma = require("../prisma");
 // 日志前缀
 const TAG = "[progress_repo]";
 
+// ==================== 模块加载时模型完整性校验 ====================
+// 验证 Prisma Client 是否包含 UserStudyRecord 模型
+// 如果模型为 undefined，说明 Prisma Client 是用旧版 schema 生成的（未包含 UserStudyRecord）
+// 需要在服务器上运行 npx prisma generate 重新生成
+if (!prisma.userStudyRecord) {
+  console.error(TAG + " ❌ Prisma Client 缺少 UserStudyRecord 模型！");
+  console.error(TAG + "    这通常是因为服务器上的 Prisma Client 是用旧版 schema 生成的。");
+  console.error(TAG + "    请在服务器上运行 npx prisma generate 重新生成 Prisma Client。");
+}
+
 // ==================== 导出函数 ====================
 
 /**

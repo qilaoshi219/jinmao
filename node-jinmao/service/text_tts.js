@@ -14,6 +14,7 @@ const https = require("https"); // Node.js 内置 HTTPS 模块，用于发起 AP
 const fs = require("fs");        // 文件系统模块，用于读写 MP3 和 SRT 文件
 const path = require("path");    // 路径处理模块，用于拼接输出文件路径
 const { volcengine: volcengineConfig } = require("../config"); // 统一配置入口（敏感字段从 .env 注入）
+const { recordExternalCost } = require("../utils/billing");   // 计费模块
 
 // 输出文件目录路径
 const OUTPUT_DIR = path.join(__dirname, "..", "data", "output");
@@ -408,6 +409,24 @@ function callTtsApi(text, ttsConfig) {
                     }
 
                     // 合成成功，返回路径
+                    // ========== 计费记录：TTS 按字符数计费 ==========
+                    let audioDuration = 0;
+                    if (sentenceList.length > 0) {
+                        const lastSentence = sentenceList[sentenceList.length - 1];
+                        if (lastSentence.words && lastSentence.words.length > 0) {
+                            audioDuration = lastSentence.words[lastSentence.words.length - 1].endTime || 0;
+                        }
+                    }
+                    recordExternalCost({
+                        userId: userId,
+                        provider: "volcengine",
+                        model: "seed-tts-2.0",
+                        callTag: "tts",
+                        status: "success",
+                        textLength: text.length,
+                        audioDuration: audioDuration,
+                    }).catch(err => console.error("[text_tts] 计费记录写入失败：" + err.message));
+
                     resolve({
                         code: 200,
                         mp3Path: mp3Path,
@@ -460,10 +479,11 @@ function callTtsApi(text, ttsConfig) {
  *   3. 调用火山引擎 TTS API 流式合成
  *   4. 将返回的音频和字幕写入本地文件
  *   5. 返回文件路径和状态码
+ * @param {string} userId - 用户 ID（用于计费关联）
  * @param {string} text - 待合成语音的文本
  * @returns {Promise<{ code: number, mp3Path?: string, srtPath?: string, message?: string }>}
  */
-async function synthesize(text) {
+async function synthesize(userId, text) {
     console.log("[text_tts][synthesize] ========== 开始 TTS 合成 ==========");
 
     // 第一步：输入校验（在校验通过前不直接使用 text 的方法，避免 null/undefined 崩溃）

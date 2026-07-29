@@ -1,33 +1,16 @@
 // 该模块负责调用 DeepSeek 生成 PPT 大纲，仅返回 JSON 内容，不负责文件持久化
+// 通过统一的 llm_client 模块调用 DeepSeek API，自动处理客户端管理、心跳、看门狗和计费
 // 返回值格式：{ code: number, outline?: object, message?: string }
 //   code 200 — 成功生成大纲，outline 包含解析后的 JSON 对象
 //   code 400 — 输入参数不合法（空值/类型错误/注入攻击/长度超限等）
 //   code 500 — DeepSeek API 调用失败（网络错误、服务端错误等）
 //   code 502 — DeepSeek 返回内容不是合法 JSON，解析失败
-// Please install OpenAI SDK first: `npm install openai`
 
-// 注意：openai v6+ 是纯 ESM 包，不能使用 require()，改为惰性动态 import
-const { deepseek: config, DEEPSEEK_TIMEOUT } = require("../config");
+const llmClient = require("./llm_client");  // 统一 LLM 客户端（自动处理客户端管理、心跳、看门狗、计费）
 const prompt = require("../config/prompt.json");
 const fs = require("fs");
 const path = require("path");
 const { validateFields } = require("./input_validator");
-
-// ==================== 惰性初始化 OpenAI 客户端 ====================
-// openai v6+ 是 ESM-only 模块，在 CommonJS 中无法 require，必须使用动态 import()
-// 使用惰性初始化模式：首次调用时 import 并缓存，后续复用
-let _openai = null;
-async function getOpenAI() {
-    if (!_openai) {
-        const OpenAI = (await import("openai")).default;
-        _openai = new OpenAI({
-            baseURL: config.DEEPSEEK_API_BIG.DEEPSEEK_API_BASE,
-            apiKey: config.DEEPSEEK_API_BIG.DEEPSEEK_API_KEY,
-        });
-        console.log("[generate_outline] OpenAI 客户端已初始化（惰性加载）");
-    }
-    return _openai;
-}
 
 // validateInput 已迁移至公共验证模块 input_validator.js，通过 validateFields 统一调用
 
@@ -42,14 +25,15 @@ async function getOpenAI() {
  *   code 500 — DeepSeek API 调用失败（网络错误、服务端错误、API 返回异常等）
  *   code 502 — DeepSeek 返回内容不是合法 JSON，解析失败
  * 
+ * @param {string} userId - 用户 ID（用于 llm_client 计费关联）
  * @param {string} yuanwen - 原文内容，用于生成大纲
  * @param {string} pptother - 文章标题 / PPT 其他信息
- * @returns {{ code: number, outline?: object, message?: string }}
+ * @returns {Promise<{ code: number, outline?: object, message?: string }>}
  *   始终返回对象，不会抛出异常。调用方根据 code 判断结果：
  *   - code 200 时 outline 有值，可直接使用
  *   - code ≥ 400 时 outline 为 undefined，通过 message 了解失败原因
  */
-async function main(yuanwen, pptother) {
+async function main(userId, yuanwen, pptother) {
   // ========== 前置输入验证：使用公共验证模块拦截非法输入 ==========
   const validationResult = validateFields({
     yuanwen: {
@@ -72,74 +56,38 @@ async function main(yuanwen, pptother) {
   }
   console.log("[main] 输入验证通过，开始执行大纲生成流程。");
 
-  // ========== 惰性获取 OpenAI 客户端（ESM 动态 import） ==========
-  const openai = await getOpenAI();
-
   // ========== 读取 Prompt 模板并替换占位符 ==========
   const outlinePromptPath = path.resolve(__dirname, prompt.outline_prompt);
   const outlinePrompt = fs.readFileSync(outlinePromptPath, "utf8");
   // 替换prompt模板中的{{yuanwen}}和{{pptother}}占位符
   let formattedPrompt = outlinePrompt.replace("{{yuanwen}}", yuanwen);
   formattedPrompt = formattedPrompt.replace("{{pptother}}", pptother);
-  console.log("[main] Prompt 模板已加载并替换占位符，准备调用 DeepSeek API。");
+  console.log("[main] Prompt 模板已加载并替换占位符，准备通过 llm_client 调用 DeepSeek API。");
 
-  // ========== 调用 DeepSeek API 生成大纲 ==========
-  // 启动心跳定时器：每 2 秒输出一次状态，确保运维人员知道程序仍在等待大模型响应
-  const heartbeatInterval = setInterval(() => {
-    console.log("[generate_outline] 心跳 — 仍在等待 DeepSeek 大模型响应...");
-  }, 2000);
+  // ========== 通过 llm_client 统一调用 DeepSeek API 生成大纲 ==========
+  // llm_client 自动处理：客户端管理、心跳定时器、看门狗、错误处理、计费记录
+  const chatResult = await llmClient.chat(userId, "outline", {
+    modelSize: "big",
+    messages: [{ role: "system", content: formattedPrompt }],
+    thinking: { type: "enabled" },
+    reasoning_effort: "max",
+    stream: false,
+  });
 
-  // ========== 看门狗定时器：15 分钟 ==========
-  // 仅在极其特殊的情况下触发（如 openai SDK 内部卡死、网络黑洞等），
-  // 正常情况下 DeepSeek API 会先返回成功或错误，看门狗会被提前清理（clearTimeout）
-  // 注意：JavaScript Promise 无法取消，看门狗仅用于记录超时日志，真正的超时控制
-  // 由 openai SDK 的 timeout 参数在 HTTP 层面保障
-  const watchdogTimer = setTimeout(() => {
-    console.error("[generate_outline] !!! 看门狗超时 !!! DeepSeek API 在 " + (DEEPSEEK_TIMEOUT.BIG_MODEL / 1000) + " 秒内无任何响应，可能发生了极端异常（网络黑洞/SDK卡死等）。");
-  }, DEEPSEEK_TIMEOUT.BIG_MODEL);
-
-  let completion;
-  try {
-    completion = await openai.chat.completions.create({
-      messages: [{ role: "system", content: formattedPrompt }],// 系统提示词
-      model: config.DEEPSEEK_API_BIG.DEEPSEEK_API_MODEL,// 模型名称
-      thinking: {"type": "enabled"},//思考模式
-      // 注意：不使用 json_object 模式，因为 prompt 要求输出 JSON 数组 [...]
-      // json_object 模式会强制 {...} 格式，与数组输出冲突，已改为 text 模式
-      reasoning_effort: "max",//最大思考努力
-      stream: false,
-      timeout: DEEPSEEK_TIMEOUT.BIG_MODEL, // HTTP 请求级超时 15 分钟，DeepSeek 发送的空行/keep-alive 会维持连接
-    });
-  } catch (apiError) {
-    // API 调用失败，清除心跳和看门狗定时器
-    clearInterval(heartbeatInterval);
-    clearTimeout(watchdogTimer);
-    // 捕获 API 调用层面的所有错误（网络超时、鉴权失败、服务端 5xx 等）
-    console.error("[main] DeepSeek API 调用失败：" + apiError.message);
+  // ========== 检查 llm_client 返回状态 ==========
+  if (chatResult.code !== 200) {
+    console.error("[main] llm_client 调用失败（code=" + chatResult.code + "）：" + (chatResult.message || "未知错误"));
     return {
       code: 500,
-      message: "DeepSeek API 调用失败：" + apiError.message
+      message: chatResult.message || "DeepSeek API 调用失败"
     };
   }
 
-  // API 调用成功返回，清除心跳和看门狗定时器
-  clearInterval(heartbeatInterval);
-  clearTimeout(watchdogTimer);
-
-  // ========== 校验 API 返回结构的完整性 ==========
-  // 确保 choices 数组存在且不为空
-  if (!completion || !completion.choices || completion.choices.length === 0) {
-    console.error("[main] DeepSeek API 返回内容为空或缺少 choices 字段。");
-    return {
-      code: 500,
-      message: "DeepSeek API 返回内容为空，未能获取有效的大纲数据。"
-    };
-  }
+  // ========== 提取返回的文本内容 ==========
+  const resultText = chatResult.message.content;
+  console.log("[main] DeepSeek API 调用成功，返回内容长度：" + (resultText ? resultText.length : 0) + " 字符。");
 
   // ========== 解析 DeepSeek 返回的 JSON 大纲 ==========
-  const resultText = completion.choices[0].message.content;
-  console.log("[main] DeepSeek API 调用成功，返回内容长度：" + resultText.length + " 字符。");
-
   let outline;
   try {
     outline = JSON.parse(resultText);

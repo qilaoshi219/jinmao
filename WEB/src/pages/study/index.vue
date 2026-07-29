@@ -46,6 +46,15 @@
       </button>
     </header>
 
+    <!-- 文件补全横幅 -->
+    <div v-if="isFixingMissing"
+         class="flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 transition-all duration-500">
+      <svg class="w-4 h-4 text-amber-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg>
+      <span class="text-xs text-amber-600 dark:text-amber-400">{{ fixingBannerText }}</span>
+    </div>
+
     <!-- ===== 三栏主体 ===== -->
     <div class="flex flex-1 min-h-0 overflow-hidden">
 
@@ -79,49 +88,91 @@
           </div>
           <!-- 章节列表项 -->
           <div v-for="ch in chapters" :key="ch.id"
-               class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] hover:bg-[var(--color-card-hover)]"
-               :class="[String(ch.id) === String(activeChapter) ? 'border-l-blue-500 dark:border-l-blue-400 bg-[var(--color-card-hover)]' : 'border-l-transparent']"
-               @click="switchChapter(ch.id)">
-            <!-- 状态图标 -->
-            <span v-if="ch.status === 'completed'"
-                  class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500 text-white text-[10px] font-bold flex-shrink-0">
-              &#10003;
-            </span>
-            <span v-else-if="ch.status === 'generating'"
-                  class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex-shrink-0 animate-pulse">
-              &#9881;
-            </span>
-            <span v-else-if="ch.status === 'failed'"
-                  class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex-shrink-0">
-              &#10007;
-            </span>
-            <span v-else
-                  class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-[var(--color-border)] flex-shrink-0"></span>
-            <!-- 编号 -->
-            <span class="text-[11px] font-mono flex-shrink-0 w-5"
-                  :class="[String(ch.id) === String(activeChapter) ? 'text-blue-500 dark:text-blue-400 font-semibold' : 'text-[var(--color-text-secondary)]']">
-              {{ String(ch.sequence).padStart(2, '0') }}
-            </span>
-            <!-- 标题 -->
-            <span class="text-xs flex-1 truncate"
-                  :class="[String(ch.id) === String(activeChapter) ? 'text-black dark:text-white font-medium' : 'text-[var(--color-text-secondary)]']">
-              {{ ch.title }}
-            </span>
-            <!-- 时长 -->
-            <span class="text-[10px] font-mono flex-shrink-0"
-                  :class="[String(ch.id) === String(activeChapter) ? 'text-blue-500 dark:text-blue-400' : 'text-[var(--color-text-secondary)]']">
-              {{ ch.duration }}
-            </span>
+               class="group flex flex-col"
+               :class="[String(ch.id) === String(activeChapter) ? 'border-l-blue-500 dark:border-l-blue-400 bg-[var(--color-card-hover)]' : 'border-l-transparent']">
+            <!-- 章节行：点击切换 -->
+            <div class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] hover:bg-[var(--color-card-hover)]"
+                 :class="[String(ch.id) === String(activeChapter) ? 'border-l-blue-500 dark:border-l-blue-400 bg-[var(--color-card-hover)]' : 'border-l-transparent']"
+                 @click="(ch.status === 'completed' || ch.status === 'partial_completed') ? switchChapter(ch.id) : showGeneratingTip(ch)">
+              <!-- 状态图标 -->
+              <span v-if="ch.status === 'completed' || ch.status === 'partial_completed'"
+                    class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500 text-white text-[10px] font-bold flex-shrink-0">
+                &#10003;
+              </span>
+              <span v-else-if="ch.status === 'generating'"
+                    class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex-shrink-0 animate-pulse">
+                &#9881;
+              </span>
+              <span v-else-if="ch.status === 'failed'"
+                    class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex-shrink-0">
+                &#10007;
+              </span>
+              <span v-else
+                    class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-[var(--color-border)] flex-shrink-0"></span>
+              <!-- 编号 -->
+              <span class="text-[11px] font-mono flex-shrink-0 w-5"
+                    :class="[String(ch.id) === String(activeChapter) ? 'text-blue-500 dark:text-blue-400 font-semibold' : 'text-[var(--color-text-secondary)]']">
+                {{ String(ch.sequence).padStart(2, '0') }}
+              </span>
+              <!-- 标题 -->
+              <span class="text-xs flex-1 truncate"
+                    :class="[String(ch.id) === String(activeChapter) ? 'text-black dark:text-white font-medium' : (ch.status === 'completed' ? 'text-black dark:text-white' : 'text-[var(--color-text-secondary)]')]">
+                {{ ch.title }}
+              </span>
+              <!-- 时长 -->
+              <span class="text-[10px] font-mono flex-shrink-0"
+                    :class="[String(ch.id) === String(activeChapter) ? 'text-blue-500 dark:text-blue-400' : 'text-[var(--color-text-secondary)]']">
+                {{ ch.duration }}
+              </span>
+            </div>
+            <!-- 生成中的进度条 -->
+            <div v-if="ch.status === 'generating' && chapterProgressMap[ch.id]"
+                 class="px-3 py-1.5 mx-1 mb-1 rounded-[6px] bg-blue-50/60 dark:bg-blue-900/10 border border-blue-200/40 dark:border-blue-800/30 transition-colors duration-500">
+              <!-- 阶段文字 -->
+              <p class="text-[10px] text-gray-600 dark:text-gray-300 mb-1 transition-colors duration-500">
+                {{ getChapterProgressLabel(ch) }}
+              </p>
+              <!-- 进度条 -->
+              <div class="h-1 rounded-full bg-white/70 dark:bg-gray-700/50 overflow-hidden transition-colors duration-500">
+                <div class="h-full rounded-full bg-blue-500 dark:bg-blue-400 transition-[width] duration-[220ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+                     :style="{ width: getChapterProgressBarWidth(ch) }" />
+              </div>
+              <!-- 百分比 -->
+              <p class="text-[9px] text-gray-500 dark:text-gray-400 mt-0.5 text-right transition-colors duration-500">
+                {{ getChapterProgressCountText(ch) }}
+              </p>
+            </div>
           </div>
         </nav>
         <!-- 底部状态 -->
-        <div class="px-3 py-2 border-t border-[var(--color-border)]">
+        <div class="px-3 py-2 border-t border-[var(--color-border)] space-y-2">
+          <!-- 状态指示 -->
           <div class="flex items-center gap-1.5 text-[10px] text-[var(--color-text-secondary)]">
             <span v-if="chapterLoading"
                   class="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
             <span v-else-if="totalPages > 0"
                   class="inline-block w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400"></span>
             <span>{{ chapterLoading ? '内容加载中...' : (totalPages > 0 ? ('共 ' + totalPages + ' 页幻灯片') : '暂无内容') }}</span>
+          </div>
+          <!-- 生成下一章按钮（当不存在生成中的章节且还有未生成的章节时显示） -->
+          <el-button
+            v-if="canGenerateNext"
+            size="small"
+            type="primary"
+            :loading="isGeneratingChapter"
+            @click="handleGenerateNextChapter"
+            class="w-full !rounded-[10px] !text-xs"
+          >
+            {{ isGeneratingChapter ? '创建中...' : '生成下一章' }}
+          </el-button>
+          <!-- 自动生成开关 -->
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-[var(--color-text-secondary)]">自动生成</span>
+            <el-switch
+              v-model="autoGenerateEnabled"
+              size="small"
+              @change="onAutoGenerateToggle"
+            />
           </div>
         </div>
       </aside>
@@ -151,9 +202,9 @@
             {{ currentPage }} / {{ totalPages }}
           </div>
 
-          <!-- PPT 16:9 容器 -->
+          <!-- PPT 16:9 容器（overflow-hidden 配合 iframe 缩放） -->
           <div id="ppt-container" ref="pptContainer"
-               class="relative w-full aspect-[16/9] border border-[var(--color-border)] z-10 transition-all duration-500 bg-[var(--color-card-hover)]"
+               class="relative w-full aspect-[16/9] border border-[var(--color-border)] z-10 transition-all duration-500 bg-[var(--color-card-hover)] overflow-hidden"
                @mouseenter="showControls"
                @mouseleave="hideControls">
 
@@ -178,12 +229,13 @@
               <span class="text-[10px] text-[var(--color-text-secondary)] mt-1 opacity-60">{{ courseInfo.name }}</span>
             </div>
 
-            <!-- PPT iframe -->
+            <!-- PPT iframe：固定 1920×1080 渲染，通过 transform scale 缩放适配容器 -->
             <iframe v-show="!pptLoading && currentPptUrl"
               :key="currentPptUrl"
               :src="currentPptUrl"
-              class="absolute inset-0 w-full h-full border-none z-10"
+              class="absolute top-0 left-0 border-none z-10"
               sandbox="allow-scripts allow-same-origin"
+              :style="{ width: pptBaseWidth + 'px', height: pptBaseHeight + 'px', transformOrigin: '0 0', transform: 'scale(' + pptScale + ')' }"
               @load="onPptLoad"
               @error="pptLoading = false"
             ></iframe>

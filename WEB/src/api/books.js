@@ -161,3 +161,77 @@ export async function getChapterSlides(courseId, chapterId) {
 
   return response.data;
 }
+
+/**
+ * 触发生成下一章
+ * POST /api/v1/courses/:courseId/generate-next-chapter
+ * @param {string|number} courseId - 课程 ID
+ * @returns {Promise} 后端返回 { code, message, data: { chapterId, sequence, name, status } }
+ */
+export async function generateNextChapter(courseId) {
+  console.log(TAG + "[generateNextChapter] 请求生成下一章，courseId: " + courseId);
+
+  const response = await apiClient.post("/courses/" + courseId + "/generate-next-chapter");
+  console.log(
+    TAG +
+      "[generateNextChapter] 响应: code=" +
+      response.data.code +
+      ", chapterId=" +
+      response.data?.data?.chapterId
+  );
+
+  return response.data;
+}
+
+/**
+ * 查询章节生成进度（轮询用）
+ * GET /api/v1/courses/:courseId/chapters/:chapterId/generation-progress
+ * @param {string|number} courseId - 课程 ID
+ * @param {string|number} chapterId - 章节 ID
+ * @returns {Promise} 后端返回 { code, data: { chapterId, chapterStatus, progress, isTerminal } }
+ */
+export async function getChapterGenerationProgress(courseId, chapterId) {
+  const response = await apiClient.get(
+    "/courses/" + courseId + "/chapters/" + chapterId + "/generation-progress"
+  );
+  // 轮询接口日志频率高，不打印完整日志
+  if (response.data?.data?.isTerminal) {
+    console.log(TAG + "[getChapterGenerationProgress] 章节 " + chapterId + " 已结束（isTerminal）");
+  }
+  return response.data;
+}
+
+/**
+ * 触发文件补全任务
+ * POST /api/v1/courses/:courseId/chapters/:chapterId/fix-missing
+ * @param {string|number} courseId - 课程 ID
+ * @param {string|number} chapterId - 章节 ID
+ * @returns {Promise} 后端返回 { code, message, data: { status, missingFiles[] } }
+ */
+export async function fixMissingFiles(courseId, chapterId) {
+  console.log(TAG + "[fixMissingFiles] 触发文件补全，chapterId: " + chapterId);
+
+  const response = await apiClient.post(
+    "/courses/" + courseId + "/chapters/" + chapterId + "/fix-missing"
+  );
+  console.log(
+    TAG + "[fixMissingFiles] 响应: code=" + response.data.code +
+    ", status=" + response.data?.data?.status
+  );
+
+  return response.data;
+}
+
+/**
+ * 查询文件补全状态（轮询用）
+ * GET /api/v1/courses/:courseId/chapters/:chapterId/fix-status
+ * @param {string|number} courseId - 课程 ID
+ * @param {string|number} chapterId - 章节 ID
+ * @returns {Promise} 后端返回 { code, data: { isFixing, missingFiles[] } }
+ */
+export async function getFixStatus(courseId, chapterId) {
+  const response = await apiClient.get(
+    "/courses/" + courseId + "/chapters/" + chapterId + "/fix-status"
+  );
+  return response.data;
+}

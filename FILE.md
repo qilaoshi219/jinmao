@@ -16,7 +16,7 @@
 | `minio文件结构.md` | MinIO 对象存储文件组织设计 | — |
 | `数据库结构.md` | 数据库设计文档（6张表规划） | — |
 | `流水线.md` | 课程生成流水线设计文档 | — |
-| `开发日志.md` | 开发变更记录 | 2026-07-09 |
+| `开发日志.md` | 开发变更记录 | 2026-07-28 |
 | `WSL部署指南.md` | AI 智能体 WSL 部署操作指南（含前置检查、环境安装、数据库初始化、服务启动/重启/验证） | 2026-07-06 |
 | `宝塔部署指南.md` | 宝塔面板3步快速部署指南（上传 → setup.sh → 添加Node项目） | 2026-07-09 |
 | `待办.md` | 待办事项 | — |
@@ -40,6 +40,8 @@
 | `POSTbook.js` | 教材上传+状态查询路由 | — |
 | `book.js` | 教材 CRUD 路由：列表/详情（已实现），更新/删除（待实现） | 2026-07-06 |
 | `progress.js` | 学习进度路由：PUT 保存进度（需 Token）、GET 获取进度（需 Token，支持单课程/全部） | **新建 2026-07-24** |
+| `book/generate-next-chapter.js` | 下一章生成 + 章节进度查询路由 | **新建 2026-07-25** |
+| `book/fix-missing.js` | 文件缺失补全路由：POST 触发补全 / GET 查询补全状态（含完整 OpenAPI JSDoc） | **新建 2026-07-28** |
 
 ### 中间件 `middleware/`
 | 文件 | 用途 | 上次修改 |
@@ -54,14 +56,14 @@
 | `auth/otp.js` | 邮箱验证码发送与频率限制 | — |
 | `auth/profile.js` | 用户信息查询与更新 | — |
 | `POSTbook.js` | 教材上传+格式归一化（PDF/Word/MD/ZIP→MD） | — |
-| `course_pipeline.js` | 课程生成6阶段流水线（Phase3 扩写已并行化，特批超300行） | 2026-07-23 |
+| `course_pipeline.js` | 课程生成6阶段流水线 + 文件缺失补全（`fixMissingFilesForChapter()` + 内存去重Map），导出 `pipeline()`、`generateChapter()`、`fixMissingFilesForChapter()`、`getFixStatus()` | 2026-07-28 |
 | `text_tts.js` | 火山引擎 TTS 语音合成+字幕生成 | — |
 
 ### Repository 数据访问层 `utils/repo/`
 | 文件 | 用途 | 上次修改 |
 |------|------|---------|
 | `book_repo.js` | Course 表 CRUD：创建/查询/列表/更新/软删除 | — |
-| `chapter_repo.js` | Chapter 表 CRUD：创建/查询/列表/更新/软删除 | — |
+| `chapter_repo.js` | Chapter 表 CRUD：创建/查询/列表/更新/软删除，新增 `updateChapterProgress()` 和 `incrementChapterProgress()` | 2026-07-25 |
 | `user_repo.js` | User 表查询操作 | — |
 | `progress_repo.js` | UserStudyRecord 表 CRUD：upsertProgress、getProgress、getAllProgress | **新建 2026-07-24** |
 | `update_repo.js` | 流水线进度更新封装 | — |
@@ -76,9 +78,9 @@
 | `extractor_md.js` | Markdown 文本提取器 | — |
 | `line_indexer.js` | 行号索引器 | — |
 | `get_line.js` | AI 章节行号识别（DeepSeek 小模型） | 2026-07-20 |
-| `generate_outline.js` | AI 大纲生成（DeepSeek 大模型 + thinking） | 2026-07-20 |
+| `generate_outline.js` | AI 大纲生成（DeepSeek 大模型 + thinking，PIC 格式含图片描述） | 2026-07-25 |
 | `elaboration.js` | AI 文本细化/口播稿扩写（DeepSeek v4-flash） | 2026-07-23 |
-| `htmlppt.js` | AI HTML PPT 生成（DeepSeek 大模型） | 2026-07-20 |
+| `htmlppt.js` | AI HTML PPT 生成（DeepSeek 大模型，支持图片 URL + 描述输入） | 2026-07-25 |
 | `create_title.js` | AI 标题生成（DeepSeek 小模型） | 2026-07-20 |
 | `upload_minio.js` | MinIO 文件上传封装 | — |
 | `word2pdf.js` | Word→PDF 转换（LibreOffice） | — |
@@ -88,8 +90,8 @@
 ### 数据库
 | 文件 | 用途 | 上次修改 |
 |------|------|---------|
-| `prisma/schema.prisma` | Prisma ORM 数据库模型定义（User/Course/Chapter/UserStudyRecord） | 2026-07-24 |
-| `prisma/migrations/` | 数据库迁移脚本（20260704072148_init → User 表；20260709105504_add_course_and_chapter → Course/Chapter 表；20260709_add_subtitle_to_course → Course.subtitle；20260724_add_user_study_record → UserStudyRecord 表） | 2026-07-24 |
+| `prisma/schema.prisma` | Prisma ORM 数据库模型定义（User/Course/Chapter/UserStudyRecord，Chapter 新增 `generation_progress` 字段） | 2026-07-25 |
+| `prisma/migrations/` | 数据库迁移脚本（20260704072148_init → User 表；20260709105504_add_course_and_chapter → Course/Chapter 表；20260709_add_subtitle_to_course → Course.subtitle；20260724_add_user_study_record → UserStudyRecord 表；20260725_add_chapter_generation_progress → Chapter.generation_progress） | 2026-07-25 |
 
 ### 配置 `config/`
 | 文件 | 用途 | 上次修改 |
@@ -111,15 +113,15 @@
 | 文件 | 用途 | 上次修改 |
 |------|------|---------|
 | `src/api/auth.js` | 认证 API 封装（登录/注册/用户信息） | — |
-| `src/api/books.js` | 教材 API 封装（上传/列表/详情/状态） | — |
+| `src/api/books.js` | 教材 API 封装（上传/列表/详情/状态/进度/章节幻灯片，新增 `generateNextChapter()` 和 `getChapterGenerationProgress()`） | 2026-07-25 |
 | `src/api/progress.js` | 学习进度 API 封装（保存/获取单课程/获取全部） | **新建 2026-07-24** |
 | `src/api/client.js` | Axios 实例（baseURL/interceptors/Token 注入） | — |
 | `src/pages/login/index.vue` | 登录页面模板 — NERV 双栏布局 | 2026-07-23 |
 | `src/pages/login/script.js` | 登录页面逻辑 | 2026-07-23 |
 | `src/pages/home/index.vue` | 首页模板 — NERV 蓝色战术风格 | 2026-07-23 |
 | `src/pages/home/script.js` | 首页业务逻辑 | 2026-07-23 |
-| `src/pages/study/index.vue` | 课程学习页模板 — NERV 三栏可拖动布局 | 2026-07-23（新增） |
-| `src/pages/study/script.js` | 课程学习页逻辑（含播放控制、章节导航、SRT 字幕、学习进度自动保存与恢复） | 2026-07-24 |
+| `src/pages/study/index.vue` | 课程学习页模板 — NERV 三栏可拖动布局，PPT iframe 改用固定 1920×1080 + transform scale 缩放渲染 | 2026-07-29 |
+| `src/pages/study/script.js` | 课程学习页逻辑（含播放控制、章节导航、SRT 字幕、学习进度、下一章生成、PPT 缩放渲染等） | 2026-07-29 |
 | `src/stores/auth.js` | Pinia 认证状态管理 | — |
 | `src/composables/useTheme.js` | 暗黑模式切换逻辑 | — |
 | `src/composables/useResize.js` | 侧边栏拖动调整宽度 composable | 2026-07-23（新增） |

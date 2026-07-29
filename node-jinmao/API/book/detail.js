@@ -14,6 +14,22 @@ const bookRepo = require("../../utils/repo/book_repo");
 // 日志前缀
 const TAG = "[API_book_detail]";
 
+// ==================== 辅助函数 ====================
+
+/**
+ * 安全的 JSON 解析，解析失败时返回 null
+ * @param {string} str - 待解析的 JSON 字符串
+ * @returns {Object|null} 解析结果或 null
+ */
+function safeJsonParse(str) {
+  if (!str) return null;
+  try {
+    return JSON.parse(str);
+  } catch (_) {
+    return null;
+  }
+}
+
 // ==================== 路由定义 ====================
 
 /**
@@ -196,6 +212,7 @@ router.get("/books/:id", authenticateToken, async (req, res) => {
       totalPages: ch.totalPages,
       outlinePath: ch.outlinePath || null,
       status: ch.status,
+      generationProgress: ch.generationProgress ? safeJsonParse(ch.generationProgress) : null, // 章节生成进度（仅供 generating 状态有值）
       createTime: ch.createTime,
       updateTime: ch.updateTime,
     }));

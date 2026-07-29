@@ -1,0 +1,65 @@
+{
+  "currency": "CNY",
+  "description": "LLM API 计费价格配置（人民币元）。按时段独立配置价格，支持缓存命中/未命中分别计价。修改后无需重启服务，billing.js 每次计算时实时读取。",
+
+  "timeBasedPricing": {
+    "enabled": false,
+    "comment": "enabled=false 时仅使用 default 段（00:00-24:00）；enabled=true 时按下方 periods 顺序匹配第一个命中的时段",
+    "periods": [
+      {
+        "name": "default",
+        "start": "00:00",
+        "end": "24:00",
+        "comment": "默认全时段，enabled=false 时唯一生效段",
+        "providers": {
+          "deepseek": {
+            "deepseek-v4-pro":   { "input_cache_miss": 3, "input_cache_hit": 0.025, "output": 6 },
+            "deepseek-v4-flash": { "input_cache_miss": 1, "input_cache_hit": 0.02,  "output": 2 }
+          },
+          "grsai": {
+            "gpt-image-2": { "per_image": 0.037 }
+          },
+          "volcengine": {
+            "seed-tts-2.0": { "per_char": 0.0002 }
+          }
+        }
+      },
+      {
+        "name": "peak",
+        "start": "08:00",
+        "end": "15:00",
+        "comment": "高峰时段示例（enabled=true 时生效），可独立调整每个模型的价格",
+        "providers": {
+          "deepseek": {
+            "deepseek-v4-pro":   { "input_cache_miss": 3.6, "input_cache_hit": 0.03, "output": 7.2 },
+            "deepseek-v4-flash": { "input_cache_miss": 1.2, "input_cache_hit": 0.024, "output": 2.4 }
+          },
+          "grsai": {
+            "gpt-image-2": { "per_image": 0.045 }
+          },
+          "volcengine": {
+            "seed-tts-2.0": { "per_char": 0.00024 }
+          }
+        }
+      },
+      {
+        "name": "off_peak",
+        "start": "15:00",
+        "end": "08:00",
+        "comment": "低谷跨天时段示例（enabled=true 时生效）",
+        "providers": {
+          "deepseek": {
+            "deepseek-v4-pro":   { "input_cache_miss": 2.4, "input_cache_hit": 0.02, "output": 4.8 },
+            "deepseek-v4-flash": { "input_cache_miss": 0.8, "input_cache_hit": 0.016, "output": 1.6 }
+          },
+          "grsai": {
+            "gpt-image-2": { "per_image": 0.030 }
+          },
+          "volcengine": {
+            "seed-tts-2.0": { "per_char": 0.00016 }
+          }
+        }
+      }
+    ]
+  }
+}

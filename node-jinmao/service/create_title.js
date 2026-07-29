@@ -134,7 +134,7 @@ async function generateCourseTitle(courseId, userId, filename, textbookPath) {
         // ============ 步骤 4：调用 AI 生成标题 ============
         console.log(TAG + " 步骤 4/5: 调用 AI 生成标题...");
 
-        const titleResult = await createTitle(filename, content);
+        const titleResult = await createTitle(userId, filename, content);
         if (titleResult.code !== 200) {
             console.error(TAG + " 标题生成失败: " + titleResult.message);
             return { code: titleResult.code, message: "标题生成失败: " + titleResult.message };

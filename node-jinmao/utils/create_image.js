@@ -13,6 +13,7 @@
 
 const { grsai: config } = require("../config");
 const { validateString, validateFields } = require("./input_validator");
+const { recordExternalCost } = require("./billing");
 
 // ==================== 常量定义 ====================
 // API 端点路径（拼接在 base URL 后面）
@@ -24,13 +25,14 @@ const RESULT_PATH = "/v1/api/result";       // 查询异步任务结果
 /**
  * 调用 Grsai gpt-image-2 API 生成图片（异步模式 + 轮询获取结果）
  *
+ * @param {string} userId - 用户 ID（用于计费关联）
  * @param {string} prompt - 图片描述文本，如 "一只金色柴犬在樱花树下奔跑"
  * @param {Object} [options] - 可选参数
  * @param {string} [options.aspectRatio] - 图片比例/分辨率，如 "1024x1024"、"16:9"，默认使用配置中的默认值
  * @param {string[]} [options.images] - 参考图数组（base64 或 URL），默认为空数组
  * @returns {{ code: number, imageUrl?: string, taskId?: string, message?: string }}
  */
-async function createImage(prompt, options = {}) {
+async function createImage(userId, prompt, options = {}) {
     const TAG = "[create_image]";
 
     // ========== 1. 输入验证 ==========
@@ -180,6 +182,16 @@ async function createImage(prompt, options = {}) {
             if (resultData.results && resultData.results.length > 0 && resultData.results[0].url) {
                 const imageUrl = resultData.results[0].url;
                 console.log(TAG + " 图片生成成功！URL：" + imageUrl);
+                // ========== 计费记录：文生图成功，记为 1 张 ==========
+                recordExternalCost({
+                    userId: userId,
+                    provider: "grsai",
+                    model: config.GRSAI_MODEL,
+                    callTag: "create_image",
+                    status: "success",
+                    imageCount: 1,
+                    imageResolution: aspectRatio,
+                }).catch(err => console.error(TAG + " 计费记录写入失败：" + err.message));
                 return {
                     code: 200,
                     imageUrl: imageUrl,

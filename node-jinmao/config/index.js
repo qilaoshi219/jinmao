@@ -34,6 +34,9 @@ const volcengineConfig = require("./volcengine_config.json");
 // grsai_config.json：不含 API_KEY，只保留 BASE、MODEL、轮询参数等
 const grsaiConfig = require("./grsai_config.json");
 
+// billing_pricing.json：计费价格配置（不含敏感信息，可独立修改）
+const billingPricingConfig = require("./billing_pricing.json");
+
 // ==================== 注入敏感字段（从 process.env 读取） ====================
 // 注意：这里的赋值在每个模块首次 require("../config") 时执行一次
 // 由于 dotenv 已在 app.js 顶部加载，此时 process.env 已包含 .env 中的所有值
@@ -130,4 +133,5 @@ module.exports = {
     volcengine: volcengineConfig,   // { VOLCENGINE_TTS: { APP_ID, ACCESS_KEY, RESOURCE_ID, SPEAKER, API_URL } }
     grsai: grsaiConfig,             // { GRSAI_API_KEY, GRSAI_API_BASE, GRSAI_MODEL, ... }
     DEEPSEEK_TIMEOUT: DEEPSEEK_TIMEOUT, // { BIG_MODEL: 900000, SMALL_MODEL: 300000 }
+    billing: billingPricingConfig,     // 计费价格配置（从 billing_pricing.json 加载）
 };

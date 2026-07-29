@@ -178,6 +178,96 @@ async function softDeleteChapter(id) {
   }
 }
 
+/**
+ * 更新章节生成进度（合并 JSON）
+ * 对标 book_repo.updatePipelineProgress()，操作 Chapter.generationProgress 字段
+ * 先读取当前 JSON → 浅合并传入的新字段 → 写回数据库
+ * 用于流水线切换阶段时更新 phase，以及大纲阶段更新 outlineProgress
+ *
+ * @param {string|number} chapterId - 章节 ID
+ * @param {Object} progressData - 要合并的进度数据（如 { phase: "ppt_generating", outlineProgress: { percentage: 100 } }）
+ * @returns {Promise<{ code: number, message?: string }>}
+ */
+async function updateChapterProgress(chapterId, progressData) {
+  console.log("[chapter_repo][updateChapterProgress] 章节 " + chapterId +
+    " 更新进度: " + JSON.stringify(progressData));
+
+  try {
+    // 1. 先读取当前进度 JSON
+    const chapter = await prisma.chapter.findUnique({
+      where: { id: BigInt(chapterId), isDeleted: false },
+      select: { generationProgress: true },
+    });
+
+    if (!chapter) {
+      return { code: 404, message: "章节不存在。" };
+    }
+
+    // 2. 解析现有进度 JSON（若为空则初始化为 {}）
+    let currentProgress = {};
+    if (chapter.generationProgress) {
+      try {
+        currentProgress = JSON.parse(chapter.generationProgress);
+      } catch (parseErr) {
+        console.warn("[chapter_repo][updateChapterProgress] JSON 解析失败，使用空对象: " + parseErr.message);
+      }
+    }
+
+    // 3. 浅合并：传入字段覆盖现有字段，未传入字段保留原值
+    const merged = { ...currentProgress, ...progressData };
+
+    // 4. 写回数据库
+    await prisma.chapter.update({
+      where: { id: BigInt(chapterId), isDeleted: false },
+      data: { generationProgress: JSON.stringify(merged) },
+    });
+
+    console.log("[chapter_repo][updateChapterProgress] 进度更新成功");
+    return { code: 200 };
+  } catch (error) {
+    if (error.code === "P2025") {
+      return { code: 404, message: "章节不存在。" };
+    }
+    console.error("[chapter_repo][updateChapterProgress] 数据库更新异常: " + error.message);
+    return { code: 500, message: "数据库更新异常: " + error.message };
+  }
+}
+
+/**
+ * 原子递增加载章节生成进度字段（用于 PPT/TTS 并发计数场景）
+ * 对标 book_repo.incrementPipelineProgress()，操作 Chapter.generationProgress JSON 字段
+ * 使用 MySQL JSON_SET + JSON_EXTRACT 在数据库层面做原子递增加载，避免读写竞态
+ *
+ * @param {string|number} chapterId - 章节 ID
+ * @param {string} field - 要递增加载的 JSON 字段名（如 "filesCompleted"）
+ * @param {number} delta - 递增加载量（正数）
+ * @returns {Promise<{ code: number, message?: string }>}
+ */
+async function incrementChapterProgress(chapterId, field, delta) {
+  console.log("[chapter_repo][incrementChapterProgress] 章节 " + chapterId +
+    " 字段 " + field + " 递增加载 +" + delta);
+
+  try {
+    // 使用 MySQL JSON_SET + JSON_EXTRACT 实现原子递增加载
+    // 单个 UPDATE 语句，避免 read-modify-write 竞态
+    await prisma.$executeRawUnsafe(
+      `UPDATE \`Chapter\` SET \`generation_progress\` = JSON_SET(
+        COALESCE(\`generation_progress\`, '{}'),
+        '$.` + field + `',
+        CAST(COALESCE(JSON_EXTRACT(\`generation_progress\`, '$.` + field + `'), '0') AS UNSIGNED) + ?
+      ) WHERE \`id\` = ? AND \`is_deleted\` = 0`,
+      delta,
+      BigInt(chapterId)
+    );
+
+    console.log("[chapter_repo][incrementChapterProgress] 递增加载成功");
+    return { code: 200 };
+  } catch (error) {
+    console.error("[chapter_repo][incrementChapterProgress] 递增加载异常: " + error.message);
+    return { code: 500, message: "递增加载异常: " + error.message };
+  }
+}
+
 // 导出模块函数
 module.exports = {
   createChapter,
@@ -186,4 +276,6 @@ module.exports = {
   updateChapter,
   updateChapterTotalPages,
   softDeleteChapter,
+  updateChapterProgress,
+  incrementChapterProgress,
 };
