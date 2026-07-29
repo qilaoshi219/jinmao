@@ -178,9 +178,10 @@ function generateSrtContent(sentenceList) {
  * 分别写入 MP3 文件和 SRT 文件。
  * @param {string} text - 待合成的文本
  * @param {object} ttsConfig - 火山引擎 TTS 配置对象
+ * @param {string} userId - 用户 ID（用于计费关联）
  * @returns {Promise<{ code: number, mp3Path?: string, srtPath?: string, message?: string }>}
  */
-function callTtsApi(text, ttsConfig) {
+function callTtsApi(text, ttsConfig, userId) {
     return new Promise((resolve) => {
         // 构造请求体，启用字幕功能
         const requestBody = JSON.stringify({
@@ -410,22 +411,28 @@ function callTtsApi(text, ttsConfig) {
 
                     // 合成成功，返回路径
                     // ========== 计费记录：TTS 按字符数计费 ==========
-                    let audioDuration = 0;
-                    if (sentenceList.length > 0) {
-                        const lastSentence = sentenceList[sentenceList.length - 1];
-                        if (lastSentence.words && lastSentence.words.length > 0) {
-                            audioDuration = lastSentence.words[lastSentence.words.length - 1].endTime || 0;
+                    // 计费错误不应影响主流程，使用独立 try-catch 保护
+                    try {
+                        let audioDuration = 0;
+                        if (sentenceList.length > 0) {
+                            const lastSentence = sentenceList[sentenceList.length - 1];
+                            if (lastSentence.words && lastSentence.words.length > 0) {
+                                audioDuration = lastSentence.words[lastSentence.words.length - 1].endTime || 0;
+                            }
                         }
+                        recordExternalCost({
+                            userId: userId,
+                            provider: "volcengine",
+                            model: "seed-tts-2.0",
+                            callTag: "tts",
+                            status: "success",
+                            textLength: text.length,
+                            audioDuration: audioDuration,
+                        }).catch(err => console.error("[text_tts] 计费记录写入失败：" + err.message));
+                    } catch (billingErr) {
+                        // 计费失败不影响文件返回
+                        console.error("[text_tts] 计费记录失败（不影响文件输出）：" + billingErr.message);
                     }
-                    recordExternalCost({
-                        userId: userId,
-                        provider: "volcengine",
-                        model: "seed-tts-2.0",
-                        callTag: "tts",
-                        status: "success",
-                        textLength: text.length,
-                        audioDuration: audioDuration,
-                    }).catch(err => console.error("[text_tts] 计费记录写入失败：" + err.message));
 
                     resolve({
                         code: 200,
@@ -505,8 +512,8 @@ async function synthesize(userId, text) {
     }
     console.log("[text_tts][synthesize] 火山引擎 TTS 配置校验通过。");
 
-    // 第三步：调用 TTS API 进行合成
-    const result = await callTtsApi(text, ttsConfig);
+    // 第三步：调用 TTS API 进行合成（传入 userId 用于计费）
+    const result = await callTtsApi(text, ttsConfig, userId);
 
     console.log("[text_tts][synthesize] ========== TTS 合成结束，code: " + result.code + " ==========");
     return result;

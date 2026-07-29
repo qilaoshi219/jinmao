@@ -176,16 +176,10 @@
 
         <!--
         ============================================================
-        教材列表区域 — NERV 战术风格
-          - NERV 角括号装饰标题
-          - 排序下拉 + 上传按钮
-          - 骨架屏（加载态）
-          - 教材卡片网格（有数据时）+ 添加卡片
-          - 空状态（无数据时）
-          - 分页组件
+        教材列表区域 — 仅当 activeMenu === 'courses' 时显示
         ============================================================
         -->
-        <section>
+        <section v-if="activeMenu === 'courses'">
           <!-- 标题栏 — NERV 角括号装饰 -->
           <div class="flex items-center justify-between mb-3">
             <h2 class="flex items-center gap-2 text-black dark:text-white text-lg font-bold tracking-wide transition-colors duration-500">
@@ -334,6 +328,75 @@
             @current-change="onPageChange"
           />
         </section>
+
+        <!--
+        ============================================================
+        题库列表区域 — 仅当 activeMenu === 'quiz' 时显示
+          - NERV 角括号装饰标题
+          - 导入题库按钮
+          - 题库卡片网格
+          - 导入弹窗
+        ============================================================
+        -->
+        <section v-if="activeMenu === 'quiz'">
+          <!-- 标题栏 — NERV 角括号装饰 -->
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="flex items-center gap-2 text-black dark:text-white text-lg font-bold tracking-wide transition-colors duration-500">
+              <span class="text-blue-500 dark:text-blue-400 font-mono select-none" aria-hidden="true">&#x25E4;</span>
+              题型训练
+              <span class="text-blue-500 dark:text-blue-400 font-mono select-none" aria-hidden="true">&#x25E2;</span>
+            </h2>
+
+            <!-- 导入题库按钮 -->
+            <el-button type="primary" @click="quizImportDialogVisible = true">
+              导入题库
+            </el-button>
+          </div>
+
+          <!-- 加载中 -->
+          <div v-if="quizLoading"
+               class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+            <div v-for="n in 4" :key="n"
+                 class="border border-[var(--color-border)] bg-[var(--color-card)]
+                        rounded-[10px] h-48 animate-pulse transition-colors duration-500">
+              <div class="p-4 space-y-3">
+                <div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-3/4 transition-colors duration-500" />
+                <div class="h-3 bg-slate-100 dark:bg-slate-700/50 rounded w-1/2 transition-colors duration-500" />
+                <div class="h-8 bg-blue-100 dark:bg-blue-900/20 rounded mt-4 transition-colors duration-500" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 题库列表 -->
+          <div v-else-if="quizTextbooks.length > 0"
+               class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+            <QuizTextbookCard
+              v-for="tb in quizTextbooks"
+              :key="tb.id"
+              :textbook="tb"
+              @start="onStartQuiz"
+              @delete="onDeleteQuizTextbook"
+            />
+          </div>
+
+          <!-- 空状态 -->
+          <div v-else
+               class="text-center py-20 min-h-[200px] flex flex-col items-center justify-center
+                      border border-dashed border-[var(--color-border)] rounded-[10px]
+                      transition-colors duration-500">
+            <svg class="w-16 h-16 mx-auto mb-4 text-slate-300 dark:text-slate-600 transition-colors duration-500"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+            </svg>
+            <p class="text-black dark:text-white text-base font-medium mb-1 transition-colors duration-500">
+              还没有题库
+            </p>
+            <p class="text-slate-500 dark:text-slate-400 text-sm transition-colors duration-500">
+              点击"导入题库"按钮导入 JSON 格式的题目数据
+            </p>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -348,6 +411,12 @@
       v-model:visible="courseFilesDialogVisible"
       :course-id="currentCourseId"
       :course-name="currentCourseName"
+    />
+
+    <!-- ========== 题库导入弹窗 ========== -->
+    <ImportQuizDialog
+      v-model:visible="quizImportDialogVisible"
+      @success="onQuizImportSuccess"
     />
   </div>
 </template>

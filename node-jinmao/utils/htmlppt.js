@@ -104,19 +104,26 @@ async function main(userId, pptGuide, originalText, imageInfos) {
     // 替换 prompt 模板中的 {{pptGuide}}、{{originalText}}、{{imageUrls}} 占位符
     let formattedPrompt = htmlPptPrompt.replace("{{pptGuide}}", pptGuide);
     formattedPrompt = formattedPrompt.replace("{{originalText}}", originalText);
-    // 将 imageInfos 数组格式化为可读文本，方便模型理解每张图片的 URL 和内容
-    // 三种情况：空数组 → "本页无配图"；纯字符串 → 只列 URL；对象 → 列 URL + 描述
+    // 将 imageInfos 数组格式化为可读文本，方便模型理解每张图片的 URL、内容和尺寸
+    // 三种情况：空数组 → "本页无配图"；纯字符串 → 只列 URL；对象 → 列 URL + 描述 + 尺寸
     let imageText;
     if (imageInfos.length === 0) {
         imageText = "本页无配图";
     } else {
         imageText = imageInfos.map((item, i) => {
             if (typeof item === "string") {
-                // 旧格式：纯 URL 字符串，无描述
+                // 旧格式：纯 URL 字符串，无描述和尺寸
                 return "图片" + (i + 1) + ": URL=" + item + ", 描述=无";
             } else {
-                // 新格式：{ url, desc } 对象
-                return "图片" + (i + 1) + ": URL=" + item.url + ", 描述=" + (item.desc || "无");
+                // 新格式：{ url, desc, width?, height? } 对象
+                let line = "图片" + (i + 1) + ": URL=" + item.url + ", 描述=" + (item.desc || "无");
+                // 注入像素尺寸信息（如果存在）
+                if (item.width && item.height) {
+                    line += ", 原始尺寸=" + item.width + "x" + item.height + "px";
+                } else {
+                    line += ", 原始尺寸=未知";
+                }
+                return line;
             }
         }).join("\n");
     }
@@ -164,6 +171,34 @@ async function main(userId, pptGuide, originalText, imageInfos) {
         console.log("[htmlppt] 检测到 markdown 代码块包裹，已自动剥离。");
     }
 
+    // ========== 自动提取 HTML 内容（从 <!DOCTYPE html> 或 <html 标签开始） ==========
+    // DeepSeek 有时会在 HTML 代码前添加解释性文字（如"我已经根据你的要求，生成了..."），
+    // 需要自动截取真正的 HTML 内容部分
+    const doctypeIndex = resultHtml.indexOf("<!DOCTYPE html>");
+    const htmlTagIndex = resultHtml.indexOf("<html");
+    
+    if (doctypeIndex !== -1) {
+        // 找到 <!DOCTYPE html> 声明，从该位置截取
+        if (doctypeIndex > 0) {
+            console.log("[htmlppt] 检测到 HTML 代码前有 " + doctypeIndex + " 字符的解释文字，已自动截断。");
+        }
+        resultHtml = resultHtml.substring(doctypeIndex);
+    } else if (htmlTagIndex !== -1) {
+        // 没有 DOCTYPE 声明但有 <html> 标签，从 <html> 开始截取
+        if (htmlTagIndex > 0) {
+            console.log("[htmlppt] 检测到 HTML 代码前有 " + htmlTagIndex + " 字符的解释文字（无 DOCTYPE），已自动截断。");
+        }
+        resultHtml = resultHtml.substring(htmlTagIndex);
+    } else {
+        // 如果既没有 <!DOCTYPE html> 也没有 <html> 标签，尝试查找其他HTML特征标记
+        // 可能是以 <body> 或 <div> 开头的片段
+        const bodyIndex = resultHtml.indexOf("<body");
+        if (bodyIndex !== -1 && bodyIndex > 0 && bodyIndex < 100) {
+            console.log("[htmlppt] 检测到 HTML 代码前有解释文字，从 <body> 标签截断（偏移 " + bodyIndex + " 字符）。");
+            resultHtml = resultHtml.substring(bodyIndex);
+        }
+    }
+
     // 去除首尾空白
     resultHtml = resultHtml.trim();
 
@@ -180,6 +215,27 @@ async function main(userId, pptGuide, originalText, imageInfos) {
             code: 502,
             message: "DeepSeek 返回的内容不是有效的 HTML 格式，缺少必要的 HTML 标记（如 <!DOCTYPE>、<html> 或 <body>）。"
         };
+    }
+
+    // ========== URL 规范化：将 AI 可能生成的绝对 URL 转为相对路径 ==========
+    // AI 模型有时会"聪明地"把相对路径 /api/v1/files/... 补全为绝对 URL，
+    // 如 https://jinmao.ckstu.top:30080/api/v1/files/...，导致浏览器用错误协议访问。
+    // 此处将 src/href 等属性中的绝对 URL（指向 /api/v1/files/）统一还原为相对路径
+    const originalLength = resultHtml.length;
+    // 匹配 src="https?://任意域名/api/v1/files/..." 或 src='...' 或 url(...) 等引用
+    // 使用全局替换，将所有绝对路径 /api/v1/files/xxxx 还原为 /api/v1/files/xxxx
+    resultHtml = resultHtml.replace(
+        // 匹配两种 URL 引用格式：
+        // 1. HTML 属性：src="https://..." 或 href='https://...'
+        // 2. CSS 函数：url("https://...") 或 url('https://...')
+        /((?:src|href)\s*=\s*["']|url\s*\(\s*["'])https?:\/\/[^\/]+\/api\/v1\/files\//gi,
+        (match) => {
+            // 保留属性名/函数名 + 路径部分，去掉协议和主机名
+            return match.replace(/https?:\/\/[^\/]+\/api\/v1\/files\//i, "/api/v1/files/");
+        }
+    );
+    if (resultHtml.length !== originalLength) {
+        console.log("[htmlppt] 检测到绝对 URL 已规范化：原始 " + originalLength + " 字符 → " + resultHtml.length + " 字符");
     }
 
     // ========== 成功：返回 HTML 代码 ==========

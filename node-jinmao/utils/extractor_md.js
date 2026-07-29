@@ -189,19 +189,22 @@ function extractLines(mdFilePath, startLine, endLine) {
   console.log("[extractLines] 提取完成：共 " + extractedLines.length + " 行，" + result.length + " 字符。");
 
   // ==================== 构造返回值 ====================
+  const totalLineCount = validationResult.totalLines || lines.length;
   if (validationResult.truncated) {
-    // 206: 内容被截断，但仍返回可用内容 + 警告说明
+    // 206: 内容被截断，但仍返回可用内容 + 警告说明 + 文件总行数
     return {
       code: 206,
       text: result,
+      totalLineCount: totalLineCount,
       message: "结束行号超出文件总行数，已自动截断至第 " + validationResult.totalLines + " 行，实际提取范围：[" + startLine + ", " + actualEndLine + "]。"
     };
   }
 
-  // 200: 完整提取成功
+  // 200: 完整提取成功 + 文件总行数
   return {
     code: 200,
-    text: result
+    text: result,
+    totalLineCount: totalLineCount
   };
 }
 

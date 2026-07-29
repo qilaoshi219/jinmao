@@ -37,6 +37,9 @@ const { synthesize } = require("./text_tts");                      // 调用 TTS
 // MinIO 上传工具（用于上传 JSON / HTML / MP3 / SRT 文件）
 const uploadMinio = require("../utils/upload_minio");
 
+// 图片尺寸提取工具（从 MinIO 读取图片头获取像素宽高）
+const { getImageSize } = require("../utils/image_size");
+
 // 异步服务模块（Phase 1 后触发，后台执行不阻塞流水线）
 const { startTitleGeneration } = require("./create_title");       // 异步生成课程标题和副标题
 const { startCoverGeneration } = require("./create_cover_image"); // 异步生成课程封面图片并上传 MinIO
@@ -64,6 +67,83 @@ const BUCKET = process.env.MINIO_BUCKET || "jinmao";
  * @returns {string} 补零后的两位字符串
  */
 const pad = (n) => String(n).padStart(2, "0");
+
+// ==================== 图片尺寸批量查询辅助函数 ====================
+// 从 imageInfos 的 URL 中推导 MinIO 对象键，并发查询所有图片的像素尺寸
+// 尺寸查询为可选操作：单个图片查询失败不会阻塞整体流程，无尺寸信息时仅记录日志
+
+/**
+ * 从图片代理 URL 推导 MinIO 对象键
+ * 代理 URL 格式：/api/v1/files/usercourse/1/20/xxx/image/a.jpg
+ * MinIO 对象键格式：usercourse/1/20/xxx/image/a.jpg
+ *
+ * @param {string} url - 图片代理 URL（以 /api/v1/files/ 开头）
+ * @returns {string} MinIO 对象键，推导失败返回空字符串
+ */
+function deriveMinioKey(url) {
+    const prefix = "/api/v1/files/";
+    const idx = url.indexOf(prefix);
+    if (idx !== -1) {
+        return url.substring(idx + prefix.length);
+    }
+    // 兼容：URL 可能已经是相对路径（不以 /api/v1/files/ 开头）
+    if (url.startsWith("/")) {
+        return url.replace(/^\//, "");
+    }
+    return url;
+}
+
+/**
+ * 批量查询图片尺寸并注入到 imageInfos 中
+ * 并发查询所有图片，单个失败不影响其他图片
+ *
+ * @param {Array<{url: string, desc: string}>} imageInfos - 图片信息数组
+ * @returns {Promise<Array<{url: string, desc: string, width?: number, height?: number}>>}
+ *   注入 width/height 后的图片信息数组（无尺寸信息时这两个字段不存在）
+ */
+async function enrichImageInfosWithSize(imageInfos) {
+    if (!imageInfos || imageInfos.length === 0) {
+        return imageInfos;
+    }
+
+    console.log("[course_pipeline][enrichSize] 开始查询 " + imageInfos.length + " 张图片的尺寸...");
+    const enrichStartTime = Date.now();
+
+    // 并发查询所有图片尺寸
+    const sizePromises = imageInfos.map(async (info) => {
+        const minioKey = deriveMinioKey(info.url);
+        if (!minioKey) {
+            console.warn("[course_pipeline][enrichSize] 无法推导 MinIO 键: " + info.url);
+            return null;
+        }
+
+        const sizeResult = await getImageSize(minioClient, BUCKET, minioKey);
+        if (sizeResult.code === 200) {
+            return { width: sizeResult.width, height: sizeResult.height };
+        }
+        // 查询失败不阻塞流程，仅记录日志
+        console.warn("[course_pipeline][enrichSize] 图片尺寸查询失败（code=" + sizeResult.code + "）: " +
+            info.url + " - " + (sizeResult.message || "未知错误"));
+        return null;
+    });
+
+    const sizes = await Promise.all(sizePromises);
+
+    // 将尺寸注入到 imageInfos
+    let successCount = 0;
+    const enriched = imageInfos.map((info, i) => {
+        if (sizes[i]) {
+            successCount++;
+            return { ...info, width: sizes[i].width, height: sizes[i].height };
+        }
+        return info; // 无尺寸信息，保持原样
+    });
+
+    const elapsed = ((Date.now() - enrichStartTime) / 1000).toFixed(1);
+    console.log("[course_pipeline][enrichSize] 尺寸查询完成: " + successCount + "/" + imageInfos.length +
+        " 张成功，耗时 " + elapsed + "s");
+    return enriched;
+}
 
 // ==================== 流水线各阶段函数 ====================
 
@@ -164,8 +244,16 @@ async function phase2_extractAndIndex(courseId, course, tempMDPath) {
   if (lineResult.code !== 200) {
     throw new Error("行号识别失败: " + (lineResult.message || "未知错误"));
   }
-  const { startline, endline } = lineResult;
+  let { startline, endline } = lineResult;
   console.log("[course_pipeline][Phase2] 行号识别完成: startline=" + startline + ", endline=" + endline);
+
+  // 校验 AI 返回的结束行号不超出提取范围
+  // extractLines 可能已截断到文件末尾，AI 仍可能返回超出实际提取范围的 endline
+  const maxExtractedLine = extractStart + extractedText.split("\n").length - 1;
+  if (endline > maxExtractedLine) {
+    console.warn("[course_pipeline][Phase2] AI 返回的 endline(" + endline + ")超出提取范围最大行号(" + maxExtractedLine + ")，截断为实际行号");
+    endline = maxExtractedLine;
+  }
 
   // 2.6 更新状态：获取行号完成
   await bookRepo.updatePipelineStatus(courseId, "get_line_done");
@@ -277,11 +365,14 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
 
   // 3.3 条件性口播稿扩写（p-queue 并发，上限 5）
   if (course.elaborationEnabled && outline.slides && outline.slides.length > 0) {
+    const totalSlidesCount = outline.slides.length;
+    // 提前写入 totalSlides，确保前端在轮询进度时能正确获取总页数
+    // 修复：之前 totalSlides 在扩写完成之后才写入，导致前端显示 "3/0" 的问题
+    await bookRepo.updatePipelineProgress(courseId, { totalSlides: totalSlidesCount });
     // 切换到扩写状态，通知前端当前进入口播稿扩写阶段
     await bookRepo.updatePipelineStatus(courseId, "elaborating");
     console.log("[course_pipeline][Phase3] 扩写功能已开启，开始并发扩写口播稿（并发上限 5）...");
     let enrichedCount = 0;
-    const totalSlidesCount = outline.slides.length;
 
     const PQueue = await getPQueue();
     const elaborationQueue = new PQueue({ concurrency: 5 });
@@ -373,7 +464,7 @@ async function phase3_generateCourse(courseId, course, chapter, chapterText) {
  * @param {string|number} userId - 用户 ID（用于 llm_client 计费关联）
  * @param {string} chapterRoot - 章节 MinIO 根路径（用于上传 PPT 文件）
  * @param {Object} outline - PPT 大纲对象（含 slides 数组，每页含 PIC 图片信息）
- * @param {string} imageBaseUrl - 图片基础代理 URL（如 "/api/v1/files/usercourse/1/42/xxx/image"），用于构造完整图片 URL
+ * @param {string} imageBaseUrl - 图片基础代理 URL（如 "/api/v1/files/usercourse/1/42/xxx"），不含目录后缀，图片子目录由 PIC 的 path 字段自带
  * @returns {Promise<boolean>} 全部成功返回 true，部分失败返回 false
  */
 async function phase4_generatePpt(courseId, userId, chapterRoot, outline, imageBaseUrl) {
@@ -408,30 +499,33 @@ async function phase4_generatePpt(courseId, userId, chapterRoot, outline, imageB
         const rawPic = slide.PIC || [];
         const imageInfos = rawPic.map((item) => {
             if (typeof item === "string") {
-                // 旧格式：纯路径字符串 → 构造完整代理 URL，无描述
+                // 旧格式：纯路径字符串 → item 自带子目录（如 "image/xxx.jpg" 或 "images/xxx.jpg"），原样拼接
                 return {
-                    url: imageBaseUrl + "/" + item.replace(/^image\//, ""),
+                    url: imageBaseUrl + "/" + item,
                     desc: "" // 旧格式无描述
                 };
             } else if (item && typeof item === "object") {
-                // 新格式：{ path, desc } → 构造完整代理 URL，保留描述
+                // 新格式：{ path, desc } → path 自带子目录，原样拼接
                 return {
-                    url: imageBaseUrl + "/" + (item.path || "").replace(/^image\//, ""),
+                    url: imageBaseUrl + "/" + (item.path || ""),
                     desc: item.desc || ""
                 };
             }
             return { url: "", desc: "" };
         }).filter(info => info.url); // 过滤掉空 URL
 
+        // 4.3a2 批量查询图片像素尺寸（并发查询，失败不阻塞流程）
+        const enrichedImageInfos = await enrichImageInfosWithSize(imageInfos);
+
         console.log("[course_pipeline][Phase4] 幻灯片 " + slideNum + " 图片信息: " +
-            imageInfos.length + " 张" +
-            (imageInfos.length > 0 ? "（含描述=" + imageInfos.filter(i => i.desc).length + "）" : "（无配图）"));
+            enrichedImageInfos.length + " 张" +
+            (enrichedImageInfos.length > 0 ? "（含描述=" + enrichedImageInfos.filter(i => i.desc).length + "，含尺寸=" + enrichedImageInfos.filter(i => i.width).length + "）" : "（无配图）"));
 
         // 4.3b 调用 AI 生成 HTML PPT
         // generateHtmlPpt 参数：(userId, pptGuide, originalText, imageInfos)
         const pptGuide = slide.pptGuide || slide.ppt_guide || "";
         const slideText = slide.script || slide.content || "";
-        const htmlResult = await generateHtmlPpt(userId, pptGuide, slideText, imageInfos);
+        const htmlResult = await generateHtmlPpt(userId, pptGuide, slideText, enrichedImageInfos);
 
         if (htmlResult.code !== 200 || !htmlResult.html) {
           console.error("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 生成失败: " +
@@ -466,7 +560,7 @@ async function phase4_generatePpt(courseId, userId, chapterRoot, outline, imageB
         console.log("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 完成: " + minioPath);
         successCount++;
         // 原子递增加载 filesCompleted（PPT 每文件计 1，前端显示总数为 totalSlides × 3）
-        bookRepo.incrementPipelineProgress(courseId, "filesCompleted", 1).catch(() => {});
+        bookRepo.incrementPipelineProgress(courseId, "filesProgress.current", 1).catch(() => {});
       } catch (err) {
         console.error("[course_pipeline][Phase4] 幻灯片 " + slideNum + " PPT 异常: " + err.message);
         failCount++;
@@ -570,7 +664,7 @@ async function phase5_generateTts(courseId, userId, chapterRoot, outline) {
           console.log("[course_pipeline][Phase5] 幻灯片 " + slideNum + " TTS 完成（MP3 + SRT）");
           successCount++;
           // 原子递增加载 filesCompleted（MP3 + SRT 各计 1，共 +2）
-          bookRepo.incrementPipelineProgress(courseId, "filesCompleted", 2).catch(() => {});
+          bookRepo.incrementPipelineProgress(courseId, "filesProgress.current", 2).catch(() => {});
         } else {
           failCount++;
         }
@@ -681,18 +775,37 @@ async function phase6_validate(courseId, chapter, outline, pptAllSuccess, ttsAll
   // 6.4 根据校验结果设置最终状态
   let finalStatus;
   if (isLastChapter) {
-    // 最后一章：教材全部生成完毕，无论文件完整度如何都标记为 completed
-    finalStatus = "completed";
-    console.log("[course_pipeline][Phase6] 最后一章，设置状态为 completed（教材全部生成完毕）");
+    // 最后一章：教材全部生成完毕，但需根据文件完整性区分章节状态
+    if (missingFiles.length > 0) {
+      // 最后一章仍有文件缺失 → 章节设为 partial_completed，并自动触发补全
+      finalStatus = "partial_completed";
+      console.warn("[course_pipeline][Phase6] 最后一章校验未通过，缺失 " + missingFiles.length + " 个文件: " +
+        missingFiles.join(", "));
+
+      // 自动启动后台文件补全任务（fixMissingFilesForChapter 异步非阻塞，内部有去重机制）
+      console.log("[course_pipeline][Phase6] 自动触发文件补全，章节 ID: " + chapter.id);
+      fixMissingFilesForChapter(courseId, chapter.id).catch(err => {
+        console.error("[course_pipeline][Phase6] 自动补全启动失败: " + err.message);
+      });
+    } else {
+      finalStatus = "completed";
+      console.log("[course_pipeline][Phase6] 最后一章，所有文件完整，设置状态为 completed");
+    }
   } else if (missingFiles.length === 0 && pptAllSuccess && ttsAllSuccess) {
     // 全部文件完整且各阶段均成功
     finalStatus = "completed";
     console.log("[course_pipeline][Phase6] 校验通过，所有文件完整");
   } else if (missingFiles.length > 0) {
-    // 有文件缺失
+    // 有文件缺失 → 自动触发补全重试
     finalStatus = "partial_completed";
     console.warn("[course_pipeline][Phase6] 校验未通过，缺失 " + missingFiles.length + " 个文件: " +
       missingFiles.join(", "));
+
+    // 自动启动后台文件补全任务（fixMissingFilesForChapter 异步非阻塞，内部有去重机制）
+    console.log("[course_pipeline][Phase6] 自动触发文件补全，章节 ID: " + chapter.id);
+    fixMissingFilesForChapter(courseId, chapter.id).catch(err => {
+      console.error("[course_pipeline][Phase6] 自动补全启动失败: " + err.message);
+    });
   } else {
     // 文件完整但部分阶段有失败
     finalStatus = "partial_completed";
@@ -771,9 +884,9 @@ async function pipeline(courseId) {
 
     // 从 textbookPath 推导图片基础代理 URL，供 Phase4 构造完整图片 URL
     // textbookPath 格式: /usercourse/{userId}/{bookId}/{归一产物目录}/{filename}.md
-    // imageBaseUrl 格式: /api/v1/files/usercourse/{userId}/{bookId}/{归一产物目录}/image
+    // imageBaseUrl 格式: /api/v1/files/usercourse/{userId}/{bookId}/{归一产物目录}（不含子目录，子目录由 PIC 的 path 字段自带如 images/xxx.jpg）
     const mdDir = course.textbookPath.replace(/\/[^/]+\.md$/, '');
-    const imageBaseUrl = '/api/v1/files' + mdDir + '/image';
+    const imageBaseUrl = '/api/v1/files' + mdDir;
     console.log("[course_pipeline][pipeline] 图片基础 URL 已推导: " + imageBaseUrl);
 
     // 两个阶段同时开始，互不等待
@@ -830,6 +943,8 @@ async function generateChapter(courseId, chapterId) {
   console.log(TAG + " ========== 单章生成流水线启动 ==========");
   console.log(TAG + " 课程 ID: " + courseId + "，章节 ID: " + chapterId);
 
+  let isLastChapter = false; // 提升到 try-catch 外层，catch 块需要判断是否需要标记课程完成
+
   try {
     // ───── Step 1：查询课程和章节数据 ─────
     const courseResult = await bookRepo.getCourseById(courseId);
@@ -845,6 +960,9 @@ async function generateChapter(courseId, chapterId) {
     const chapter = chapterResult.chapter;
 
     console.log(TAG + " 课程: " + course.name + "，章节: " + chapter.name + "（sequence=" + chapter.sequence + "）");
+
+    // 显式更新章节状态为 generating（若此前为 pending，确保前端轮询能正确识别）
+    await chapterRepo.updateChapter(chapterId, { status: "generating" });
 
     // 初始化章节进度
     await chapterRepo.updateChapterProgress(chapterId, {
@@ -865,13 +983,32 @@ async function generateChapter(courseId, chapterId) {
     const extractStart = (course.endline || 0) + 1;
     const extractEnd = (course.endline || 0) + 1000;
     const extractedResult = await extractLines(tempMDPath, extractStart, extractEnd);
+    // 416 表示起始行超出文件总行数 → 无更多内容，课程已完成
+    if (extractedResult.code === 416) {
+      console.log(TAG + " [Step3] 起始行(" + extractStart + ")已超出文件总行数，无更多内容可提取");
+      // 持久化 isLastChapter 标记，确保前后端一致拒绝继续生成
+      await bookRepo.updatePipelineProgress(courseId, { isLastChapter: true });
+      // 更新课程状态为 completed（全部内容已处理完毕）
+      await bookRepo.updatePipelineStatus(courseId, "completed");
+      // 将本章节标记为 failed（无效章节，无内容可生成）
+      await chapterRepo.updateChapter(chapterId, { status: "failed", generationProgress: null });
+      console.log(TAG + " [Step3] 课程已标记为 completed，章节 " + chapterId + " 已标记为 failed");
+      return { code: 200, status: "no_more_content", message: "无更多内容可生成，课程已完成" };
+    }
     if (extractedResult.code !== 200 && extractedResult.code !== 206) {
       throw new Error("文本提取失败: " + (extractedResult.message || "未知错误"));
     }
     const extractedText = extractedResult.text;
-    const isLastChapter = extractedResult.code === 206;
+    isLastChapter = extractedResult.code === 206; // 使用外层变量（非 const），catch 块需要判断
     console.log(TAG + " [Step3] 文本提取成功，长度: " + extractedText.length + " 字符" +
       (isLastChapter ? "（已截断到文件末尾）" : ""));
+
+    // 立即持久化 isLastChapter 标记到数据库，防止后续步骤异常导致拦截失效
+    // API 端已有双重检查（pipelineStatus 和 pipelineProgress.isLastChapter），持久化后立即生效
+    if (isLastChapter) {
+      await bookRepo.updatePipelineProgress(courseId, { isLastChapter: true });
+      console.log(TAG + " [Step3] 已是最后一章，已持久化 isLastChapter 标记到 pipelineProgress");
+    }
 
     // 添加行号
     const indexedResult = await addLineNumbers(extractedText);
@@ -885,8 +1022,16 @@ async function generateChapter(courseId, chapterId) {
     if (lineResult.code !== 200) {
       throw new Error("行号识别失败: " + (lineResult.message || "未知错误"));
     }
-    const { startline, endline } = lineResult;
+    let { startline, endline } = lineResult;
     console.log(TAG + " [Step3] 行号识别完成: startline=" + startline + ", endline=" + endline);
+
+    // 校验 AI 返回的结束行号不超出提取范围
+    // extractLines 可能已截断到文件末尾，AI 仍可能返回超出实际提取范围的 endline
+    const maxExtractedLine = extractStart + extractedText.split("\n").length - 1;
+    if (endline > maxExtractedLine) {
+      console.warn(TAG + " [Step3] AI 返回的 endline(" + endline + ")超出提取范围最大行号(" + maxExtractedLine + ")，截断为实际行号");
+      endline = maxExtractedLine;
+    }
 
     // 更新章节行号信息
     await chapterRepo.updateChapter(chapterId, { startline, endline });
@@ -1017,9 +1162,9 @@ async function generateChapter(courseId, chapterId) {
       filesProgress: { current: 0, total: totalSlides * 3, isComplete: false },
     });
 
-    // 推导图片基础 URL
+    // 推导图片基础 URL（不含子目录，子目录由 PIC 的 path 字段自带如 images/xxx.jpg）
     const mdDir = course.textbookPath.replace(/\/[^/]+\.md$/, "");
-    const imageBaseUrl = "/api/v1/files" + mdDir + "/image";
+    const imageBaseUrl = "/api/v1/files" + mdDir;
 
     // PPT 生成（复用 Phase 4，但进度写 chapter 而非 course）
     const pptAllSuccess = await (async () => {
@@ -1034,7 +1179,20 @@ async function generateChapter(courseId, chapterId) {
           try {
             const pptGuide = slide.pptGuide || slide.ppt_guide || "";
             const slideText = slide.script || slide.content || "";
-            const htmlResult = await generateHtmlPpt(course.userId, pptGuide, slideText, []);
+            // 构造图片信息列表：从 PIC 字段读取图片路径和描述，转为完整代理 URL
+            // PIC 的 path 自带子目录（如 "images/xxx.jpg" 或 "image/xxx.jpg"），原样拼接到 imageBaseUrl 后
+            const rawPic = slide.PIC || [];
+            const imageInfos = rawPic.map((item) => {
+                if (typeof item === "string") {
+                    return { url: imageBaseUrl + "/" + item, desc: "" };
+                } else if (item && typeof item === "object") {
+                    return { url: imageBaseUrl + "/" + (item.path || ""), desc: item.desc || "" };
+                }
+                return { url: "", desc: "" };
+            }).filter(info => info.url);
+            // 批量查询图片像素尺寸
+            const enrichedImageInfos = await enrichImageInfosWithSize(imageInfos);
+            const htmlResult = await generateHtmlPpt(course.userId, pptGuide, slideText, enrichedImageInfos);
             if (htmlResult.code !== 200 || !htmlResult.html) {
               pptFailCount++;
               return;
@@ -1051,7 +1209,7 @@ async function generateChapter(courseId, chapterId) {
             if (upResult.code !== 200) { pptFailCount++; return; }
             pptSuccessCount++;
             // 原子递增加载章节进度（PPT 每文件计 1）
-            chapterRepo.incrementChapterProgress(chapterId, "filesCompleted", 1).catch(() => {});
+            chapterRepo.incrementChapterProgress(chapterId, "filesProgress.current", 1).catch(() => {});
           } catch (err) {
             console.error(TAG + " [Step7] PPT 幻灯片 " + slideNum + " 异常: " + err.message);
             pptFailCount++;
@@ -1088,7 +1246,7 @@ async function generateChapter(courseId, chapterId) {
             if (mp3Up.code === 200 && srtUp.code === 200) {
               ttsSuccessCount++;
               // 原子递增加载章节进度（MP3 + SRT 各计 1，共 +2）
-              chapterRepo.incrementChapterProgress(chapterId, "filesCompleted", 2).catch(() => {});
+              chapterRepo.incrementChapterProgress(chapterId, "filesProgress.current", 2).catch(() => {});
             } else {
               ttsFailCount++;
             }
@@ -1109,20 +1267,50 @@ async function generateChapter(courseId, chapterId) {
 
     let finalStatus;
     if (isLastChapter) {
-      finalStatus = "completed";
-      console.log(TAG + " [Step8] 最后一章，标记为 completed");
-      // 同时更新课程状态
-      await bookRepo.updatePipelineStatus(courseId, "completed");
+      // 最后一章：课程流水线标记为已完成（无更多章节要生成）
+      if (pptAllSuccess && ttsAllSuccess) {
+        finalStatus = "completed";
+        console.log(TAG + " [Step8] 最后一章，全部文件完整，标记为 completed");
+        await bookRepo.updatePipelineStatus(courseId, "completed");
+      } else {
+        // 最后一章存在文件缺失 → 章节设为 partial_completed，并自动触发补全
+        finalStatus = "partial_completed";
+        console.warn(TAG + " [Step8] 最后一章但存在文件缺失（PPT全部成功=" + pptAllSuccess + ", TTS全部成功=" + ttsAllSuccess + "）");
+        // 课程流水线仍标记为已完成（无更多章节），但章节状态反映文件完整性
+        await bookRepo.updatePipelineStatus(courseId, "completed");
+        // 自动启动后台文件补全任务
+        console.log(TAG + " [Step8] 自动触发文件补全，章节 ID: " + chapterId);
+        fixMissingFilesForChapter(courseId, chapterId).catch(err => {
+          console.error(TAG + " [Step8] 自动补全启动失败: " + err.message);
+        });
+      }
     } else if (pptAllSuccess && ttsAllSuccess) {
       finalStatus = "completed";
       console.log(TAG + " [Step8] 校验通过，所有文件完整");
     } else {
       finalStatus = "partial_completed";
       console.warn(TAG + " [Step8] 部分文件缺失（PPT全部成功=" + pptAllSuccess + ", TTS全部成功=" + ttsAllSuccess + "）");
+
+      // 自动启动后台文件补全任务（fixMissingFilesForChapter 异步非阻塞，内部有去重机制）
+      console.log(TAG + " [Step8] 自动触发文件补全，章节 ID: " + chapterId);
+      fixMissingFilesForChapter(courseId, chapterId).catch(err => {
+        console.error(TAG + " [Step8] 自动补全启动失败: " + err.message);
+      });
     }
 
     // 更新章节状态 + 清空进度数据
     await chapterRepo.updateChapter(chapterId, { status: finalStatus, generationProgress: null });
+
+    // ========== 兜底检测：如果 endline 已到达或超出文件总行数，补设 isLastChapter ==========
+    // Step3 的 isLastChapter 只在 extractLines 返回 206 时触发。
+    // 但若提取范围恰好精确匹配文件末尾（不触发 206 截断），则需要在此处兜底检测。
+    // totalLineCount 从 extractLines 的返回值中获取（v1.21.12+ 新增字段）
+    const totalLineCount = extractedResult.totalLineCount;
+    if (!isLastChapter && totalLineCount && endline && endline >= totalLineCount) {
+      console.log(TAG + " [兜底] endline(" + endline + ") >= 文件总行数(" + totalLineCount + ")，补设 isLastChapter=true");
+      await bookRepo.updatePipelineProgress(courseId, { isLastChapter: true });
+      isLastChapter = true; // 同步本地变量（虽然此处已近结束，但保持一致性）
+    }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(TAG + " ========== 单章生成完成 ==========");
@@ -1135,6 +1323,17 @@ async function generateChapter(courseId, chapterId) {
     console.error(TAG + " ========== 单章生成致命错误 ==========");
     console.error(TAG + " 错误信息: " + err.message);
     console.error(TAG + " 已耗时: " + elapsed + " 秒");
+
+    // 如果已是最后一章（pipelineProgress 中已持久化 isLastChapter 标记），
+    // 即使流水线异常也要标记课程为 completed，防止用户继续创建无效章节
+    if (isLastChapter) {
+      try {
+        await bookRepo.updatePipelineStatus(courseId, "completed");
+        console.log(TAG + " 最后一章生成异常，但课程已标记为 completed（无更多内容可生成）");
+      } catch (statusErr) {
+        console.error(TAG + " 更新 pipelineStatus 为 completed 时出错: " + statusErr.message);
+      }
+    }
 
     // 将章节标记为失败
     try {
@@ -1287,6 +1486,12 @@ async function fixMissingFilesForChapter(courseId, chapterId) {
         missingFiles: missingFileKeys,
       });
 
+      // 如果章节是 completed 但有缺失文件，更新为 partial_completed（前端显示琥珀色警告图标）
+      if (chapter.status === "completed") {
+        console.log(FIX_TAG + " 章节状态为 completed 但发现 " + missingFiles.length + " 个缺失文件，更新为 partial_completed");
+        await chapterRepo.updateChapter(chapterId, { status: "partial_completed" });
+      }
+
       console.log(FIX_TAG + " 发现 " + missingFiles.length + " 个缺失文件，开始补全...");
       missingFiles.forEach(f => console.log(FIX_TAG + "  缺失: " + f.key + " (类型: " + f.type + ", 页码: " + f.page + ")"));
 
@@ -1311,7 +1516,7 @@ async function fixMissingFilesForChapter(courseId, chapterId) {
       let fixUserId = "unknown"; // 默认值，后续从 course 对象中提取
       if (courseResult.code === 200 && courseResult.course) {
         const mdDir = (courseResult.course.textbookPath || "").replace(/\/[^/]+\.md$/, "");
-        imageBaseUrl = "/api/v1/files" + mdDir + "/image";
+        imageBaseUrl = "/api/v1/files" + mdDir;
         fixUserId = String(courseResult.course.userId || "unknown");
       }
 
@@ -1381,7 +1586,19 @@ async function fixMissingFilesForChapter(courseId, chapterId) {
             console.log(FIX_TAG + " 补全 PPT: 第 " + page + " 页...");
             const pptGuide = slide.pptGuide || slide.ppt_guide || "";
             const slideText = slideScript || slide.content || "";
-            const htmlResult = await generateHtmlPpt(fixUserId, pptGuide, slideText, []);
+            // 构造图片信息列表：PIC 的 path 自带子目录，原样拼接到 imageBaseUrl 后
+            const rawPic = slide.PIC || [];
+            const imageInfos = rawPic.map((item) => {
+                if (typeof item === "string") {
+                    return { url: imageBaseUrl + "/" + item, desc: "" };
+                } else if (item && typeof item === "object") {
+                    return { url: imageBaseUrl + "/" + (item.path || ""), desc: item.desc || "" };
+                }
+                return { url: "", desc: "" };
+            }).filter(info => info.url);
+            // 批量查询图片像素尺寸
+            const enrichedImageInfos = await enrichImageInfosWithSize(imageInfos);
+            const htmlResult = await generateHtmlPpt(fixUserId, pptGuide, slideText, enrichedImageInfos);
             if (htmlResult.code !== 200 || !htmlResult.html) {
               console.warn(FIX_TAG + " PPT 生成失败 第 " + page + " 页");
               failCount++;

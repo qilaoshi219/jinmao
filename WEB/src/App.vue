@@ -14,6 +14,9 @@
   <!-- 已登录 + 课程学习页 -->
   <StudyPage v-else-if="currentPage === 'study'" />
 
+  <!-- 已登录 + 刷题页（含报告子页）-->
+  <QuizPage v-else-if="currentPage === 'quiz'" />
+
   <!-- ========== 前端版本号 ========== -->
   <div class="fixed bottom-2 right-3 z-50 text-[11px] text-[var(--color-text-secondary)] select-none pointer-events-none transition-colors duration-500">
     v{{ appVersion }}
@@ -26,6 +29,7 @@ import { useAuthStore } from "./stores/auth";
 import LoginPage from "./pages/login/index.vue";
 import HomePage from "./pages/home/index.vue";
 import StudyPage from "./pages/study/index.vue";
+import QuizPage from "./pages/quiz/index.vue";
 import pkg from "../package.json";
 
 const TAG = "[App]";
@@ -39,6 +43,9 @@ const currentPage = ref("home");
 /** 学习页参数（课程 ID 等），由首页传递，学习页接收 */
 const studyParams = ref(null);
 
+/** 刷题页参数（sessionId/reportId/mode），由首页或刷题页传递 */
+const quizParams = ref(null);
+
 /**
  * 提供 navigate 方法给子组件（通过 provide/inject 或事件）
  * 子组件调用 changePage('study', { courseId: 1 }) 或 changePage('home') 来切换页面
@@ -50,8 +57,11 @@ function changePage(page, params = null) {
   currentPage.value = page;
   if (page === "study") {
     studyParams.value = params; // 传递参数给学习页
+  } else if (page === "quiz") {
+    quizParams.value = params; // 传递参数给刷题页
   } else {
-    studyParams.value = null; // 返回首页时清空参数
+    studyParams.value = null;
+    quizParams.value = null; // 返回首页时清空参数
   }
 }
 
@@ -59,6 +69,8 @@ function changePage(page, params = null) {
 provide("navigate", changePage);
 // 提供学习页参数给 StudyPage 组件
 provide("studyParams", studyParams);
+// 提供刷题页参数给 QuizPage 组件（含报告页）
+provide("quizParams", quizParams);
 
 // 退出登录时重置到首页
 watch(

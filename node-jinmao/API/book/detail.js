@@ -11,6 +11,9 @@ const { authenticateToken } = require("../../middleware/auth");
 // 导入 Repository 层：教材数据库操作
 const bookRepo = require("../../utils/repo/book_repo");
 
+// 导入统一判断函数：是否可以生成下一章
+const { computeCanGenerateNext } = require("../../utils/can_generate_next");
+
 // 日志前缀
 const TAG = "[API_book_detail]";
 
@@ -232,6 +235,8 @@ router.get("/books/:id", authenticateToken, async (req, res) => {
       elaborationEnabled: course.elaborationEnabled,
       endline: course.endline,
       pipelineStatus: course.pipelineStatus,
+      pipelineProgress: course.pipelineProgress ? safeJsonParse(course.pipelineProgress) : null, // 流水线进度（含 isLastChapter 标记）
+      canGenerateNext: computeCanGenerateNext(course, chapters).can, // 后端统一计算：是否可以生成下一章
       createTime: course.createTime,
       updateTime: course.updateTime,
       chapters: chapters, // 完整章节列表

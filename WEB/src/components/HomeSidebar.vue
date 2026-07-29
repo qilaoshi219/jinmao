@@ -93,12 +93,17 @@
           </button>
         </li>
 
-        <!-- 习题训练（骨架占位） -->
+        <!-- 习题训练 -->
         <li>
-          <button disabled
-            class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px]
-                   text-gray-400 dark:text-gray-600 cursor-not-allowed
-                   transition-colors duration-500">
+          <button
+            @click="$emit('select', 'quiz')"
+            :class="[
+              'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px]',
+              'transition-all duration-500',
+              activeMenu === 'quiz'
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-500 font-semibold nerv-rail'
+                : 'text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50'
+            ]">
             <svg class="w-[18px] h-[18px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>

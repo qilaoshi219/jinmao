@@ -66,6 +66,7 @@ node-jinmao/
 │   ├── get_line.js                 # 将已编号文本发送给 DeepSeek 小模型，识别章节起止行号（返回 JSON 字符串）
 │   ├── htmlppt.js                  # 将 PPT 生成指引转换为互动式 HTML PPT（通过 llm_client 调用 DeepSeek 大模型，支持图片 URL + 描述输入，需传入 userId 用于计费）
 │   ├── input_validator.js          # 统一输入验证（validateString / validateNumber / validateFields）
+│   ├── image_size.js               # 图片尺寸提取工具：从 MinIO 读取图片头获取像素宽高，支持 JPEG/PNG/GIF/WebP/BMP
 │   ├── line_indexer.js             # 给 Markdown 文本每一行添加行号索引
 │   ├── upload_minio.js             # 上传文件到 MinIO 对象存储
 │   └── word2pdf.js                 # Word 文件转 PDF 格式
@@ -92,12 +93,12 @@ node-jinmao/
 | `config/outline_prompt.txt` | 大纲生成的 System Prompt 模板，含 `{{yuanwen}}` 和 `{{pptother}}` 占位符，PIC 字段格式为 `[{path, desc}]` 含图片描述 | 2026-07-25 |
 | `config/getline_prompt.txt` | 行号识别的 System Prompt 模板，指导 DeepSeek 分析已编号文本并返回章节起止行号 | 2026-07-02 |
 | `config/elaboration_prompt.txt` | 口播稿扩写细化的 System Prompt 模板，含 `{{elaboration}}`、`{{original}}`、`{{expected_words}}` 占位符 | 2026-07-02 |
-| `config/html_ppt_prompt.txt` | HTML PPT 生成的 System Prompt 模板，含 `{{pptGuide}}`、`{{originalText}}`、`{{imageUrls}}` 占位符，支持图片描述引导排版 | 2026-07-25 |
+| `config/html_ppt_prompt.txt` | HTML PPT 生成的 System Prompt 模板，含 `{{pptGuide}}`、`{{originalText}}`、`{{imageUrls}}` 占位符，支持图片描述+原始尺寸引导排版，含字体大小约束（正文≥2rem，辅助文字≥1.5rem），含四规则图片处理（禁止自绘专业图、仅允许简单图形自绘、强制 `<img>` 引用且严禁补全为绝对 URL、尺寸决定空间+宽高比布局指导） | 2026-07-29 |
 | `config/cover_prompt.txt` | 封面图片生成的 System Prompt 模板，含 `{{title}}` 和 `{{sample}}` 占位符，用于生成 16:9 课程封面 | 2026-07-09 |
 | `config/title_prompt.txt` | 标题生成的 System Prompt 模板，含 `{{filename}}` 和 `{{content}}` 占位符，用于生成书籍标题和副标题 | 2026-07-09 |
 | `config/doc2x_config.json` | Doc2x API Base URL 配置（API Key 已迁移到 .env） | 2026-07-04 |
 | `config/volcengine_config.json` | 存储火山引擎 TTS 非敏感配置（RESOURCE_ID、SPEAKER、API_URL），APP_ID 和 ACCESS_KEY 已迁移到 .env | 2026-07-04 |
-| `service/course_pipeline.js` | 课程生成6阶段流水线（Phase1~Phase6），使用p-queue控制并发。PPT/TTS生成通过 `llm_client` 统一调用（需传入 userId）。导出 `pipeline(courseId)`、`generateChapter(courseId, chapterId)`、`fixMissingFilesForChapter()`（含内存去重Map）、`getFixStatus()` 状态查询 | 2026-07-29 |
+| `service/course_pipeline.js` | 课程生成6阶段流水线（Phase1~Phase6），使用p-queue控制并发。PPT/TTS生成通过 `llm_client` 统一调用（需传入 userId）。含 `deriveMinioKey()` 和 `enrichImageInfosWithSize()` 批量查询图片尺寸。导出 `pipeline(courseId)`、`generateChapter(courseId, chapterId)`、`fixMissingFilesForChapter()`（含内存去重Map）、`getFixStatus()` 状态查询 | 2026-07-29 |
 | `service/POSTbook.js` | 教材上传核心业务逻辑，校验文件 → 上传 MinIO → 写入数据库 → 返回结果，含 `uploadImageDir()` 通用图片上传辅助函数（兼容 image/images 目录名） | 2026-07-10 |
 | `service/create_cover_image.js` | 图书封面图片生成服务，调用文生图 API 生成封面 → 下载图片 → 上传 MinIO → 更新数据库 coverPath，导出 `createCoverImage()` 和 `startCoverGeneration()`（异步执行） | 2026-07-09 |
 | `service/create_title.js` | 标题生成服务，从 MinIO 下载 MD 文件 → 提取前 1000 行 → 调用 AI 生成标题和副标题 → 更新数据库 name 和 subtitle，导出 `generateCourseTitle()` 和 `startTitleGeneration()`（异步执行） | 2026-07-09 |
@@ -119,7 +120,9 @@ node-jinmao/
 | `utils/extractor_md.js` | 从 Markdown 文件中按行号范围提取文本内容，支持输入校验与自动截断，返回 `{code, text?, message?}`。导出 `extractLines()` 和 `validateParams()` | 2026-07-02 |
 | `utils/generate_outline.js` | 通过统一的 `llm_client` 模块调用 DeepSeek 大模型生成 PPT 大纲（`main(userId, yuanwen, pptother)`），返回 `{code, outline?, message?}`，含数组自动包装为 `{slides: [...]}` 的兜底逻辑。大纲中 PIC 字段格式为 `[{path, desc}]`。导出 `generateOutline()` | 2026-07-29 |
 | `utils/get_line.js` | 接受已编号的 Markdown 文本，通过 `llmClient.chat()` 统一调用 DeepSeek 小模型识别可做 PPT 的章节起止行号，返回对象 `{code,startline?,endline?,message?}`。导出 `getLine(userId, indexedMarkdown)` | 2026-07-29 |
-| `utils/htmlppt.js` | 将 PPT 生成指引转换为互动式 HTML PPT，通过 `llm_client` 统一调用 DeepSeek 大模型。输入 `(userId, pptGuide, originalText, imageInfos)`，imageInfos 支持 `string[]` 和 `object[]: {url, desc}` 两种格式，返回 `{code, html?, message?}`。导出 `generateHtmlPpt()` | 2026-07-29 |
+| `utils/htmlppt.js` | 将 PPT 生成指引转换为互动式 HTML PPT，通过 `llm_client` 统一调用 DeepSeek 大模型。输入 `(userId, pptGuide, originalText, imageInfos)`，imageInfos 支持 `string[]` 和 `object[]: {url, desc, width?, height?}` 格式，含尺寸信息时会格式化为 `原始尺寸=WxHpx`。返回 `{code, html?, message?}`。含 URL 规范化后处理。导出 `generateHtmlPpt()` | 2026-07-29 |
+| `utils/image_size.js` | 纯 Node.js 图片尺寸提取工具：从 MinIO 读取图片头部（最多 64KB），通过解析二进制文件头获取像素宽高，支持 JPEG/PNG/GIF/WebP/BMP 五种格式，含自动格式检测 fallback。导出 `getImageSize(minioClient, bucket, objectKey)` | 2026-07-29 |
+| `utils/can_generate_next.js` | 统一计算函数：根据课程状态和章节列表判断是否可以生成下一章，前后端共用 | 2026-07-29 |
 | `utils/create_title.js` | 调用 DeepSeek 小模型（deepseek-v4-flash）为教材内容生成标题和副标题，输入文件名和原文内容，返回 `{code, title?, subtitle?, message?}`。导出 `createTitle()` | 2026-07-09 |
 | `utils/line_indexer.js` | 给 Markdown 文本每一行添加行号索引，支持输入安全校验（防注入/空值/类型检查），返回 `{code, text, message?}` | 2026-07-02 |
 | `utils/upload_minio.js` | 上传文件到 MinIO 对象存储，输入本地路径 + MinIO 目标路径，返回文件 URL | 2026-07-03 |

@@ -15,6 +15,8 @@ const { generateChapter } = require("../../service/course_pipeline");
 // 导入 Repository 层
 const bookRepo = require("../../utils/repo/book_repo");
 const chapterRepo = require("../../utils/repo/chapter_repo");
+// 导入统一判断函数：是否可以生成下一章
+const { computeCanGenerateNext } = require("../../utils/can_generate_next");
 // 导入 JWT 鉴权中间件
 const { authenticateToken } = require("../../middleware/auth");
 
@@ -153,18 +155,21 @@ router.post("/courses/:courseId/generate-next-chapter", authenticateToken, async
       return res.status(403).json({ code: 403, message: "无权操作该教材。", data: null });
     }
 
-    // ===== 4. 检查是否还有更多内容 =====
-    // 若课程已标记有章节正在生成，不允许重复生成
+    // ===== 4. 统一检查：是否可以生成下一章（单一真相来源） =====
+    // 替代原有的 3 个独立 if 块，前后端共用 computeCanGenerateNext 确保一致性
     const chapters = (course.chapters || []).filter(c => !c.isDeleted);
-    const hasGeneratingChapter = chapters.some(c => c.status === "generating");
-    if (hasGeneratingChapter) {
-      return res.status(400).json({ code: 400, message: "已有章节正在生成中，请等待完成后再试。", data: null });
+    const canResult = computeCanGenerateNext(course, chapters);
+    if (!canResult.can) {
+      console.log(TAG + " 拒绝生成下一章: " + canResult.reason);
+      const isFinished = canResult.reason === "课程已完成" || canResult.reason === "已是最后一章";
+      return res.status(400).json({
+        code: 400,
+        message: isFinished
+          ? "该教材的所有章节已生成完毕，没有更多内容可生成。"
+          : "已有章节正在生成中，请等待完成后再试。",
+        data: null,
+      });
     }
-
-    // 检查 endline 是否已到文件末尾（extractLines 返回 206 表示已截断到末尾）
-    // 简化判断：如果有章节且最后一章标记为完成且课程 pipelineStatus 为 terminal，则可能还有更多
-    // 更可靠的判断：在 generateChapter 里检测 extractLines 的返回码
-    // 此处先允许创建章节，流水线内部会处理"无更多内容"的情况
 
     // ===== 5. 确定下一章的序号 =====
     const lastSequence = chapters.length > 0

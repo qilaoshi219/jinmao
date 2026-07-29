@@ -90,14 +90,22 @@
           <div v-for="ch in chapters" :key="ch.id"
                class="group flex flex-col"
                :class="[String(ch.id) === String(activeChapter) ? 'border-l-blue-500 dark:border-l-blue-400 bg-[var(--color-card-hover)]' : 'border-l-transparent']">
-            <!-- 章节行：点击切换 -->
-            <div class="flex items-center gap-2 px-3 py-2 mx-1 cursor-pointer transition-all duration-500 border-l-[3px] hover:bg-[var(--color-card-hover)]"
-                 :class="[String(ch.id) === String(activeChapter) ? 'border-l-blue-500 dark:border-l-blue-400 bg-[var(--color-card-hover)]' : 'border-l-transparent']"
-                 @click="(ch.status === 'completed' || ch.status === 'partial_completed') ? switchChapter(ch.id) : showGeneratingTip(ch)">
+            <!-- 章节行：点击切换（文件补全进行中时禁止切换） -->
+            <div class="flex items-center gap-2 px-3 py-2 mx-1 transition-all duration-500 border-l-[3px]"
+                 :class="[
+                   String(ch.id) === String(activeChapter) ? 'border-l-blue-500 dark:border-l-blue-400 bg-[var(--color-card-hover)]' : 'border-l-transparent',
+                   isFixingMissing ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-[var(--color-card-hover)]'
+                 ]"
+                 @click="!isFixingMissing && ((ch.status === 'completed' || ch.status === 'partial_completed') ? switchChapter(ch.id) : showGeneratingTip(ch))">
               <!-- 状态图标 -->
-              <span v-if="ch.status === 'completed' || ch.status === 'partial_completed'"
+              <span v-if="ch.status === 'completed'"
                     class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500 text-white text-[10px] font-bold flex-shrink-0">
                 &#10003;
+              </span>
+              <span v-else-if="ch.status === 'partial_completed'"
+                    class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex-shrink-0"
+                    title="部分文件缺失，正在后台补全">
+                &#9888;
               </span>
               <span v-else-if="ch.status === 'generating'"
                     class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex-shrink-0 animate-pulse">
@@ -125,6 +133,16 @@
                 {{ ch.duration }}
               </span>
             </div>
+            <!-- 文件修复中的提示（当前章节正在补全缺失文件） -->
+            <div v-if="String(ch.id) === String(activeChapter) && isFixingMissing"
+                 class="px-3 py-1.5 mx-1 mb-1 rounded-[6px] bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200/40 dark:border-amber-800/30 transition-colors duration-500">
+              <div class="flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-amber-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span class="text-[10px] text-amber-600 dark:text-amber-400">{{ fixingBannerText }}</span>
+              </div>
+            </div>
             <!-- 生成中的进度条 -->
             <div v-if="ch.status === 'generating' && chapterProgressMap[ch.id]"
                  class="px-3 py-1.5 mx-1 mb-1 rounded-[6px] bg-blue-50/60 dark:bg-blue-900/10 border border-blue-200/40 dark:border-blue-800/30 transition-colors duration-500">
@@ -141,6 +159,26 @@
               <p class="text-[9px] text-gray-500 dark:text-gray-400 mt-0.5 text-right transition-colors duration-500">
                 {{ getChapterProgressCountText(ch) }}
               </p>
+            </div>
+            <!-- 待生成的提示（pending/failed 状态，生成中的进度条已有独立展示故不重复） -->
+            <div v-if="ch.status === 'pending' || ch.status === 'failed'"
+                 class="px-3 py-1.5 mx-1 mb-1 rounded-[6px] bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200/40 dark:border-amber-800/30 transition-colors duration-500">
+              <!-- 提示图标 + 文字 -->
+              <div class="flex items-center gap-1.5">
+                <span v-if="ch.status === 'pending'"
+                      class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-amber-400 dark:border-amber-500 flex-shrink-0">
+                  <svg class="w-2 h-2 text-amber-500 dark:text-amber-400" fill="currentColor" viewBox="0 0 24 24">
+                    <rect x="11" y="4" width="2" height="13" rx="1"/><rect x="11" y="19" width="2" height="2" rx="1"/>
+                  </svg>
+                </span>
+                <span v-else
+                      class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex-shrink-0">
+                  &#10007;
+                </span>
+                <p class="text-[10px] text-amber-700 dark:text-amber-300 transition-colors duration-500 leading-tight">
+                  {{ ch.status === 'pending' ? '该章节尚未生成，请点击下方"生成下一章"按钮' : '该章节生成失败，请点击"生成下一章"重新生成' }}
+                </p>
+              </div>
             </div>
           </div>
         </nav>
@@ -230,12 +268,19 @@
             </div>
 
             <!-- PPT iframe：固定 1920×1080 渲染，通过 transform scale 缩放适配容器 -->
+            <!-- 使用 translate(-50%,-50%) + scale 实现居中等比缩放，无论容器比例如何变化都不会错位 -->
             <iframe v-show="!pptLoading && currentPptUrl"
               :key="currentPptUrl"
               :src="currentPptUrl"
-              class="absolute top-0 left-0 border-none z-10"
+              class="absolute border-none z-10"
               sandbox="allow-scripts allow-same-origin"
-              :style="{ width: pptBaseWidth + 'px', height: pptBaseHeight + 'px', transformOrigin: '0 0', transform: 'scale(' + pptScale + ')' }"
+              :style="{
+                width: pptBaseWidth + 'px',
+                height: pptBaseHeight + 'px',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%) scale(' + pptScale + ')'
+              }"
               @load="onPptLoad"
               @error="pptLoading = false"
             ></iframe>

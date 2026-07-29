@@ -327,6 +327,16 @@ const courseRouter = require("./API/course");
 const progressRouter = require("./API/progress");
 // 文件代理路由：代理访问 MinIO 文件，前端通过 /api/v1/files/{path} 访问
 const filesRouter = require("./API/files");
+// 题库管理路由：/api/v1/quiz/textbooks
+const quizTextbooksRouter = require("./API/quiz/textbooks");
+// 题库导入路由：/api/v1/quiz/import-json
+const quizImportRouter = require("./API/quiz/import");
+// 刷题会话路由：/api/v1/quiz/random-*
+const quizSessionRouter = require("./API/quiz/session");
+// 刷题报告路由：/api/v1/quiz/reports*
+const quizReportRouter = require("./API/quiz/report");
+// 错题本路由：/api/v1/quiz/wrongbook*
+const quizWrongbookRouter = require("./API/quiz/wrongbook");
 
 // ==================== 创建 Express 应用 ====================
 const app = express();
@@ -418,6 +428,14 @@ console.log("[app] ✅ 学习进度路由已注册: /api/v1/progress");
 //   GET /api/v1/files/{path} — 代理访问 MinIO 文件（图片、PDF 等）
 app.use("/api/v1/files", filesRouter);
 console.log("[app] ✅ 文件代理路由已注册: /api/v1/files/*");
+
+// 题库路由挂载到 /api/v1/quiz 前缀
+app.use("/api/v1/quiz", quizTextbooksRouter);
+app.use("/api/v1/quiz", quizImportRouter);
+app.use("/api/v1/quiz", quizSessionRouter);
+app.use("/api/v1/quiz", quizReportRouter);
+app.use("/api/v1/quiz", quizWrongbookRouter);
+console.log("[app] ✅ 题库刷题路由已注册: /api/v1/quiz/*");
 
 // ==================== 启动 HTTP 服务器 ====================
 // 404 和全局错误处理中间件已移入 async IIFE 内部（在 Scalar 路由之后注册），

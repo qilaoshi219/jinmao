@@ -32,7 +32,7 @@ async function createChapter(data) {
         chapterRoot: data.chapterRoot,
         startline: data.startline,
         endline: data.endline,
-        status: "pending", // 初始状态为待处理
+        status: data.status || "pending", // 默认初始状态为待处理，允许调用方传入指定状态（如 generating）
       },
     });
 

@@ -9,6 +9,7 @@ import { useAuthStore } from "../../stores/auth";
 import { useTheme } from "../../composables/useTheme";
 import { getProfile } from "../../api/auth";
 import { listBooks, getBookStatus, getCourseProgress } from "../../api/books";
+import { listQuizTextbooks, deleteQuizTextbook, startRandomSession } from "../../api/quiz";
 import apiClient from "../../api/client";
 
 // 导入子组件（供模板使用）
@@ -17,6 +18,8 @@ import HomeTopbar from "../../components/HomeTopbar.vue";
 import CourseCard from "../../components/CourseCard.vue";
 import UploadBookDialog from "../../components/UploadBookDialog.vue";
 import CourseFilesDialog from "../../components/CourseFilesDialog.vue"; // 【临时】教材文件列表弹窗，未来会删除
+import QuizTextbookCard from "../../components/QuizTextbookCard.vue";
+import ImportQuizDialog from "../../components/ImportQuizDialog.vue";
 
 // 日志前缀
 const TAG = "[HomePage]";
@@ -32,6 +35,8 @@ export default {
     CourseCard,
     UploadBookDialog,
     CourseFilesDialog, // 【临时】教材文件列表弹窗，未来会删除
+    QuizTextbookCard,
+    ImportQuizDialog,
   },
 
   setup() {
@@ -96,6 +101,14 @@ export default {
 
     /** 课程详细进度映射表（key: courseId, value: 进度对象） */
     const courseProgressMap = reactive({});
+
+    // ==================== 题库相关状态 ====================
+    /** 题库列表数据 */
+    const quizTextbooks = ref([]);
+    /** 题库加载中标识 */
+    const quizLoading = ref(false);
+    /** 题库导入弹窗可见性 */
+    const quizImportDialogVisible = ref(false);
 
     // ========== 计算属性 ==========
 
@@ -308,7 +321,10 @@ export default {
       const TERMINAL = ["completed", "partial_completed", "failed", "error"];
       if (!TERMINAL.includes(course.pipelineStatus)) {
         console.log(TAG + " 课程尚未生成完毕，当前状态: " + course.pipelineStatus + "，禁止进入学习页");
-        ElMessage.warning("课程内容正在生成中，请稍后再试");
+        ElMessage.warning({
+          message: "课程内容正在生成中，请稍后再试",
+          offset: 80, // 确保提示框不超出页面顶部区域
+        });
         return;
       }
 
@@ -356,8 +372,12 @@ export default {
     function setActiveMenu(menu) {
       console.log(TAG + " 切换菜单: " + menu);
       activeMenu.value = menu;
-      // 当前只有 "courses" 菜单可用，其他菜单点击不跳转
-      if (menu !== "courses") {
+      // 切换到题库视图时加载题库列表
+      if (menu === "quiz") {
+        loadQuizTextbooks();
+      }
+      // 其他占位菜单提示即将上线
+      if (menu !== "courses" && menu !== "quiz") {
         ElMessage.info("该功能即将上线");
       }
     }
@@ -369,6 +389,85 @@ export default {
       console.log(TAG + " 用户退出登录");
       stopPolling(); // 停止轮询
       authStore.logout();
+    }
+
+    // ==================== 题库相关方法 ====================
+
+    /**
+     * 加载题库列表
+     */
+    async function loadQuizTextbooks() {
+      console.log(TAG + " 加载题库列表");
+      quizLoading.value = true;
+
+      try {
+        const result = await listQuizTextbooks({ page: 1, pageSize: 50 });
+
+        if (result.code === 0 && result.data) {
+          quizTextbooks.value = result.data.items || [];
+          console.log(TAG + " 题库列表加载成功 — " + quizTextbooks.value.length + " 条");
+        } else {
+          quizTextbooks.value = [];
+        }
+      } catch (error) {
+        console.error(TAG + " 题库列表加载失败:", error);
+        quizTextbooks.value = [];
+      } finally {
+        quizLoading.value = false;
+      }
+    }
+
+    /**
+     * 题库导入成功回调
+     */
+    function onQuizImportSuccess() {
+      console.log(TAG + " 题库导入成功，刷新列表");
+      quizImportDialogVisible.value = false;
+      loadQuizTextbooks();
+    }
+
+    /**
+     * 开始刷题
+     * @param {string} textbookId
+     */
+    async function onStartQuiz(textbookId) {
+      console.log(TAG + " 开始刷题，textbookId:", textbookId);
+
+      try {
+        const result = await startRandomSession(textbookId);
+
+        if (result.code === 0 && result.data) {
+          // 导航到刷题页
+          navigate("quiz", { sessionId: result.data.sessionId });
+        } else {
+          ElMessage.error(result.message || "无法开始刷题");
+        }
+      } catch (error) {
+        console.error(TAG + " 开始刷题失败:", error);
+        ElMessage.error("开始刷题失败: " + (error.message || "未知错误"));
+      }
+    }
+
+    /**
+     * 删除题库
+     * @param {string} textbookId
+     */
+    async function onDeleteQuizTextbook(textbookId) {
+      console.log(TAG + " 删除题库，id:", textbookId);
+
+      try {
+        const result = await deleteQuizTextbook(textbookId);
+
+        if (result.code === 0) {
+          ElMessage.success("题库已删除");
+          loadQuizTextbooks();
+        } else {
+          ElMessage.error(result.message || "删除失败");
+        }
+      } catch (error) {
+        console.error(TAG + " 删除题库异常:", error);
+        ElMessage.error("删除失败: " + (error.message || "未知错误"));
+      }
     }
 
     // ========== 生命周期 ==========
@@ -413,6 +512,14 @@ export default {
 
       // ===== 课程详细进度映射表 =====
       courseProgressMap,
+
+      // ===== 题库相关 =====
+      quizTextbooks,
+      quizLoading,
+      quizImportDialogVisible,
+      onQuizImportSuccess,
+      onStartQuiz,
+      onDeleteQuizTextbook,
 
       // 方法
       toggleTheme,

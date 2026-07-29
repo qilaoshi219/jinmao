@@ -16,7 +16,7 @@
 | `minio文件结构.md` | MinIO 对象存储文件组织设计 | — |
 | `数据库结构.md` | 数据库设计文档（6张表规划） | — |
 | `流水线.md` | 课程生成流水线设计文档 | — |
-| `开发日志.md` | 开发变更记录 | 2026-07-28 |
+| `开发日志.md` | 开发变更记录 | 2026-07-29 |
 | `WSL部署指南.md` | AI 智能体 WSL 部署操作指南（含前置检查、环境安装、数据库初始化、服务启动/重启/验证） | 2026-07-06 |
 | `宝塔部署指南.md` | 宝塔面板3步快速部署指南（上传 → setup.sh → 添加Node项目） | 2026-07-09 |
 | `待办.md` | 待办事项 | — |
@@ -40,7 +40,7 @@
 | `POSTbook.js` | 教材上传+状态查询路由 | — |
 | `book.js` | 教材 CRUD 路由：列表/详情（已实现），更新/删除（待实现） | 2026-07-06 |
 | `progress.js` | 学习进度路由：PUT 保存进度（需 Token）、GET 获取进度（需 Token，支持单课程/全部） | **新建 2026-07-24** |
-| `book/generate-next-chapter.js` | 下一章生成 + 章节进度查询路由 | **新建 2026-07-25** |
+| `book/generate-next-chapter.js` | 下一章生成 + 章节进度查询路由，新增课程已完成状态双重检查 | **2026-07-29** |
 | `book/fix-missing.js` | 文件缺失补全路由：POST 触发补全 / GET 查询补全状态（含完整 OpenAPI JSDoc） | **新建 2026-07-28** |
 
 ### 中间件 `middleware/`
@@ -56,7 +56,7 @@
 | `auth/otp.js` | 邮箱验证码发送与频率限制 | — |
 | `auth/profile.js` | 用户信息查询与更新 | — |
 | `POSTbook.js` | 教材上传+格式归一化（PDF/Word/MD/ZIP→MD） | — |
-| `course_pipeline.js` | 课程生成6阶段流水线 + 文件缺失补全（`fixMissingFilesForChapter()` + 内存去重Map），导出 `pipeline()`、`generateChapter()`、`fixMissingFilesForChapter()`、`getFixStatus()` | 2026-07-28 |
+| `course_pipeline.js` | 课程生成6阶段流水线 + 文件缺失补全（`fixMissingFilesForChapter()` + 内存去重Map），新增 AI 行号校验 + 416 无更多内容处理，导出 `pipeline()`、`generateChapter()`、`fixMissingFilesForChapter()`、`getFixStatus()` | 2026-07-29 |
 | `text_tts.js` | 火山引擎 TTS 语音合成+字幕生成 | — |
 
 ### Repository 数据访问层 `utils/repo/`

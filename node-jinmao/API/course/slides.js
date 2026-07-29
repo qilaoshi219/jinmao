@@ -25,6 +25,14 @@ const bookRepo = require("../../utils/repo/book_repo");
 // 日志前缀
 const TAG = "[API_course_slides]";
 
+// ==================== 文件补全导入（用于已有章节的完整性自动检测） ====================
+const { fixMissingFilesForChapter } = require("../../service/course_pipeline");
+
+// ==================== 已检查章节集合（防止重复检测，服务重启后重置） ====================
+// key = chapterId（字符串），value = true
+// 每个章节在服务生命周期内只触发一次完整性检测
+const checkedChapters = new Set();
+
 // ==================== MinIO 客户端初始化 ====================
 // 从环境变量读取 MinIO 连接配置，用于读取大纲 JSON 文件
 const { Client } = require("minio");
@@ -297,6 +305,33 @@ router.get("/courses/:courseId/chapters/:chapterId/slides", authenticateToken, a
 
     console.log(TAG + "[GET] 生成 " + slides.length + " 个幻灯片数据（含口播稿和助教提示）");
 
+    // ========== 4.3 已有章节的完整性自动检测（异步，不阻塞响应） ==========
+    // 对 completed 或 partial_completed 状态的章节，首次访问时自动检测文件完整性
+    // 如有缺失文件，后台触发补全，无需用户手动调用 fix-missing API
+    let effectiveStatus = chapter.status; // 实际返回给前端的章节状态
+    let isFixingMissing = false;          // 是否正在触发补全（前端据此显示横幅+轮询）
+    if ((chapter.status === "completed" || chapter.status === "partial_completed")
+        && !checkedChapters.has(String(chapterId))) {
+      checkedChapters.add(String(chapterId)); // 标记已检查（防止重复触发）
+      console.log(TAG + "[GET] 章节状态为 " + chapter.status + "，首次访问触发完整性检测（异步）");
+      // 立即更新章节状态为 partial_completed（让前端显示琥珀色警告图标并触发补全 UI）
+      // 补全完成后 fixMissingFilesForChapter 会自动更新回 completed
+      if (chapter.status === "completed") {
+        try {
+          await chapterRepo.updateChapter(chapterId, { status: "partial_completed" });
+          effectiveStatus = "partial_completed";
+          console.log(TAG + "[GET] 章节状态已更新为 partial_completed（等待后台补全）");
+        } catch (statusErr) {
+          console.warn(TAG + "[GET] 更新章节状态失败: " + statusErr.message);
+        }
+      }
+      isFixingMissing = true;
+      // 不 await，异步后台执行（文件检测+补全在后台进行）
+      fixMissingFilesForChapter(courseId, chapterId).catch(err => {
+        console.error(TAG + "[GET] 完整性检测/补全启动失败: " + err.message);
+      });
+    }
+
     // ========== 5. 返回成功响应 ==========
     return res.status(200).json({
       code: 0,
@@ -309,7 +344,8 @@ router.get("/courses/:courseId/chapters/:chapterId/slides", authenticateToken, a
           name: chapter.name,
           chapterRoot: chapter.chapterRoot,
           totalPages: chapter.totalPages,
-          status: chapter.status,
+          status: effectiveStatus,          // 补全中时为 partial_completed
+          isFixingMissing: isFixingMissing, // 前端据此显示横幅+启动轮询
         },
         slides: slides,
       },

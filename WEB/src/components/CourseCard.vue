@@ -330,6 +330,8 @@ const statusLabel = computed(() => {
     case "uploading":           return "上传中";
     case "pending":             return "排队中";
     case "idle":                return "等待处理";
+    // ── 归一化处理 ──
+    case "normalizing":         return "归一化处理中";
     // ── 阶段一：数据获取 ──
     case "downloading":         return "下载教材中";
     // ── 阶段二：文本提取与行号识别 ──

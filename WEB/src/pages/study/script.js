@@ -318,18 +318,17 @@ export default {
       return currentSlide.value?.zjts || "";
     });
 
-    /** 已完成或部分完成的有效章节状态集合（均可进入学习并可触发生成下一章） */
+    /** 已完成或部分完成的有效章节状态集合 */
     const VALID_COMPLETED_STATUSES = ["completed", "partial_completed"];
 
-    /** 是否可以生成下一章（无生成中的章节，且至少有一个已完成/部分完成章节） */
+    /** 是否可以生成下一章（读取后端统一计算值，仅保留 UI 层守卫） */
     const canGenerateNext = computed(() => {
-      if (courseLoading.value) return false; // 还在加载中
-      if (isGeneratingChapter.value) return false; // 正在创建中
-      const hasGenerating = chapters.value.some(c => c.status === "generating");
-      if (hasGenerating) return false; // 已有章节在生成中
-      // 至少有一个已完成或部分完成章节（说明课程流水线已结束）
-      const hasCompleted = chapters.value.some(c => VALID_COMPLETED_STATUSES.includes(c.status));
-      return hasCompleted;
+      // UI 层守卫：还在加载中，不显示按钮
+      if (courseLoading.value) return false;
+      // UI 层守卫：正在创建中，防止重复点击（即时反馈优先于轮询）
+      if (isGeneratingChapter.value) return false;
+      // 后端权威值：由 computeCanGenerateNext 统一计算，前后端判断逻辑一致
+      return courseInfo.value?.canGenerateNext ?? false;
     });
 
     /** 当前章节标题 */
@@ -417,6 +416,7 @@ export default {
             name: data.name || "未命名课程",
             subtitle: data.subtitle || "",
             pipelineStatus: data.pipelineStatus || "",
+            pipelineProgress: data.pipelineProgress || null, // 流水线进度（含 isLastChapter 标记）
           };
 
           // 将章节数据映射为 UI 所需格式
@@ -530,8 +530,17 @@ export default {
           // 重置 PPT iframe 加载状态
           pptLoading.value = true;
 
-          // 幻灯片加载完成后，检测文件完整性（仅 partial_completed 章节）
-          detectAndFixMissingFiles();
+          // 如果后端已触发补全（chapter.isFixingMissing === true），立即显示横幅并启动轮询
+          // 跳过前端采样检测，避免重复触发 fixMissingFiles API
+          if (chapter.isFixingMissing) {
+            console.log(TAG + " [文件补全] 后端已触发补全，立即显示横幅并启动轮询");
+            isFixingMissing.value = true;
+            fixingBannerText.value = "检测到部分文件缺失，正在自动补全...";
+            startFixStatusPolling(courseId, chapterId);
+          } else {
+            // 幻灯片加载完成后，检测文件完整性（仅 partial_completed 章节）
+            detectAndFixMissingFiles();
+          }
         } else {
           console.warn(TAG + " 章节幻灯片加载失败: " + (result.message || "未知错误"));
           ElMessage.error("章节内容加载失败");
@@ -785,6 +794,12 @@ export default {
      * @param {string|number} chapterId - 章节 ID
      */
     async function switchChapter(chapterId) {
+      // 守卫：文件补全进行中，禁止切换章节，防止干扰补全过程
+      if (isFixingMissing.value) {
+        console.log(TAG + " 文件补全进行中，禁止切换章节");
+        ElMessage.warning("正在修复文件，请稍候再切换章节");
+        return;
+      }
       // 守卫：查找目标章节状态，非 completed 或 partial_completed 阻止切换
       const targetChapter = chapters.value.find(c => String(c.id) === String(chapterId));
       if (!targetChapter) {
@@ -830,17 +845,12 @@ export default {
     }
 
     /**
-     * 点击生成中章节时的提示
+     * 非已完成章节点击处理（提示已内联到模板中，此处为空函数仅作为占位）
      * @param {Object} chapter - 章节对象
      */
     function showGeneratingTip(chapter) {
-      if (chapter.status === "generating") {
-        ElMessage.warning("该章节正在生成中，请稍候...");
-      } else if (chapter.status === "pending") {
-        ElMessage.warning(`该章节尚未生成，请点击"生成下一章"按钮`);
-      } else if (chapter.status === "failed") {
-        ElMessage.warning(`该章节生成失败，请点击"生成下一章"重新生成`);
-      }
+      // pending/failed 提示已在侧边栏内联显示，generating 进度条也已在模板中渲染
+      // 该函数保留仅用于兼容模板中的 @click 绑定，不执行任何操作
     }
 
     /**
@@ -1121,19 +1131,35 @@ export default {
         isPlaying.value = false;
       }
 
-      // 更新页码
-      currentPage.value = page;
-      currentTime.value = 0;
-      progressPercent.value = 0;
-      pptLoading.value = true;
+      // 累加当前页的已播放时长到章节累计（无论前进还是后退都不丢进度）
+      // 如果是自动翻页（onAudioEnded 触发），chapterElapsedTime 已在 onAudioEnded 中累加过，此处避免重复累加
+      if (!shouldAutoResume) {
+        const currentSlideData = slides.value[currentPage.value - 1];
+        const currentDuration = currentSlideData?._duration || totalTime.value || 0;
+        chapterElapsedTime.value += currentDuration;
+        console.log(TAG + " 手动翻页，累加当前页时长: " + currentDuration.toFixed(1) + "s，累计已播: " + chapterElapsedTime.value.toFixed(1) + "s");
+      }
 
-      // 如果是后退，重新计算已播放累计时长（前进时由 onAudioEnded 负责累加）
+      // 如果是后退，重新计算已播放累计时长（确保准确）
       if (page < currentPage.value) {
         let sum = 0;
         for (let i = 0; i < page - 1; i++) {
           sum += (slides.value[i]?._duration || 0);
         }
         chapterElapsedTime.value = sum;
+        console.log(TAG + " 后退翻页，重新计算累计已播: " + sum.toFixed(1) + "s");
+      }
+
+      // 更新页码，重置当前页音频时间为0
+      currentPage.value = page;
+      currentTime.value = 0;
+      pptLoading.value = true;
+
+      // 进度条基于章节累计时间计算，不从0开始（当前页音频还未播放，currentTime=0）
+      if (chapterTotalTime.value > 0) {
+        progressPercent.value = Math.round((chapterElapsedTime.value / chapterTotalTime.value) * 100);
+      } else {
+        progressPercent.value = 0;
       }
 
       // 等待 Vue 响应式更新后加载新字幕
