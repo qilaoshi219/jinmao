@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: test_data
+title: 测试数据与端到端脚本
+scope:
+    - test/
+source_files: []
+depends_on: []
+related_to: []

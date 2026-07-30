@@ -377,7 +377,9 @@
               :textbook="tb"
               :task-progress="tb.generatingTaskId ? quizProgressMap[tb.generatingTaskId] : null"
               @start="onStartQuiz"
+              @start-sequential="onStartSequentialQuiz"
               @delete="onDeleteQuizTextbook"
+              @share-toggled="onShareToggled"
             />
           </div>
 
@@ -398,6 +400,15 @@
               点击"导入题库"按钮导入 JSON 格式的题目数据
             </p>
           </div>
+        </section>
+
+        <!--
+        ============================================================
+        题库市场区域 — 仅当 activeMenu === 'market' 时显示
+        ============================================================
+        -->
+        <section v-if="activeMenu === 'market'">
+          <MarketPage ref="marketPageRef" />
         </section>
       </main>
     </div>

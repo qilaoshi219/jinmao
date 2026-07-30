@@ -263,8 +263,11 @@ async function pollParseStatus(baseUrl, apiKey, uid, maxWaitMs, intervalMs) {
     console.log("[doc2x][pollParseStatus] 解析状态: " + status + "，进度: " + (statusData.progress || 0) + "%");
 
     if (status === "success") {
-      console.log("[doc2x][pollParseStatus] PDF 解析完成。");
-      return { success: true };
+      // 获取页数（doc2x API 返回 result.pages 数组，每页一个元素）
+      const pages = statusData.result?.pages;
+      const pageCount = Array.isArray(pages) ? pages.length : 0;
+      console.log("[doc2x][pollParseStatus] PDF 解析完成，页数: " + pageCount);
+      return { success: true, pageCount };
     }
 
     if (status === "failed") {
@@ -345,9 +348,9 @@ async function pollExportResult(baseUrl, apiKey, uid, maxWaitMs, intervalMs) {
  *   → 5. 轮询解析状态 → 6. 触发导出 → 7. 轮询导出结果 → 返回下载链接
  *
  * @param {string} localPdfPath - 本地 PDF 文件绝对路径
- * @returns {Promise<{ code: number, downloadUrl?: string, message?: string }>}
+ * @returns {Promise<{ code: number, downloadUrl?: string, pageCount?: number, message?: string }>}
  *   始终返回对象，不会抛出异常：
- *   - code 200 时 downloadUrl 有值，可直接使用
+ *   - code 200 时 downloadUrl 和 pageCount 有值，可直接使用
  *   - code ≥ 400 时通过 message 了解失败原因
  */
 async function main(localPdfPath) {
@@ -420,6 +423,7 @@ async function main(localPdfPath) {
   if (!parseResult.success) {
     return { code: parseResult.errorCode, message: parseResult.error };
   }
+  const pageCount = parseResult.pageCount || 0; // 提取页数，用于后续计费
 
   // ========== 第六步：触发 Markdown 导出 ==========
   console.log("[doc2x][main] 步骤 4/5：触发 Markdown 导出...");
@@ -442,11 +446,12 @@ async function main(localPdfPath) {
     return { code: dlResult.errorCode, message: dlResult.error };
   }
 
-  // ========== 成功：返回下载链接 ==========
+  // ========== 成功：返回下载链接和页数 ==========
   console.log("[doc2x][main] ========== PDF → Markdown 转换完成 ==========");
   return {
     code: 200,
     downloadUrl: dlResult.downloadUrl,
+    pageCount, // 返回页数，供调用方计费
   };
 }
 

@@ -243,3 +243,108 @@ export function submitWrongbookAnswer(sessionId, payload) {
     .post("/quiz/wrongbook/review-sessions/" + sessionId + "/submit", payload)
     .then((res) => res.data);
 }
+
+// ==================== 题库市场 ====================
+
+/**
+ * 获取题库市场列表
+ * @param {Object} params - { page, pageSize, keyword }
+ * @returns {Promise<{code: number, data: {items, total, page, pageSize}}>}
+ */
+export function listMarketTextbooks(params = {}) {
+  console.log("[quiz_api] 请求题库市场列表，params:", params);
+  return apiClient
+    .get("/quiz/market", { params })
+    .then((res) => res.data);
+}
+
+/**
+ * 获取市场题库详情
+ * @param {string} id - 题库 ID
+ */
+export function getMarketTextbookDetail(id) {
+  return apiClient
+    .get("/quiz/market/" + id)
+    .then((res) => res.data);
+}
+
+/**
+ * 借用题库
+ * @param {string} id - 题库 ID
+ * @returns {Promise<{code: number, message: string}>}
+ */
+export function borrowTextbook(id) {
+  console.log("[quiz_api] 借用题库，id:", id);
+  return apiClient
+    .post("/quiz/market/" + id + "/borrow")
+    .then((res) => res.data);
+}
+
+/**
+ * 取消借用题库
+ * @param {string} id - 题库 ID
+ * @returns {Promise<{code: number, message: string}>}
+ */
+export function unborrowTextbook(id) {
+  console.log("[quiz_api] 取消借用题库，id:", id);
+  return apiClient
+    .delete("/quiz/market/" + id + "/borrow")
+    .then((res) => res.data);
+}
+
+/**
+ * 切换题库共享状态
+ * @param {string} id - 题库 ID
+ * @returns {Promise<{code: number, data: {isShared: boolean}}>}
+ */
+export function toggleShareTextbook(id) {
+  console.log("[quiz_api] 切换共享状态，id:", id);
+  return apiClient
+    .put("/quiz/textbooks/" + id + "/share")
+    .then((res) => res.data);
+}
+
+// ==================== 顺序刷题会话 ====================
+
+/**
+ * 开始或继续顺序刷题（按题目原始顺序出全部题目）
+ * @param {string} textbookId - 题库 ID
+ */
+export function startSequentialSession(textbookId) {
+  console.log("[quiz_api] 开始/继续顺序刷题，textbookId:", textbookId);
+  return apiClient
+    .post("/quiz/sequential-sessions", { textbookId })
+    .then((res) => res.data);
+}
+
+/**
+ * 获取顺序刷题会话详情
+ * @param {string} sessionId - 会话 ID
+ */
+export function getSequentialSessionDetail(sessionId) {
+  return apiClient
+    .get("/quiz/sequential-sessions/" + sessionId)
+    .then((res) => res.data);
+}
+
+/**
+ * 保存顺序刷题进度
+ * @param {string} sessionId - 会话 ID
+ * @param {Object} payload - { currentQuestionIndex, questionId?, answer? }
+ */
+export function saveSequentialSessionProgress(sessionId, payload) {
+  return apiClient
+    .put("/quiz/sequential-sessions/" + sessionId + "/progress", payload)
+    .then((res) => res.data);
+}
+
+/**
+ * 顺序刷题交卷
+ * @param {string} sessionId - 会话 ID
+ */
+export function completeSequentialSession(sessionId) {
+  console.log("[quiz_api] 顺序刷题交卷，sessionId:", sessionId);
+  return apiClient
+    .post("/quiz/sequential-sessions/" + sessionId + "/complete")
+    .then((res) => res.data);
+}

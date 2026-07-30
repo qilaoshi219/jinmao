@@ -37,6 +37,7 @@ function getLineCount(text) {
  * @param {string} payload.examName         - 试卷名称
  * @param {string} [payload.description]    - 题库描述
  * @param {import("./types").GenerationConfig} payload.generationConfig - 题型配额
+ * @param {'generate'|'format'} [payload.mode]  - 任务模式，默认 "generate"
  * @param {string} userId                    - 用户 ID
  * @returns {Promise<import("./types").TaskEntity>}
  */
@@ -72,6 +73,7 @@ async function createMd2QuizTask(payload, userId) {
     ownerUserId: userId,
     status: "pending",
     importStatus: "pending",
+    mode: payload.mode || "generate",  // 任务模式：generate=AI生成 / format=解析已有题目
     fileName: payload.fileName,
     textbookName: payload.textbookName.trim(),
     examName: payload.examName.trim(),

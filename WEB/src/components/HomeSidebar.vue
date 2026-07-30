@@ -111,6 +111,25 @@
             <span v-show="!collapsed" class="whitespace-nowrap">习题训练</span>
           </button>
         </li>
+
+        <!-- 题库市场 -->
+        <li>
+          <button
+            @click="$emit('select', 'market')"
+            :class="[
+              'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px]',
+              'transition-all duration-500',
+              activeMenu === 'market'
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-500 font-semibold nerv-rail'
+                : 'text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50'
+            ]">
+            <svg class="w-[18px] h-[18px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span v-show="!collapsed" class="whitespace-nowrap">题库市场</span>
+          </button>
+        </li>
       </ul>
 
       <!-- 分隔线（使用 CSS token 边框色） -->

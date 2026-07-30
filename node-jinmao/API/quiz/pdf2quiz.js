@@ -1,5 +1,5 @@
 // ==================== PDF→Quiz API 路由 ====================
-// 职责：接收 PDF 文件上传 → Doc2x 转换 → 创建 MD→JSON 任务
+// 职责：接收 PDF 文件上传 → 转换 MD → 创建 MD→JSON 任务
 // 端点前缀：/api/v1/quiz/pdf2quiz
 
 const express = require("express");
@@ -27,10 +27,9 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
     filename: (_req, file, cb) => {
-      // 生成唯一文件名（时间戳 + 随机数 + 原始扩展名）
+      // 生成唯一文件名（时间戳 + 随机数 + .pdf 扩展名）
       const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const ext = path.extname(file.originalname).toLowerCase();
-      cb(null, "pdf-" + uniqueSuffix + ext);
+      cb(null, "pdf-" + uniqueSuffix + ".pdf");
     },
   }),
   limits: {
@@ -38,13 +37,14 @@ const upload = multer({
   },
   fileFilter: (_req, file, cb) => {
     // 仅接受 PDF 文件
-    if (file.mimetype === "application/pdf" || file.originalname.toLowerCase().endsWith(".pdf")) {
+    if (file.mimetype === "application/pdf" || path.extname(file.originalname).toLowerCase() === ".pdf") {
       cb(null, true);
-    } else {
-      const error = new multer.MulterError("LIMIT_UNEXPECTED_FILE", "file");
-      error.message = "仅支持上传 PDF 格式的文件。";
-      cb(error);
+      return;
     }
+    // 不支持的格式
+    const error = new multer.MulterError("LIMIT_UNEXPECTED_FILE", "file");
+    error.message = "仅支持上传 PDF 格式的文件。";
+    cb(error);
   },
 });
 
@@ -115,10 +115,10 @@ router.post("/upload", authenticateToken, (req, res) => {
 
     // ===== 文件检查 =====
     if (!req.file) {
-      return res.status(400).json({ code: 400, message: "请选择要上传的 PDF 文件。", data: null });
+      return res.status(400).json({ code: 400, message: "请选择要上传的文件。", data: null });
     }
 
-    const pdfPath = req.file.path;
+    const filePath = req.file.path;
 
     // ===== 参数校验 =====
     const textbookName = (req.body.textbookName || "").trim();
@@ -126,11 +126,11 @@ router.post("/upload", authenticateToken, (req, res) => {
     const description = (req.body.description || "").trim();
 
     if (!textbookName) {
-      cleanupFile(pdfPath);
+      cleanupFile(filePath);
       return res.status(400).json({ code: 400, message: "textbookName 不能为空。", data: null });
     }
     if (!examName) {
-      cleanupFile(pdfPath);
+      cleanupFile(filePath);
       return res.status(400).json({ code: 400, message: "examName 不能为空。", data: null });
     }
 
@@ -143,9 +143,10 @@ router.post("/upload", authenticateToken, (req, res) => {
       shortAnswer: parseIntInput(req.body.shortAnswerQty, 2),
     };
 
+    // 需要至少 1 种题型有配额
     const totalQty = Object.values(generationConfig).reduce((a, b) => a + b, 0);
     if (totalQty <= 0) {
-      cleanupFile(pdfPath);
+      cleanupFile(filePath);
       return res.status(400).json({
         code: 400,
         message: "请至少为一种题型设置大于 0 的数量。",
@@ -162,11 +163,10 @@ router.post("/upload", authenticateToken, (req, res) => {
     });
 
     try {
-      // ===== 步骤 1：PDF → MD 转换 =====
+      // ===== PDF → MD 转换 =====
       console.log(TAG + " 开始 PDF → MD 转换...");
-      const { markdownContent, fileName } = await convertPdfToMd(pdfPath);
+      const { markdownContent, fileName } = await convertPdfToMd(filePath);
 
-      // ===== 步骤 2：创建 MD→JSON 任务 =====
       console.log(TAG + " PDF 转换完成，创建 MD→JSON 任务...");
       const task = await createMd2QuizTask(
         {

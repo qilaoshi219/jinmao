@@ -27,7 +27,7 @@ const TAG = "[API_POSTbook]";
 // ==================== Multer 文件上传配置 ====================
 
 // 允许上传的教材文件扩展名白名单
-const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".md", ".zip", ".rar", ".7z"];
+const ALLOWED_EXTENSIONS = [".pdf", ".md", ".zip", ".rar", ".7z"];
 
 // 创建 multer 上传实例
 const upload = multer({
@@ -66,7 +66,7 @@ const upload = multer({
       console.log(TAG + "[fileFilter] 拒绝文件: " + file.originalname + "（不支持的扩展名: " + ext + "）");
       // 创建 multer 错误对象，传入自定义错误消息
       const error = new multer.MulterError("LIMIT_UNEXPECTED_FILE", "file");
-      error.message = "不支持的文件格式，仅支持 pdf/docx/doc/md/zip/rar/7z";
+      error.message = "不支持的文件格式，仅支持 pdf/md/zip/rar/7z";
       cb(error, false);
     }
   },

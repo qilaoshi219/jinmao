@@ -88,6 +88,7 @@
  * @property {number} chunkCount                - 分块数
  * @property {number} completedChunkCount       - 已完成块数
  * @property {ChunkRange[]} chunkRanges         - 各块生成范围
+ * @property {'generate'|'format'} mode               - 任务模式：generate=AI生成题目 / format=解析已有题目
  * @property {GenerationConfig} generationConfig - 题型配额
  * @property {GenerationConfig} [totalGeneratedCountByType] - 累计生成统计
  * @property {string} [errorMessage]            - 错误消息

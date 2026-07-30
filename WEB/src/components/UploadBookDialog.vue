@@ -311,7 +311,7 @@ const emit = defineEmits(["update:visible", "success"]);
 const dialogWidth = "min(860px, calc(100vw - 40px))";
 
 /** 允许上传的文件格式 */
-const acceptFormats = ".pdf,.docx,.doc,.md,.zip,.rar,.7z";
+const acceptFormats = ".pdf,.md,.zip,.rar,.7z";
 
 /** 选择的文件对象 */
 const selectedFile = ref(null);

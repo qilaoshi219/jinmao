@@ -1,12 +1,14 @@
 // ==================== PDF→MD 流水线封装 ====================
-// 职责：封装 Doc2x API 调用 → 下载 zip → 解压提取 MD → 清理临时文件
-// 依赖：utils/doc2x.js (convertPdfToMarkdown)
+// 职责：封装 PDF 文件转 Markdown 的完整流程
+//   - PDF: Doc2x API → 下载 zip → 7z 解压提取 MD → 清理
 
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
 const http = require("http");
 const { convertPdfToMarkdown } = require("../../utils/doc2x");
+const extractZip = require("../../utils/extract_zip");
+const { recordExternalCost } = require("../../utils/billing");
 
 const TAG = "[md2quiz_pdf2md]";
 
@@ -68,49 +70,36 @@ function downloadFile(url, dest) {
 }
 
 /**
- * 尝试从 zip 文件中提取 .md 内容
- * 使用 Node.js 内置的 zlib（zip 格式比较复杂，这里尝试多种方式）
- *
- * 简化方案：由于 Doc2x 返回的 .md 文件直接就是纯文本，我们尝试：
- * 1. 如果 URL 指向的是 .md 文件（非 zip），直接下载文本内容
- * 2. 如果是 zip，尝试用 adm-zip 解压
+ * 使用 7z 解压 zip 文件并提取其中的 .md 内容
+ * 复用项目已有的 extract_zip 模块（与 POSTbook.js 一致的 7z 解压方案）
  *
  * @param {string} zipPath - zip 文件本地路径
  * @returns {Promise<string>} Markdown 文本内容
  */
 async function extractMdFromZip(zipPath) {
-  // 尝试使用 adm-zip
-  try {
-    const AdmZip = require("adm-zip");
-    const zip = new AdmZip(zipPath);
-    const entries = zip.getEntries();
+  console.log(TAG + " 使用 7z 解压 zip 文件: " + zipPath);
 
-    console.log(TAG + " zip 内文件列表: " + entries.map(e => e.entryName).join(", "));
+  // 调用项目统一的 7z 解压函数（会自动查找到 .md 主文档）
+  const result = await extractZip.extractZip(zipPath);
 
-    for (const entry of entries) {
-      if (entry.entryName.endsWith(".md")) {
-        const content = zip.readAsText(entry);
-        console.log(TAG + " 从 zip 中提取 .md 文件: " + entry.entryName + ", 大小: " + content.length + " 字符");
-        return content;
-      }
-    }
-
-    // 没有 .md，尝试用第一个文本文件
-    for (const entry of entries) {
-      if (!entry.isDirectory) {
-        const content = zip.readAsText(entry);
-        console.log(TAG + " 从 zip 中提取首个文件: " + entry.entryName + ", 大小: " + content.length + " 字符");
-        return content;
-      }
-    }
-
-    throw new Error("zip 文件中未找到可提取的文本文件。");
-  } catch (err) {
-    if (err.message.includes("Cannot find module 'adm-zip'")) {
-      throw new Error("adm-zip 未安装，无法解压 zip 文件。请运行: npm install adm-zip");
-    }
-    throw err;
+  if (result.code !== 200 || !result.mainDocPath) {
+    // 解压失败或未找到 .md 文件
+    const errMsg = result.message || "zip 解压失败";
+    console.error(TAG + " " + errMsg);
+    throw new Error(errMsg);
   }
+
+  const mainDocPath = result.mainDocPath;
+  console.log(TAG + " 7z 解压完成，主文档路径: " + mainDocPath);
+
+  // 从解压目录中读取 .md 文件内容
+  const content = fs.readFileSync(mainDocPath, "utf8");
+  console.log(TAG + " 从 zip 中提取 .md 内容，大小: " + content.length + " 字符");
+
+  // 清理解压临时目录
+  extractZip.cleanUp(result.extractDir);
+
+  return content;
 }
 
 /**
@@ -134,9 +123,10 @@ function cleanupTempFiles(filePaths) {
  * 将本地 PDF 文件通过 Doc2x 转换为 Markdown 文本
  *
  * @param {string} pdfFilePath - 本地 PDF 文件绝对路径
+ * @param {string} [userId] - 用户 ID（用于计费，可选）
  * @returns {Promise<{markdownContent: string, fileName: string}>}
  */
-async function convertPdfToMd(pdfFilePath) {
+async function convertPdfToMd(pdfFilePath, userId) {
   console.log(TAG + " ========== PDF → MD 转换开始 ==========");
 
   ensureTempDir();
@@ -149,7 +139,17 @@ async function convertPdfToMd(pdfFilePath) {
   }
 
   const downloadUrl = doc2xResult.downloadUrl;
-  console.log(TAG + " Doc2x 返回下载 URL: " + downloadUrl);
+  const pageCount = doc2xResult.pageCount || 0;
+  console.log(TAG + " Doc2x 返回下载 URL: " + downloadUrl + "，页数: " + pageCount);
+
+  // doc2x PDF解析计费（0.02元/页），异步记录不阻塞主流程
+  if (userId) {
+    recordExternalCost({
+      userId, provider: "doc2x", model: "doc2x-api-v2",
+      callTag: "doc2x", status: "success",
+      pageCount,
+    }).catch(err => console.error(TAG + " doc2x 计费记录失败: " + err.message));
+  }
 
   // 2. 下载 zip 文件
   const baseName = path.basename(pdfFilePath, ".pdf");

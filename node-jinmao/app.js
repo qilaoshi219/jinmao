@@ -339,6 +339,8 @@ const quizSessionRouter = require("./API/quiz/session");
 const quizReportRouter = require("./API/quiz/report");
 // 错题本路由：/api/v1/quiz/wrongbook*
 const quizWrongbookRouter = require("./API/quiz/wrongbook");
+// 题库市场路由：/api/v1/quiz/market*
+const quizMarketRouter = require("./API/quiz/market");
 // 账单查询路由：/api/v1/billing（需 Token）
 const billingRouter = require("./API/billing");
 // MD→JSON 生成任务路由：/api/v1/quiz/md2json/*
@@ -449,6 +451,7 @@ app.use("/api/v1/quiz", quizImportRouter);
 app.use("/api/v1/quiz", quizSessionRouter);
 app.use("/api/v1/quiz", quizReportRouter);
 app.use("/api/v1/quiz", quizWrongbookRouter);
+app.use("/api/v1/quiz", quizMarketRouter);
 app.use("/api/v1/quiz/md2json", quizMd2jsonRouter);
 app.use("/api/v1/quiz/pdf2quiz", quizPdf2QuizRouter);
 console.log("[app] ✅ 题库刷题路由已注册: /api/v1/quiz/*");

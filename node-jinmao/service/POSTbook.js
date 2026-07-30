@@ -3,7 +3,7 @@
 
 // ==================== 教材上传服务模块 ====================
 // 职责：接收用户上传的教材文件，进行格式归一化处理后存入 MinIO，并启动课程流水线
-// 支持 4 种文件格式：MD / 压缩包(zip/rar/7z) / PDF / Word(docx/doc)
+// 支持 3 种文件格式：MD / 压缩包(zip/rar/7z) / PDF
 // 归一产物统一为 Markdown 格式存储到 MinIO
 //
 // 架构说明（v1.1.0 重构）：
@@ -22,15 +22,15 @@ const http = require("http");
 // 导入工具模块
 const bookRepo = require("../utils/repo/book_repo");
 const uploadMinio = require("../utils/upload_minio");
-const word2pdf = require("../utils/word2pdf");
 const doc2x = require("../utils/doc2x");
 const extractZip = require("../utils/extract_zip");
 const inputValidator = require("../utils/input_validator");
 const { startTitleGeneration } = require("./create_title");
+const { recordExternalCost } = require("../utils/billing");
 
 // ==================== 常量 ====================
 // 支持的教材文件扩展名
-const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".md", ".zip", ".rar", ".7z"];
+const ALLOWED_EXTENSIONS = [".pdf", ".md", ".zip", ".rar", ".7z"];
 // 最大文件大小 500MB
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
@@ -443,7 +443,13 @@ async function runNormalization(courseId, userId, file, ext, baseMinioPath, sour
         if (doc2xResult.code !== 200 || !doc2xResult.downloadUrl) {
           throw new Error("Doc2x 转换失败: " + (doc2xResult.message || "未知错误"));
         }
-        console.log("[POSTbook][异步归一化] Doc2x 转换完成，下载产物 zip...");
+        // doc2x PDF解析计费（0.02元/页），异步记录不阻塞主流程
+        recordExternalCost({
+          userId, provider: "doc2x", model: "doc2x-api-v2",
+          callTag: "doc2x", status: "success",
+          pageCount: doc2xResult.pageCount || 0,
+        }).catch(err => console.error("[POSTbook] doc2x 计费记录失败: " + err.message));
+        console.log("[POSTbook][异步归一化] Doc2x 转换完成，页数: " + (doc2xResult.pageCount || 0) + "，下载产物 zip...");
         // Doc2x 返回的是 OSS 预签名下载链接，需先下载到本地再解压
         const dlResult = await downloadFile(doc2xResult.downloadUrl, tempDir);
         if (dlResult.code !== 0) {
@@ -463,48 +469,6 @@ async function runNormalization(courseId, userId, file, ext, baseMinioPath, sour
         await uploadMinio.upload(mdLocalPath, textbookMinioPath);
         console.log("[POSTbook][异步归一化] PDF 归一化 MD 已上传: " + textbookMinioPath);
 
-        // 上传 images 文件夹（兼容 image / images 两种目录名）
-        await uploadImageDir(mdLocalPath, normalizedMinioDir);
-        break;
-
-      case ".docx":
-      case ".doc":
-        // 分支 d：Word → word2pdf → doc2x → 解压 → 上传
-        console.log("[POSTbook][异步归一化] 分支 Word：调用 word2pdf 转换...");
-        const pdfOutputDir = path.join(tempDir, "pdf_output");
-        fs.mkdirSync(pdfOutputDir, { recursive: true });
-        const word2pdfResult = await word2pdf.convert(file.path, pdfOutputDir);
-        if (word2pdfResult.code !== 200 || !word2pdfResult.pdfPath) {
-          throw new Error("Word 转 PDF 失败: " + (word2pdfResult.message || "未知错误"));
-        }
-        console.log("[POSTbook][异步归一化] Word 转 PDF 完成: " + word2pdfResult.pdfPath);
-
-        console.log("[POSTbook][异步归一化] 调用 Doc2x 转换 PDF...");
-        const wordDoc2xResult = await doc2x.convertPdfToMarkdown(word2pdfResult.pdfPath);
-        if (wordDoc2xResult.code !== 200 || !wordDoc2xResult.downloadUrl) {
-          throw new Error("Doc2x 转换失败: " + (wordDoc2xResult.message || "未知错误"));
-        }
-
-        console.log("[POSTbook][异步归一化] Doc2x 转换完成，下载产物 zip...");
-        const wordDlResult = await downloadFile(wordDoc2xResult.downloadUrl, tempDir);
-        if (wordDlResult.code !== 0) {
-          throw new Error("Doc2x 产物下载失败: " + wordDlResult.message);
-        }
-
-        console.log("[POSTbook][异步归一化] Doc2x 产物下载完成，解压...");
-        const wordExtractResult = await extractZip.extractZip(wordDlResult.localPath);
-        if (wordExtractResult.code !== 200) {
-          throw new Error("Doc2x 产物解压失败: " + wordExtractResult.message);
-        }
-
-        // 注意：必须在 extractZip 返回的 extractDir 中查找，而不是 tempDir
-        mdLocalPath = findMdFile(wordExtractResult.extractDir);
-        if (!mdLocalPath) {
-          throw new Error("Word 转换后未找到 .md 文件");
-        }
-        textbookMinioPath = normalizedMinioDir + "/" + path.basename(mdLocalPath);
-        await uploadMinio.upload(mdLocalPath, textbookMinioPath);
-        console.log("[POSTbook][异步归一化] Word 归一化 MD 已上传: " + textbookMinioPath);
         // 上传 images 文件夹（兼容 image / images 两种目录名）
         await uploadImageDir(mdLocalPath, normalizedMinioDir);
         break;

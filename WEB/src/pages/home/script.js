@@ -9,7 +9,7 @@ import { useAuthStore } from "../../stores/auth";
 import { useTheme } from "../../composables/useTheme";
 import { getProfile } from "../../api/auth";
 import { listBooks, getBookStatus, getCourseProgress } from "../../api/books";
-import { listQuizTextbooks, deleteQuizTextbook, startRandomSession, getMd2QuizTaskProgress } from "../../api/quiz";
+import { listQuizTextbooks, deleteQuizTextbook, startRandomSession, startSequentialSession, getMd2QuizTaskProgress } from "../../api/quiz";
 import { getStats } from "../../api/stats"; // 首页统计数据 API
 import apiClient from "../../api/client";
 
@@ -21,6 +21,7 @@ import UploadBookDialog from "../../components/UploadBookDialog.vue";
 import CourseFilesDialog from "../../components/CourseFilesDialog.vue"; // 【临时】教材文件列表弹窗，未来会删除
 import QuizTextbookCard from "../../components/QuizTextbookCard.vue";
 import ImportQuizDialog from "../../components/ImportQuizDialog.vue";
+import MarketPage from "../market/index.vue"; // 题库市场页面组件
 
 // 日志前缀
 const TAG = "[HomePage]";
@@ -38,6 +39,7 @@ export default {
     CourseFilesDialog, // 【临时】教材文件列表弹窗，未来会删除
     QuizTextbookCard,
     ImportQuizDialog,
+    MarketPage,
   },
 
   setup() {
@@ -122,6 +124,9 @@ export default {
     const hasGeneratingQuizzes = computed(() => {
       return quizTextbooks.value.some((t) => t.generatingTaskId);
     });
+
+    /** 题库市场页面 ref（用于调用 loadMarketList） */
+    const marketPageRef = ref(null);
 
     // ==================== 首页统计数据 ====================
     /** 首页 4 项统计指标 */
@@ -422,8 +427,15 @@ export default {
       if (menu === "quiz") {
         loadQuizTextbooks();
       }
+      // 切换到题库市场时加载市场列表
+      if (menu === "market") {
+        // 通过 ref 调用市场页面的加载方法
+        if (marketPageRef.value) {
+          marketPageRef.value.loadMarketList();
+        }
+      }
       // 其他占位菜单提示即将上线
-      if (menu !== "courses" && menu !== "quiz") {
+      if (menu !== "courses" && menu !== "quiz" && menu !== "market") {
         ElMessage.info("该功能即将上线");
       }
     }
@@ -567,6 +579,28 @@ export default {
     }
 
     /**
+     * 开始顺序刷题
+     * @param {string} textbookId
+     */
+    async function onStartSequentialQuiz(textbookId) {
+      console.log(TAG + " 开始顺序刷题，textbookId:", textbookId);
+
+      try {
+        const result = await startSequentialSession(textbookId);
+
+        if (result.code === 0 && result.data) {
+          // 导航到刷题页，传入 sessionMode 标记为顺序模式
+          navigate("quiz", { sessionId: result.data.sessionId, sessionMode: "sequential" });
+        } else {
+          ElMessage.error(result.message || "无法开始顺序刷题");
+        }
+      } catch (error) {
+        console.error(TAG + " 开始顺序刷题失败:", error);
+        ElMessage.error("开始顺序刷题失败: " + (error.message || "未知错误"));
+      }
+    }
+
+    /**
      * 删除题库
      * @param {string} textbookId
      */
@@ -586,6 +620,20 @@ export default {
         console.error(TAG + " 删除题库异常:", error);
         ElMessage.error("删除失败: " + (error.message || "未知错误"));
       }
+    }
+
+    /**
+     * 共享状态切换回调
+     * @param {{ id: string, isShared: boolean }} payload
+     */
+    function onShareToggled({ id, isShared }) {
+      console.log(TAG + " 共享状态切换，id: " + id + ", isShared: " + isShared);
+      // 更新本地列表中的共享状态
+      const item = quizTextbooks.value.find((tb) => tb.id === id);
+      if (item) {
+        item.isShared = isShared;
+      }
+      ElMessage.success(isShared ? "题库已共享到市场" : "已取消共享");
     }
 
     /**
@@ -670,8 +718,10 @@ export default {
       quizProgressMap,
       onQuizImportSuccess,
       onStartQuiz,
+      onStartSequentialQuiz,
       onDeleteQuizTextbook,
-
+      onShareToggled,
+      marketPageRef,
       // 方法
       toggleTheme,
       loadCourses,

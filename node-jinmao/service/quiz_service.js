@@ -57,16 +57,31 @@ function mapToFrontendType(dbType) {
 
 /**
  * 解析数据库选项 JSON → 前端格式 [{key, text}]
+ * 兼容两种入库格式：
+ *   1. 对象数组（传统导入）：[{key: "A", value: "选项内容"}]
+ *   2. 字符串数组（AI 生成）：["A. 选项内容", "B. 选项内容"]
  */
 function parseOptions(rawOptions) {
   if (!Array.isArray(rawOptions)) return [];
   return rawOptions
-    .filter((item) => item && typeof item === "object" && !Array.isArray(item))
-    .map((item) => ({
-      key: String(item.key || ""),
-      text: String(item.value || item.text || ""),
-    }))
-    .filter((o) => o.key && o.text);
+    .map((item) => {
+      // 格式 1：对象数组 [{key, value}] → 直接提取
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        return {
+          key: String(item.key || ""),
+          text: String(item.value || item.text || ""),
+        };
+      }
+      // 格式 2：字符串数组 ["A. 选项内容"] → 正则解析
+      if (typeof item === "string") {
+        const match = item.match(/^\s*([A-Za-z])[\.\、\)\s]+(.+?)\s*$/);
+        if (match) {
+          return { key: match[1].toUpperCase(), text: match[2].trim() };
+        }
+      }
+      return null;
+    })
+    .filter((o) => o && o.key && o.text);
 }
 
 // ==================== 判题逻辑 ====================
@@ -246,6 +261,27 @@ async function sampleQuestionIdsByType(textbookId) {
   return sampledIds;
 }
 
+/**
+ * 按顺序获取题库所有题目 ID（保持入库顺序）
+ * @param {string} textbookId
+ * @returns {Promise<string[]>} 题目 ID 数组（按 id 升序排列）
+ */
+async function getAllQuestionIds(textbookId) {
+  console.log(TAG + " getAllQuestionIds — textbookId: " + textbookId);
+
+  const bigTextbookId = BigInt(textbookId);
+  const prisma = require("../utils/prisma");
+  const rows = await prisma.quizQuestion.findMany({
+    where: { textbookId: bigTextbookId },
+    select: { id: true },
+    orderBy: { id: "asc" }, // 按入库顺序排列
+  });
+
+  const ids = rows.map((r) => r.id.toString());
+  console.log(TAG + " getAllQuestionIds — 共 " + ids.length + " 题");
+  return ids;
+}
+
 // ==================== 公开 API ====================
 
 /**
@@ -309,6 +345,64 @@ async function startRandomSession(userId, textbookId) {
   });
 
   console.log(TAG + " 智能刷题会话创建成功 — sessionId: " + session.id + ", 题目数: " + sampledIds.length);
+
+  return {
+    sessionId: session.id.toString(),
+    textbookId: textbook.id.toString(),
+    textbookName: textbook.name,
+    totalCount: session.totalCount,
+    status: session.status,
+    createdFrom: "new",
+  };
+}
+
+/**
+ * 开始或继续顺序刷题（按题目原始顺序出全部题目）
+ * @param {string} userId
+ * @param {string} textbookId
+ * @returns {Promise<Object>}
+ */
+async function startSequentialSession(userId, textbookId) {
+  console.log(TAG + " startSequentialSession — userId: " + userId + ", textbookId: " + textbookId);
+
+  // 1. 检查题库是否存在
+  const textbookResult = await quizRepo.getTextbookDetail(textbookId, userId);
+  if (textbookResult.code !== 200) {
+    throw new Error("TEXTBOOK_NOT_FOUND");
+  }
+  const textbook = textbookResult.data;
+
+  // 2. 检查是否存在进行中的顺序刷题会话
+  const existingSession = await quizRepo.findActiveSequentialSession(userId, textbookId);
+  if (existingSession) {
+    console.log(TAG + " 命中未完成顺序刷题会话，返回继续 — sessionId: " + existingSession.id);
+    return {
+      sessionId: existingSession.id.toString(),
+      textbookId: textbook.id.toString(),
+      textbookName: textbook.name,
+      totalCount: existingSession.totalCount,
+      status: existingSession.status,
+      createdFrom: "existing",
+    };
+  }
+
+  // 3. 按顺序获取所有题目
+  const allIds = await getAllQuestionIds(textbookId);
+  if (allIds.length === 0) {
+    throw new Error("NO_QUESTIONS_AVAILABLE");
+  }
+
+  // 4. 创建新会话
+  const session = await quizRepo.createQuizSession({
+    userId,
+    textbookId,
+    examId: null,
+    mode: "SEQUENTIAL",
+    questionIds: allIds,
+    totalCount: allIds.length,
+  });
+
+  console.log(TAG + " 顺序刷题会话创建成功 — sessionId: " + session.id + ", 题目数: " + allIds.length);
 
   return {
     sessionId: session.id.toString(),
@@ -537,6 +631,11 @@ module.exports = {
   getRandomSessionDetail,
   saveRandomSessionProgress,
   completeRandomSession,
+  // 顺序刷题（start 为独立实现，detail/progress/complete 复用随机模式相同逻辑）
+  startSequentialSession,
+  getSequentialSessionDetail: getRandomSessionDetail,
+  saveSequentialSessionProgress: saveRandomSessionProgress,
+  completeSequentialSession: completeRandomSession,
   evaluateAnswer,
   RANDOM_QUESTIONS_PER_TYPE,
 };

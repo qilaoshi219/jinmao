@@ -68,8 +68,7 @@ node-jinmao/
 │   ├── input_validator.js          # 统一输入验证（validateString / validateNumber / validateFields）
 │   ├── image_size.js               # 图片尺寸提取工具：从 MinIO 读取图片头获取像素宽高，支持 JPEG/PNG/GIF/WebP/BMP
 │   ├── line_indexer.js             # 给 Markdown 文本每一行添加行号索引
-│   ├── upload_minio.js             # 上传文件到 MinIO 对象存储
-│   └── word2pdf.js                 # Word 文件转 PDF 格式
+│   └── upload_minio.js             # 上传文件到 MinIO 对象存储
 ├── tools/                          # 外部工具目录
 │   └── 7z/                         # 7-Zip 命令行工具（7za.exe）
 ```

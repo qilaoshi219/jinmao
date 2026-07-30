@@ -1,11 +1,11 @@
 // ==================== 计费模块 ====================
 // 职责：价格计算、时段匹配、写入数据库账单
-// 支持三种计费方式：LLM Token 计费、文生图计费、TTS 字符计费
+// 支持三种计费方式：LLM Token 计费、文生图计费、TTS 字符计费、doc2x 按页计费
 // 价格从 config/billing_pricing.json 实时读取，修改后无需重启服务
 //
 // 导出函数：
 //   recordTokenUsage(data)    — LLM Token 计费（由 llm_client.js 自动调用）
-//   recordExternalCost(data)  — 文生图 / TTS 等非 LLM 计费
+//   recordExternalCost(data)  — 文生图 / TTS / doc2x 等非 LLM 计费
 //   getActivePeriod()         — 获取当前时段配置（供 llm_client.js 计算价格用）
 
 const fs = require("fs");
@@ -30,6 +30,7 @@ const CALL_TAG_LABELS = {
     htmlppt: "HTML PPT 生成",
     create_image: "文生图",
     tts: "文本转语音",
+    doc2x: "PDF解析",
 };
 
 // ==================== 金额向上取整工具函数 ====================
@@ -282,21 +283,22 @@ async function recordTokenUsage(data) {
  *
  * @param {Object} data - 计费数据
  * @param {string} data.userId - 用户 ID
- * @param {string} data.provider - 提供商（grsai / volcengine）
+ * @param {string} data.provider - 提供商（grsai / volcengine / doc2x）
  * @param {string} data.model - 模型名称
- * @param {string} data.callTag - 调用标签（create_image / tts）
+ * @param {string} data.callTag - 调用标签（create_image / tts / doc2x）
  * @param {string} data.status - 调用状态（success / failed）
  * @param {number} [data.imageCount] - 图片数量（文生图专用，默认 1）
  * @param {string} [data.imageResolution] - 图片分辨率（文生图专用）
  * @param {number} [data.textLength] - 文本长度（TTS 专用）
  * @param {number} [data.audioDuration] - 音频时长（TTS 专用，可选）
+ * @param {number} [data.pageCount] - 页数（doc2x PDF解析专用）
  * @returns {Promise<{ totalCost: number }>} 总费用（元）
  */
 async function recordExternalCost(data) {
     const TAG = "[billing][recordExternalCost]";
     const {
         userId, provider, model, callTag, status,
-        imageCount, imageResolution, textLength, audioDuration
+        imageCount, imageResolution, textLength, audioDuration, pageCount
     } = data;
 
     // 获取当前时段
@@ -324,6 +326,12 @@ async function recordExternalCost(data) {
         unitPrice = price.per_image || 0;
         totalCost = ceilTo7Decimals(count * unitPrice);
         unitLabel = "元/张";
+    } else if (callTag === "doc2x") {
+        // doc2x PDF解析：按页计费
+        const pages = pageCount || 0;
+        unitPrice = price.per_page || 0;
+        totalCost = ceilTo7Decimals(pages * unitPrice);
+        unitLabel = "元/页";
     } else if (callTag === "tts") {
         // TTS：按字符数计费
         const chars = textLength || 0;
@@ -346,9 +354,11 @@ async function recordExternalCost(data) {
         image_resolution: callTag === "create_image" ? (imageResolution || null) : null,
         text_length: callTag === "tts" ? (textLength || 0) : null,
         audio_duration: callTag === "tts" ? (audioDuration || null) : null,
+        page_count: callTag === "doc2x" ? (pageCount || 0) : null,
         time_period: period.name,
         image_unit_price: callTag === "create_image" ? unitPrice : null,
         tts_unit_price: callTag === "tts" ? unitPrice : null,
+        page_unit_price: callTag === "doc2x" ? unitPrice : null,
         total_cost: totalCost,
     };
 
@@ -362,6 +372,8 @@ async function recordExternalCost(data) {
     console.log(TAG + " 调用: " + callTag + " (" + (CALL_TAG_LABELS[callTag] || callTag) + ") | 状态: " + status);
     if (callTag === "create_image") {
         console.log(TAG + " 图片数量: " + (imageCount || 1) + " | 分辨率: " + (imageResolution || "N/A"));
+    } else if (callTag === "doc2x") {
+        console.log(TAG + " PDF页数: " + (pageCount || 0) + " 页");
     } else if (callTag === "tts") {
         console.log(TAG + " 文本长度: " + (textLength || 0) + " 字符 | 音频时长: " + (audioDuration || 0) + " 秒");
     }

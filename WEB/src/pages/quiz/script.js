@@ -8,6 +8,9 @@ import {
   getRandomSessionDetail,
   saveRandomSessionProgress,
   completeRandomSession,
+  getSequentialSessionDetail,
+  saveSequentialSessionProgress,
+  completeSequentialSession,
 } from "../../api/quiz";
 
 // 导入子组件
@@ -42,6 +45,9 @@ export default {
     const answers = reactive({});
     const elapsedSeconds = ref(null);
     const showAnswerSheet = ref(false);
+
+    // 刷题模式（"random" 或 "sequential"），默认随机
+    const sessionMode = computed(() => quizParams.value?.sessionMode || "random");
 
     // 计时器
     let timerInterval = null;
@@ -84,10 +90,12 @@ export default {
         return;
       }
 
-      console.log(TAG + " 加载会话，sessionId:", sid);
+      console.log(TAG + " 加载会话，sessionId:", sid, ", mode:", sessionMode.value);
 
       try {
-        const result = await getRandomSessionDetail(sid);
+        const result = sessionMode.value === "sequential"
+          ? await getSequentialSessionDetail(sid)
+          : await getRandomSessionDetail(sid);
 
         if (result.code === 0 && result.data) {
           const data = result.data;
@@ -173,7 +181,10 @@ export default {
      */
     async function saveProgress(currentIdx, questionId, answer) {
       try {
-        await saveRandomSessionProgress(sessionId.value, {
+        const saveFn = sessionMode.value === "sequential"
+          ? saveSequentialSessionProgress
+          : saveRandomSessionProgress;
+        await saveFn(sessionId.value, {
           currentQuestionIndex: currentIdx,
           questionId: questionId || undefined,
           answer: answer !== undefined ? answer : undefined,
@@ -205,7 +216,10 @@ export default {
       submitting.value = true;
 
       try {
-        const result = await completeRandomSession(sessionId.value);
+        const completeFn = sessionMode.value === "sequential"
+          ? completeSequentialSession
+          : completeRandomSession;
+        const result = await completeFn(sessionId.value);
 
         if (result.code === 0) {
           stopTimer();

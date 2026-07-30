@@ -53,6 +53,7 @@ function toPersistedRecord(task) {
     description: task.description,
     textbookId: task.textbookId,
     examId: task.examId,
+    mode: task.mode || "generate",
     totalLength: task.totalLength,
     totalLineCount: task.totalLineCount,
     chunkCount: task.chunkCount,

@@ -49,34 +49,6 @@ if [ -z "$NODE_VERSION" ] || [ "$NODE_VERSION" -lt 18 ]; then
 fi
 echo -e "${GREEN}  Node.js $(node -v) ✓${NC}"
 
-# ==================== [2/6] 检查系统依赖工具 ====================
-echo ""
-echo -e "${YELLOW}[2/6] 检查系统依赖...${NC}"
-
-# --- 检查 LibreOffice（Word 转 PDF 功能依赖） ---
-if command -v libreoffice &>/dev/null || command -v soffice &>/dev/null; then
-    echo -e "${GREEN}  LibreOffice 已安装 ✓${NC}"
-else
-    # 检查项目自带的 AppImage 便携版（通配符展开，无文件时为空字符串）
-    APPIMAGE_FOUND=false
-    for f in "${PROJECT_DIR}/libreoffice-portable/"*.AppImage; do
-        if [ -f "$f" ]; then
-            APPIMAGE_FOUND=true
-            break
-        fi
-    done
-
-    if [ "$APPIMAGE_FOUND" = true ]; then
-        echo -e "${GREEN}  LibreOffice AppImage 便携版已就绪 ✓${NC}"
-    else
-        echo -e "${YELLOW}  ⚠ LibreOffice 未安装（Word转PDF功能将不可用）${NC}"
-        echo -e "${YELLOW}    安装方法：${NC}"
-        echo -e "${YELLOW}    CentOS/OpenCloudOS: yum install -y libreoffice-core libreoffice-writer${NC}"
-        echo -e "${YELLOW}    Ubuntu/Debian:      apt install -y libreoffice-core libreoffice-writer${NC}"
-        echo -e "${YELLOW}    或将 LibreOffice.AppImage 放入 libreoffice-portable/ 目录${NC}"
-    fi
-fi
-
 # --- 检查 7z/p7zip（压缩包解压功能依赖） ---
 if command -v 7z &>/dev/null || command -v 7za &>/dev/null; then
     echo -e "${GREEN}  7z/p7zip 已安装 ✓${NC}"

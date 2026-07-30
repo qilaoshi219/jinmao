@@ -32,19 +32,19 @@ const TAG = "[API_progress]";
  *           schema:
  *             type: object
  *             required: [courseId, chapterId, progress]
-             properties:
-               courseId:
-                 type: string
-                 description: 课程 ID
-               chapterId:
-                 type: string
-                 description: 章节 ID
-               progress:
-                 type: integer
-                 description: 当前页码（1-based）
-               studyDuration:
-                 type: integer
-                 description: 本次学习时长增量(秒)，可选
+ *             properties:
+ *               courseId:
+ *                 type: string
+ *                 description: 课程 ID
+ *               chapterId:
+ *                 type: string
+ *                 description: 章节 ID
+ *               progress:
+ *                 type: integer
+ *                 description: 当前页码（1-based）
+ *               studyDuration:
+ *                 type: integer
+ *                 description: 本次学习时长增量(秒)，可选
  *           example:
  *             courseId: "1"
  *             chapterId: "2"

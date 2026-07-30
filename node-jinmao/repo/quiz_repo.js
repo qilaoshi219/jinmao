@@ -10,7 +10,7 @@ const TAG = "[quiz_repo]";
 // ==================== 题库（QuizTextbook）操作 ====================
 
 /**
- * 分页查询用户的题库列表
+ * 分页查询用户的题库列表（含自建题库 + 借用的题库）
  * @param {string} userId - 用户ID（BigInt 字符串形式）
  * @param {number} page - 页码（1-based）
  * @param {number} pageSize - 每页条数
@@ -22,33 +22,83 @@ async function listTextbooks(userId, page, pageSize, keyword) {
 
   try {
     const bigUserId = BigInt(userId);
-    // 构建 where 条件
-    const where = {
+
+    // 1. 查询自己的题库（isDeleted=false）
+    const ownWhere = {
       userId: bigUserId,
       isDeleted: false,
     };
-
-    // 关键词模糊搜索（匹配题库名称）
     if (keyword && keyword.trim()) {
-      where.name = { contains: keyword.trim() };
+      ownWhere.name = { contains: keyword.trim() };
     }
 
-    // 并发查询总数和分页数据
-    const [total, items] = await Promise.all([
-      prisma.quizTextbook.count({ where }),
+    // 2. 查询借用的题库（通过 QuizBookBorrow 关联，题库未删除）
+    const borrowWhere = {
+      borrows: {
+        some: {
+          userId: bigUserId,
+        },
+      },
+      isDeleted: false,
+    };
+    if (keyword && keyword.trim()) {
+      borrowWhere.name = { contains: keyword.trim() };
+    }
+
+    // 并发查询两类题库的总数和分页数据
+    const [ownTotal, ownItems, borrowTotal, borrowItems] = await Promise.all([
+      prisma.quizTextbook.count({ where: ownWhere }),
       prisma.quizTextbook.findMany({
-        where,
+        where: ownWhere,
         orderBy: { updateTime: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        select: {
+          id: true,
+          userId: true,
+          name: true,
+          description: true,
+          totalQuestions: true,
+          totalExams: true,
+          createTime: true,
+          updateTime: true,
+          generatingTaskId: true,
+          isShared: true,
+        },
+      }),
+      prisma.quizTextbook.count({ where: borrowWhere }),
+      prisma.quizTextbook.findMany({
+        where: borrowWhere,
+        orderBy: { updateTime: "desc" },
+        include: {
+          user: { select: { nickname: true } },
+        },
       }),
     ]);
 
-    console.log(TAG + " listTextbooks — 查询成功，共 " + total + " 条，当前页 " + items.length + " 条");
+    // 合并结果：自建在前，借用在后；各标注 ownType
+    const ownMapped = ownItems.map((tb) => ({
+      ...tb,
+      ownType: "own",
+      creatorNickname: null,
+    }));
+    const borrowMapped = borrowItems.map((tb) => ({
+      ...tb,
+      ownType: "borrowed",
+      creatorNickname: tb.user?.nickname || null,
+      user: undefined, // 移除多余的 user include
+    }));
+
+    const allItems = [...ownMapped, ...borrowMapped];
+    const totalCount = ownTotal + borrowTotal;
+
+    // 应用分页（内存分页，因为两类数据需合并排序）
+    allItems.sort((a, b) => new Date(b.updateTime) - new Date(a.updateTime));
+    const pagedItems = allItems.slice((page - 1) * pageSize, page * pageSize);
+
+    console.log(TAG + " listTextbooks — 查询成功，自建 " + ownTotal + " 条，借用 " + borrowTotal + " 条，当前页 " + pagedItems.length + " 条");
 
     return {
       code: 200,
-      data: { items, total, page, pageSize },
+      data: { items: pagedItems, total: totalCount, page, pageSize },
       message: "查询成功",
     };
   } catch (error) {
@@ -59,8 +109,9 @@ async function listTextbooks(userId, page, pageSize, keyword) {
 
 /**
  * 获取题库详情（含试卷列表和题目总数统计）
+ * 权限：自己的题库、已借用的题库、或共享题库均可查看
  * @param {string} textbookId - 题库ID
- * @param {string} userId - 用户ID（用于鉴权）
+ * @param {string} userId - 用户ID（用于鉴权 + 判断 ownType）
  * @returns {Promise<{code: number, data: object|null, message: string}>}
  */
 async function getTextbookDetail(textbookId, userId) {
@@ -71,8 +122,9 @@ async function getTextbookDetail(textbookId, userId) {
     const bigUserId = BigInt(userId);
 
     const textbook = await prisma.quizTextbook.findFirst({
-      where: { id: bigId, userId: bigUserId, isDeleted: false },
+      where: { id: bigId, isDeleted: false },
       include: {
+        user: { select: { id: true, nickname: true } },
         exams: {
           orderBy: { createTime: "asc" },
           select: {
@@ -82,6 +134,9 @@ async function getTextbookDetail(textbookId, userId) {
             createTime: true,
           },
         },
+        _count: {
+          select: { borrows: { where: { userId: bigUserId } } },
+        },
       },
     });
 
@@ -89,8 +144,33 @@ async function getTextbookDetail(textbookId, userId) {
       return { code: 404, data: null, message: "题库不存在或无权访问" };
     }
 
-    console.log(TAG + " getTextbookDetail — 查询成功: " + textbook.name);
-    return { code: 200, data: textbook, message: "查询成功" };
+    // 判断 ownType：自己创建的 / 已借用的 / 共享的
+    const isOwner = textbook.userId === bigUserId;
+    const isBorrowed = textbook._count.borrows > 0;
+    const isShared = textbook.isShared;
+
+    // 权限检查：所有者、借用者、或市场可见
+    if (!isOwner && !isBorrowed && !isShared) {
+      return { code: 404, data: null, message: "题库不存在或无权访问" };
+    }
+
+    // 计算 ownType
+    let ownType = "market"; // 市场浏览（未借用）
+    if (isOwner) ownType = "own";
+    else if (isBorrowed) ownType = "borrowed";
+
+    console.log(TAG + " getTextbookDetail — 查询成功: " + textbook.name + ", ownType: " + ownType);
+
+    return {
+      code: 200,
+      data: {
+        ...textbook,
+        ownType,
+        creatorNickname: textbook.user?.nickname || null,
+        _count: undefined,
+      },
+      message: "查询成功",
+    };
   } catch (error) {
     console.error(TAG + " getTextbookDetail — 查询失败: " + error.message);
     return { code: 500, data: null, message: "查询题库详情失败: " + error.message };
@@ -139,6 +219,10 @@ async function deleteTextbook(textbookId, userId) {
       }),
       // 删除刷题会话
       prisma.quizSession.deleteMany({
+        where: { textbookId: bigId },
+      }),
+      // 删除借用记录（确保借用者不会再看到该题库）
+      prisma.quizBookBorrow.deleteMany({
         where: { textbookId: bigId },
       }),
       // 删除题目
@@ -290,6 +374,30 @@ async function findActiveRandomSession(userId, textbookId) {
       userId: bigUserId,
       textbookId: bigTextbookId,
       mode: "RANDOM",
+      status: "IN_PROGRESS",
+    },
+    orderBy: { updateTime: "desc" },
+  });
+
+  return session;
+}
+
+/**
+ * 查找进行中的顺序刷题会话
+ * @param {string} userId - 用户ID
+ * @param {string} textbookId - 题库ID
+ * @returns {Promise<Object|null>} 会话对象或 null
+ */
+async function findActiveSequentialSession(userId, textbookId) {
+  console.log(TAG + " findActiveSequentialSession — userId: " + userId + ", textbookId: " + textbookId);
+  const bigUserId = BigInt(userId);
+  const bigTextbookId = BigInt(textbookId);
+
+  const session = await prisma.quizSession.findFirst({
+    where: {
+      userId: bigUserId,
+      textbookId: bigTextbookId,
+      mode: "SEQUENTIAL",
       status: "IN_PROGRESS",
     },
     orderBy: { updateTime: "desc" },
@@ -901,6 +1009,233 @@ async function getWrongQuestionsByIds(questionIds) {
   });
 }
 
+// ==================== 题库市场与共享操作 ====================
+
+/**
+ * 切换题库共享状态
+ * @param {string} textbookId - 题库ID
+ * @param {string} userId - 用户ID（仅题库所有者可切换）
+ * @returns {Promise<{code: number, data: {isShared: boolean}|null, message: string}>}
+ */
+async function toggleShareStatus(textbookId, userId) {
+  console.log(TAG + " toggleShareStatus — textbookId: " + textbookId + ", userId: " + userId);
+
+  try {
+    const bigId = BigInt(textbookId);
+    const bigUserId = BigInt(userId);
+
+    // 验证题库存在且属于该用户
+    const textbook = await prisma.quizTextbook.findFirst({
+      where: { id: bigId, userId: bigUserId, isDeleted: false },
+      select: { id: true, isShared: true },
+    });
+
+    if (!textbook) {
+      return { code: 404, data: null, message: "题库不存在或无权操作" };
+    }
+
+    // 切换共享状态
+    const newShared = !textbook.isShared;
+    await prisma.quizTextbook.update({
+      where: { id: bigId },
+      data: { isShared: newShared },
+    });
+
+    console.log(TAG + " toggleShareStatus — 切换成功，isShared: " + newShared);
+    return { code: 200, data: { isShared: newShared }, message: "共享状态已更新" };
+  } catch (error) {
+    console.error(TAG + " toggleShareStatus — 失败: " + error.message);
+    return { code: 500, data: null, message: "切换共享状态失败: " + error.message };
+  }
+}
+
+/**
+ * 题库市场列表（分页查询所有共享题库）
+ * @param {string} userId - 当前用户ID（用于排除自己的题库 + 判断是否已借用）
+ * @param {number} page - 页码（1-based）
+ * @param {number} pageSize - 每页条数
+ * @param {string} [keyword] - 搜索关键词
+ * @returns {Promise<{code: number, data: {items, total, page, pageSize}, message: string}>}
+ */
+async function listMarketTextbooks(userId, page, pageSize, keyword) {
+  console.log(TAG + " listMarketTextbooks — userId: " + userId + ", page: " + page + ", keyword: " + (keyword || "无"));
+
+  try {
+    const bigUserId = BigInt(userId);
+
+    // 构建查询条件：isShared=true, 不是自己的题库, 未删除
+    const where = {
+      isShared: true,
+      userId: { not: bigUserId },
+      isDeleted: false,
+    };
+    if (keyword && keyword.trim()) {
+      where.name = { contains: keyword.trim() };
+    }
+
+    // 查询总数和分页数据
+    const [total, items] = await Promise.all([
+      prisma.quizTextbook.count({ where }),
+      prisma.quizTextbook.findMany({
+        where,
+        orderBy: { updateTime: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          user: { select: { nickname: true } },
+          _count: {
+            select: { borrows: { where: { userId: bigUserId } } },
+          },
+        },
+      }),
+    ]);
+
+    // 格式化返回数据
+    const formattedItems = items.map((tb) => ({
+      id: tb.id,
+      name: tb.name,
+      description: tb.description,
+      totalQuestions: tb.totalQuestions,
+      totalExams: tb.totalExams,
+      createTime: tb.createTime,
+      updateTime: tb.updateTime,
+      isShared: tb.isShared,
+      creatorNickname: tb.user?.nickname || null,
+      isBorrowed: tb._count.borrows > 0,
+    }));
+
+    console.log(TAG + " listMarketTextbooks — 查询成功，共 " + total + " 条，当前页 " + formattedItems.length + " 条");
+
+    return {
+      code: 200,
+      data: { items: formattedItems, total, page, pageSize },
+      message: "查询成功",
+    };
+  } catch (error) {
+    console.error(TAG + " listMarketTextbooks — 查询失败: " + error.message);
+    return { code: 500, data: null, message: "查询题库市场失败: " + error.message };
+  }
+}
+
+/**
+ * 借用题库（创建借用记录）
+ * @param {string} userId - 借用者用户ID
+ * @param {string} textbookId - 要借用的题库ID
+ * @returns {Promise<{code: number, data: null, message: string}>}
+ */
+async function borrowTextbook(userId, textbookId) {
+  console.log(TAG + " borrowTextbook — userId: " + userId + ", textbookId: " + textbookId);
+
+  try {
+    const bigUserId = BigInt(userId);
+    const bigTextbookId = BigInt(textbookId);
+
+    // 验证题库存在且已共享
+    const textbook = await prisma.quizTextbook.findFirst({
+      where: { id: bigTextbookId, isShared: true, isDeleted: false },
+      select: { id: true, userId: true },
+    });
+
+    if (!textbook) {
+      return { code: 404, data: null, message: "题库不存在或未共享" };
+    }
+
+    // 不能借用自己创建的题库
+    if (textbook.userId === bigUserId) {
+      return { code: 400, data: null, message: "不能借用自己创建的题库" };
+    }
+
+    // 检查是否已借用（防重复）
+    const existing = await prisma.quizBookBorrow.findUnique({
+      where: {
+        userId_textbookId: {
+          userId: bigUserId,
+          textbookId: bigTextbookId,
+        },
+      },
+    });
+
+    if (existing) {
+      return { code: 400, data: null, message: "已借用过该题库，无需重复借用" };
+    }
+
+    // 创建借用记录
+    await prisma.quizBookBorrow.create({
+      data: {
+        userId: bigUserId,
+        textbookId: bigTextbookId,
+      },
+    });
+
+    console.log(TAG + " borrowTextbook — 借用成功");
+    return { code: 200, data: null, message: "题库借用成功" };
+  } catch (error) {
+    console.error(TAG + " borrowTextbook — 失败: " + error.message);
+    return { code: 500, data: null, message: "借用题库失败: " + error.message };
+  }
+}
+
+/**
+ * 取消借用题库（删除借用记录，保留用户历史刷题数据）
+ * @param {string} userId - 用户ID
+ * @param {string} textbookId - 题库ID
+ * @returns {Promise<{code: number, data: null, message: string}>}
+ */
+async function unborrowTextbook(userId, textbookId) {
+  console.log(TAG + " unborrowTextbook — userId: " + userId + ", textbookId: " + textbookId);
+
+  try {
+    const bigUserId = BigInt(userId);
+    const bigTextbookId = BigInt(textbookId);
+
+    // 检查是否存在借用记录
+    const existing = await prisma.quizBookBorrow.findUnique({
+      where: {
+        userId_textbookId: {
+          userId: bigUserId,
+          textbookId: bigTextbookId,
+        },
+      },
+    });
+
+    if (!existing) {
+      return { code: 404, data: null, message: "未借用该题库" };
+    }
+
+    // 删除借用记录（不删除用户已有的刷题记录和错题数据）
+    await prisma.quizBookBorrow.delete({
+      where: {
+        userId_textbookId: {
+          userId: bigUserId,
+          textbookId: bigTextbookId,
+        },
+      },
+    });
+
+    console.log(TAG + " unborrowTextbook — 取消借用成功");
+    return { code: 200, data: null, message: "已取消借用" };
+  } catch (error) {
+    console.error(TAG + " unborrowTextbook — 失败: " + error.message);
+    return { code: 500, data: null, message: "取消借用失败: " + error.message };
+  }
+}
+
+/**
+ * 获取用户已借用的题库ID列表
+ * @param {string} userId - 用户ID
+ * @returns {Promise<string[]>} 已借用的 textbookId 数组（字符串形式）
+ */
+async function getUserBorrowedTextbookIds(userId) {
+  const bigUserId = BigInt(userId);
+
+  const records = await prisma.quizBookBorrow.findMany({
+    where: { userId: bigUserId },
+    select: { textbookId: true },
+  });
+
+  return records.map((r) => r.textbookId.toString());
+}
+
 module.exports = {
   // 题库
   listTextbooks,
@@ -913,6 +1248,7 @@ module.exports = {
   cleanupEmptyImport,
   // 会话
   findActiveRandomSession,
+  findActiveSequentialSession,
   getRandomSessionStatusBatch,
   createQuizSession,
   getSessionDetail,
@@ -938,4 +1274,10 @@ module.exports = {
   getWrongbookOverview,
   getWrongQuestionIds,
   getWrongQuestionsByIds,
+  // 题库市场与共享
+  toggleShareStatus,
+  listMarketTextbooks,
+  borrowTextbook,
+  unborrowTextbook,
+  getUserBorrowedTextbookIds,
 };

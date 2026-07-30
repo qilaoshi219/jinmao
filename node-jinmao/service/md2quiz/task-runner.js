@@ -12,6 +12,9 @@ const { chunkMarkdownByLineThreshold } = require("./chunker");
 const { requestDeepseekJsonCompletionStream } = require("./deepseek-client");
 const { validateQuestionBlockResult } = require("./result-validator");
 const { updateTask } = require("./task-store");
+// 新增：AI 无损分块模块
+const { splitQuizIntoChunks } = require("./quiz-splitter");
+const { processAllChunks } = require("./quiz-chunk-processor");
 
 const TAG = "[md2quiz_runner]";
 
@@ -344,6 +347,122 @@ async function generateQuestionsForChunk({ taskId, promptTemplate, chunk, genera
   }
 }
 
+// ==================== 答案归一化（5 种题型） ====================
+
+/**
+ * 归一化答案值（从答案区原始文本转为标准格式）
+ * 处理来自 AI 答案块（type: "answers"）的原始答案文本
+ * 不同题型有不同的归一化规则
+ *
+ * @param {string} rawAnswer - 答案区原始文本（如 "B"、"ACD"、"正确"、"H2O"）
+ * @param {string} questionType - 题型标识：single/multiple/judge/fill/short_answer
+ * @returns {string} 归一化后的答案字符串
+ */
+function normalizeAnswerFromRaw(rawAnswer, questionType) {
+  if (!rawAnswer || typeof rawAnswer !== "string") return "";
+  const cleaned = rawAnswer.trim();
+
+  switch (questionType) {
+    case "single": {
+      // 单选：提取单个字母 "B"/"b"/"(B)" → "B"
+      const match = cleaned.match(/[A-Ea-e]/);
+      return match ? match[0].toUpperCase() : cleaned;
+    }
+
+    case "multiple": {
+      // 多选："ACD"→"A,C,D"、"A, C, D"→"A,C,D"、"A.C.D"→"A,C,D"
+      const letters = cleaned.match(/[A-Ea-e]/g);
+      if (letters && letters.length >= 2) {
+        return letters.map(l => l.toUpperCase()).join(",");
+      }
+      if (letters && letters.length === 1) {
+        return letters[0].toUpperCase();
+      }
+      return cleaned;
+    }
+
+    case "judge": {
+      // 判断："正确/对/√/✓/True/T/Yes/Y/是" → "正确"
+      if (/^[✓✔√对正TtYy是]|正确|TRUE|true|YES|yes/.test(cleaned)) return "正确";
+      // "错误/错/×/✗/False/F/No/N/否" → "错误"
+      if (/^[✗✘×错FfNn否]|错误|FALSE|false|NO|no/.test(cleaned)) return "错误";
+      // 无法识别时保留原文并输出警告
+      console.warn(TAG + " 判断答案格式无法识别: \"" + cleaned + "\"，保留原文");
+      return cleaned;
+    }
+
+    case "fill":
+    case "short_answer": {
+      // 填空/简答：去除题号前缀（"4. H2O"→"H2O"），保留原文
+      const noNumber = cleaned.replace(/^\d+[\.\、\．\s]+/, "").trim();
+      return noNumber || cleaned;
+    }
+
+    default: {
+      return cleaned;
+    }
+  }
+}
+
+// ==================== 合并器 ====================
+
+/**
+ * 合并所有块的处理结果，按题号填入答案
+ * 输入来自分段器+处理器产生的 questionMap / answerMap / completeQuestions
+ * 输出归一化后的完整题目列表
+ *
+ * @param {Map<number, Object>} questionMap - 题号 → 题目对象（无答案）
+ * @param {Map<string, string>} answerMap - 题号字符串 → 答案原文
+ * @param {Object[]} completeQuestions - 已有完整答案的题目
+ * @returns {{ mergedQuestions: Object[], mergeWarnings: string[] }}
+ */
+function mergeResults(questionMap, answerMap, completeQuestions) {
+  // 1. 先加入完整题目（AI 已经填好答案的）
+  const mergedQuestions = [...completeQuestions];
+  const usedAnswerIds = new Set();
+  const mergeWarnings = [];
+
+  // 2. 将答案按题号填入题目
+  for (const [id, q] of questionMap.entries()) {
+    const rawAnswer = answerMap.get(String(id));
+
+    if (rawAnswer !== undefined) {
+      // 找到匹配答案 → 归一化后填入
+      q.answer = normalizeAnswerFromRaw(rawAnswer, q.type || "short_answer");
+      usedAnswerIds.add(String(id));
+    } else {
+      // 无匹配答案 → 留空并记录警告
+      mergeWarnings.push("题目 #" + id + "（类型: " + (q.type || "未知") + "）未找到对应答案");
+      q.answer = "";
+    }
+    mergedQuestions.push(q);
+  }
+
+  // 3. 检查未被使用的答案（有答案但无题目）
+  for (const [id, answer] of answerMap.entries()) {
+    if (!usedAnswerIds.has(id)) {
+      mergeWarnings.push("答案 #" + id + "（\"" + answer + "\"）未匹配到对应题目");
+    }
+  }
+
+  // 4. 按 id 排序
+  mergedQuestions.sort((a, b) => (a.id || 0) - (b.id || 0));
+
+  // 5. 入库前最终校验：选择题选项完整性
+  for (const q of mergedQuestions) {
+    if ((q.type === "single" || q.type === "multiple") &&
+        (!Array.isArray(q.options) || q.options.length < 2)) {
+      mergeWarnings.push("题目 #" + (q.id || "?") + " 是选择题但选项不足（" + (q.options?.length || 0) + " 个）");
+    }
+  }
+
+  console.log(TAG + " 合并完成 — 总计 " + mergedQuestions.length + " 题（完整题 " + completeQuestions.length + " + 匹配题 " + (mergedQuestions.length - completeQuestions.length) + "）");
+  console.log(TAG + " 答案匹配: " + usedAnswerIds.size + " 条成功, " + (answerMap.size - usedAnswerIds.size) + " 条未使用");
+  console.log(TAG + " 合并警告: " + mergeWarnings.length + " 条");
+
+  return { mergedQuestions, mergeWarnings };
+}
+
 // ==================== 题目导入 ====================
 
 /**
@@ -449,8 +568,7 @@ function normalizeAnswer(q) {
 // ==================== 主执行函数 ====================
 
 /**
- * 执行 MD→JSON 任务
- * 流程：加载提示词 → 分块 → 逐块生成题目 → 合并 → 导入 → 完成
+ * 执行 MD→JSON 任务（generate 模式：分块、按配额生成）
  *
  * @param {string} taskId              - 任务 ID
  * @param {string} markdownContent     - Markdown 文本内容
@@ -458,10 +576,10 @@ function normalizeAnswer(q) {
  * @param {bigint} examId              - 预创建的试卷 ID
  */
 async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) {
-  console.log(TAG + " ========== 任务开始执行 ==========", { taskId });
+  console.log(TAG + " [generate] ========== 任务开始执行 ==========", { taskId });
 
   try {
-    // ===== 阶段 1：加载提示词 =====
+    // ===== 阶段 1：加载提示词（保持不变） =====
     updateTaskProgress(
       taskId,
       {
@@ -474,54 +592,116 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
 
     const promptTemplate = await loadPromptTemplate();
 
-    // ===== 阶段 2：分块 =====
-    const chunks = chunkMarkdownByLineThreshold(markdownContent);
-
-    updateTaskProgress(
-      taskId,
-      {
-        chunkCount: chunks.length,
-        currentPhase: "processing_chunks",
-        lastMessage: `提示词加载完成，文本已切分为 ${chunks.length} 个块。`,
-      },
-      `提示词加载完成，文本已切分为 ${chunks.length} 个块。`
-    );
-
-    // ===== 阶段 3：逐块生成题目 =====
-    /** @type {import("./types").QuestionRecord[]} */
-    const mergedQuestions = [];
+    // ===== 阶段 2-4：尝试 AI 无损分块流水线（分段器 → 处理器 → 合并器） =====
+    let mergedQuestions = [];
     let totalGeneratedCountByType = createInitialGeneratedCount();
+    let allPipelineWarnings = [];
+    let usedNewPipeline = false;
 
-    for (const chunk of chunks) {
-      const generationResult = await generateQuestionsForChunk({
+    try {
+      // ---- 阶段 2：AI 无损分段器 ----
+      updateTaskProgress(
         taskId,
-        promptTemplate,
-        chunk,
-        generationConfig: getCurrentTask(taskId).generationConfig,
-      });
-
-      totalGeneratedCountByType = addGeneratedCount(
-        totalGeneratedCountByType,
-        generationResult.generatedCountByType
+        { currentPhase: "ai_splitting", lastMessage: "AI 正在分析题库结构，寻找完整语义边界..." },
+        "开始 AI 无损分段。"
       );
-      mergedQuestions.push(...generationResult.questions);
 
-      updateTask(taskId, (t) => ({
-        ...t,
-        completedChunkCount: t.completedChunkCount + 1,
-        totalGeneratedCountByType,
-        currentPhase: "processing_chunks",
-        currentChunkStreamedCharacterCount: 0,
-        lastMessage: `已完成 ${t.completedChunkCount + 1}/${chunks.length} 个块。`,
-        recentEvents: appendRecentEvent(
-          t,
-          `第 ${chunk.index} 块完成，当前已完成 ${t.completedChunkCount + 1}/${chunks.length} 块。`
-        ),
-        updatedAt: new Date().toISOString(),
-      }));
+      const chunks = await splitQuizIntoChunks(markdownContent);
+
+      updateTaskProgress(
+        taskId,
+        {
+          chunkCount: chunks.length,
+          currentPhase: "processing_chunks",
+          lastMessage: "AI 分段完成，共 " + chunks.length + " 个完整语义块，开始格式化题目。",
+        },
+        "AI 无损分段完成，共 " + chunks.length + " 个块。"
+      );
+
+      // ---- 阶段 3：分块处理器 ----
+      const { questionMap, answerMap, completeQuestions, allWarnings } =
+        await processAllChunks(chunks);
+
+      allPipelineWarnings.push(...allWarnings);
+
+      // ---- 阶段 4：合并器 ----
+      const { mergedQuestions: merged, mergeWarnings } = mergeResults(
+        questionMap, answerMap, completeQuestions
+      );
+      mergedQuestions = merged;
+      allPipelineWarnings.push(...mergeWarnings);
+
+      // 统计题型数量
+      for (const q of mergedQuestions) {
+        if (q.type === "single") totalGeneratedCountByType.single++;
+        else if (q.type === "multiple") totalGeneratedCountByType.multiple++;
+        else if (q.type === "judge") totalGeneratedCountByType.judge++;
+        else if (q.type === "fill") totalGeneratedCountByType.fill++;
+        else if (q.type === "short_answer") totalGeneratedCountByType.shortAnswer++;
+      }
+
+      usedNewPipeline = true;
+      console.log(TAG + " AI 无损分块流水线执行成功。" + 
+        " 题目: " + mergedQuestions.length + 
+        " 题, 警告: " + allPipelineWarnings.length + " 条");
+
+    } catch (pipelineError) {
+      // ---- 降级：回退到原有盲切逻辑 ----
+      console.warn(TAG + " AI 无损分块流水线失败: " + pipelineError.message + "，降级到原有盲切逻辑。");
+      allPipelineWarnings.push("AI 无损分块失败，已降级到盲切逻辑: " + pipelineError.message);
     }
 
-    // ===== 阶段 4：导入题目 =====
+    // ---- 降级路径：使用原有 chunker 盲切逻辑 ----
+    if (!usedNewPipeline) {
+      updateTaskProgress(
+        taskId,
+        { currentPhase: "fallback_chunking", lastMessage: "使用传统分块方式处理..." },
+        "降级到传统分块方式。"
+      );
+
+      const chunks = chunkMarkdownByLineThreshold(markdownContent);
+
+      updateTaskProgress(
+        taskId,
+        {
+          chunkCount: chunks.length,
+          currentPhase: "processing_chunks",
+          lastMessage: "文本已切分为 " + chunks.length + " 个块（降级模式）。",
+        },
+        "文本已切分为 " + chunks.length + " 个块（降级模式）。"
+      );
+
+      for (const chunk of chunks) {
+        const generationResult = await generateQuestionsForChunk({
+          taskId,
+          promptTemplate,
+          chunk,
+          generationConfig: getCurrentTask(taskId).generationConfig,
+        });
+
+        totalGeneratedCountByType = addGeneratedCount(
+          totalGeneratedCountByType,
+          generationResult.generatedCountByType
+        );
+        mergedQuestions.push(...generationResult.questions);
+
+        updateTask(taskId, (t) => ({
+          ...t,
+          completedChunkCount: t.completedChunkCount + 1,
+          totalGeneratedCountByType,
+          currentPhase: "processing_chunks",
+          currentChunkStreamedCharacterCount: 0,
+          lastMessage: "已完成 " + (t.completedChunkCount + 1) + "/" + chunks.length + " 个块（降级模式）。",
+          recentEvents: appendRecentEvent(
+            t,
+            "第 " + chunk.index + " 块完成（降级模式），当前已完成 " + (t.completedChunkCount + 1) + "/" + chunks.length + " 块。"
+          ),
+          updatedAt: new Date().toISOString(),
+        }));
+      }
+    }
+
+    // ===== 阶段 5：导入题目（新老流水线统一走这里） =====
     const totalQuestionCount = mergedQuestions.length;
 
     updateTaskProgress(
@@ -531,9 +711,9 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
         currentPhase: "importing_questions",
         mergedQuestionCount: totalQuestionCount,
         importedCount: 0,
-        lastMessage: `题目生成完成，共 ${totalQuestionCount} 道题，开始入库。`,
+        lastMessage: "题目生成完成，共 " + totalQuestionCount + " 道题，开始入库。",
       },
-      `题目生成完成，共 ${totalQuestionCount} 道题，开始入库。`
+      "题目生成完成，共 " + totalQuestionCount + " 道题，开始入库。"
     );
 
     const { importedCount, failedCount } = await importQuestionsToTextbook({
@@ -542,9 +722,8 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
       questions: mergedQuestions,
     });
 
-    // ===== 阶段 5：清理并完成 =====
+    // ===== 阶段 6：清理并完成 =====
     if (importedCount === 0) {
-      // 全部导入失败，清理空教材
       await quizRepo.cleanupEmptyImport(textbookId, examId);
 
       updateTaskProgress(
@@ -562,7 +741,6 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
       throw new Error("所有题目导入失败。");
     }
 
-    // 更新计数 + 清除 generatingTaskId
     await quizRepo.updateQuestionCounts(textbookId, examId, importedCount);
 
     await prisma.quizTextbook.update({
@@ -574,42 +752,51 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
     const importResult = {
       textbookId: textbookId.toString(),
       examId: examId.toString(),
-      textbookName: "", // 从 task 中获取
+      textbookName: "",
       examName: "",
       totalCount: totalQuestionCount,
       importedCount,
       failedCount,
     };
 
-    // 从任务中获取名称
     updateTask(taskId, (t) => {
       importResult.textbookName = t.textbookName;
       importResult.examName = t.examName;
+
+      // 将 pipeline 警告合并到最近事件中
+      const warningEvent = allPipelineWarnings.length > 0
+        ? "任务完成，共 " + allPipelineWarnings.length + " 条警告。"
+        : "任务完成。";
 
       return {
         ...t,
         status: "completed",
         importStatus: "imported",
-        completedChunkCount: chunks.length,
+        completedChunkCount: t.chunkCount || mergedQuestions.length,
         totalGeneratedCountByType,
         mergedQuestionCount: totalQuestionCount,
         importedCount,
         currentPhase: "completed",
         importResult,
-        lastMessage: `任务完成，成功导入 ${importedCount} 题，失败 ${failedCount} 题。`,
-        recentEvents: appendRecentEvent(
-          t,
-          `任务完成，成功导入 ${importedCount} 题，失败 ${failedCount} 题。`
-        ),
+        lastMessage: "任务完成，成功导入 " + importedCount + " 题，失败 " + failedCount + " 题。" + (allPipelineWarnings.length > 0 ? "（" + allPipelineWarnings.length + " 条警告）" : ""),
+        recentEvents: appendRecentEvent(t, warningEvent),
         updatedAt: new Date().toISOString(),
       };
     });
+
+    // 输出警告汇总到控制台（不刷屏，一次性输出）
+    if (allPipelineWarnings.length > 0) {
+      console.warn(TAG + " ========== 任务警告汇总（共 " + allPipelineWarnings.length + " 条）==========");
+      allPipelineWarnings.forEach((w, idx) => console.warn(TAG + " [" + (idx + 1) + "] " + w));
+    }
 
     console.log(TAG + " ========== 任务执行完成 ==========", {
       taskId,
       totalQuestionCount,
       importedCount,
       failedCount,
+      pipeline: usedNewPipeline ? "AI无损分块" : "传统盲切(降级)",
+      warnings: allPipelineWarnings.length,
     });
   } catch (error) {
     const message =
@@ -620,7 +807,6 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
       message,
     });
 
-    // 清除 generatingTaskId（任务失败也清除）
     try {
       await prisma.quizTextbook.update({
         where: { id: textbookId },
@@ -637,8 +823,8 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
         t.importStatus === "imported" ? "imported" : "failed",
       errorMessage: message,
       currentPhase: "failed",
-      lastMessage: `任务失败：${message}`,
-      recentEvents: appendRecentEvent(t, `任务失败：${message}`),
+      lastMessage: "任务失败：" + message,
+      recentEvents: appendRecentEvent(t, "任务失败：" + message),
       updatedAt: new Date().toISOString(),
     }));
   }

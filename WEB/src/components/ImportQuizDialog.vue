@@ -1,7 +1,7 @@
 <!--
 ============================================================================
 文件名：ImportQuizDialog.vue（题库导入弹窗）
-文件作用：题库导入弹窗 — PDF 导入 / Markdown 导入 / JSON 直接导入 三 Tab
+文件作用：题库导入弹窗 — PDF 导入 / Markdown 导入 / JSON 直接导入 / 题库格式化 四 Tab
 遵守设计规范：纯黑纯白文字、10px 圆角、500ms 过渡、暗黑双轨适配、防重复点击
 ============================================================================
 -->
@@ -31,11 +31,11 @@
     <template v-else>
       <el-tabs v-model="activeTab" class="import-dialog__tabs">
 
-        <!-- ==================== PDF 导入 Tab ==================== -->
-        <el-tab-pane label="PDF 导入" name="pdf">
+        <!-- ==================== 文档导入 Tab ==================== -->
+        <el-tab-pane label="文档导入" name="pdf">
           <el-alert
             type="info" :closable="false" show-icon
-            title="上传 PDF，系统自动转换为 Markdown 后由 AI 生成题目并入库。"
+            title="上传 PDF 文档，系统自动转换为 Markdown 后由 AI 生成题目并入库。"
           />
 
           <el-form label-position="top" class="import-dialog__form" @submit.prevent>
@@ -51,7 +51,7 @@
               <el-input v-model="pdfForm.description" type="textarea" :rows="2" maxlength="300" show-word-limit placeholder="可选，简要描述题库内容" />
             </el-form-item>
 
-            <el-form-item label="PDF 文件 (.pdf)" required>
+            <el-form-item label="文档文件 (.pdf)" required>
               <input type="file" accept=".pdf" class="import-dialog__file" @change="onPdfFileChange" />
               <div v-if="pdfFile" class="import-dialog__file-meta text-xs text-gray-400 mt-1 transition-colors duration-500">
                 已选择：{{ pdfFile.name }}（{{ (pdfFile.size / 1024 / 1024).toFixed(1) }} MB）
@@ -84,7 +84,7 @@
           </el-form>
 
           <div class="import-dialog__info text-xs text-gray-400 mt-3 transition-colors duration-500">
-            <p>PDF 文件将先通过 Doc2x 转换为 Markdown，再由 DeepSeek AI 逐块生成题目并自动入库。</p>
+            <p>PDF 文件将先转换为 Markdown，再由 DeepSeek AI 逐块生成题目并自动入库。</p>
             <p class="mt-1">任务创建成功后弹窗关闭，可在题库列表中查看生成进度。</p>
           </div>
         </el-tab-pane>
@@ -170,6 +170,41 @@
           </el-form>
         </el-tab-pane>
 
+        <!-- ==================== 题库格式化 Tab ==================== -->
+        <el-tab-pane label="题库格式化" name="format">
+          <el-alert
+            type="info" :closable="false" show-icon
+            title="上传已出好题的 PDF 文件（如考试试卷扫描件），系统转换为 MD 后由 DeepSeek 自动解析题目和答案并入库。"
+          />
+
+          <el-form label-position="top" class="import-dialog__form" @submit.prevent>
+            <el-form-item label="题库名称" required>
+              <el-input v-model="formatForm.textbookName" maxlength="100" placeholder="请输入题库名称" />
+            </el-form-item>
+
+            <el-form-item label="试卷名称" required>
+              <el-input v-model="formatForm.examName" maxlength="100" placeholder="请输入试卷名称" />
+            </el-form-item>
+
+            <el-form-item label="题库描述">
+              <el-input v-model="formatForm.description" type="textarea" :rows="2" maxlength="300" show-word-limit placeholder="可选，简要描述题库内容" />
+            </el-form-item>
+
+            <el-form-item label="PDF 文件（已出好题的试卷，接受 .pdf）" required>
+              <input type="file" accept=".pdf" class="import-dialog__file" @change="onFormatFileChange" />
+              <div v-if="formatFile" class="import-dialog__file-meta text-xs text-gray-400 mt-1 transition-colors duration-500">
+                已选择：{{ formatFile.name }}（{{ (formatFile.size / 1024 / 1024).toFixed(1) }} MB）
+              </div>
+            </el-form-item>
+          </el-form>
+
+          <div class="import-dialog__info text-xs text-gray-400 mt-3 transition-colors duration-500">
+            <p>PDF 文件将先转换为 Markdown，再由 DeepSeek AI 自动识别题目结构和匹配答案。</p>
+            <p class="mt-1">系统会自动解析全部题目（单选/多选/判断/简答），无需手动设置题型配额。</p>
+            <p class="mt-1">任务创建成功后弹窗关闭，可在题库列表中查看生成进度。</p>
+          </div>
+        </el-tab-pane>
+
       </el-tabs>
     </template>
 
@@ -194,9 +229,15 @@
           </el-button>
 
           <!-- JSON 按钮 -->
-          <el-button v-else type="primary" :loading="loading" :disabled="!jsonCanSubmit" @click="handleJsonSubmit">
+          <el-button v-else-if="activeTab === 'json'" type="primary" :loading="loading" :disabled="!jsonCanSubmit" @click="handleJsonSubmit">
             {{ loading ? '导入中...' : '校验并导入' }}
           </el-button>
+
+          <!-- 格式化按钮 -->
+          <el-button v-else-if="activeTab === 'format'" type="primary" :loading="loading" :disabled="!formatCanSubmit" @click="handleFormatSubmit">
+            {{ loading ? '上传解析中...' : '上传并解析' }}
+          </el-button>
+
         </template>
       </div>
     </template>
@@ -204,7 +245,7 @@
 </template>
 
 <script setup>
-// ==================== ImportQuizDialog 逻辑（三 Tab） ====================
+// ==================== ImportQuizDialog 逻辑（四 Tab） ====================
 import { ref, reactive, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { importQuiz, createMd2QuizTask, uploadPdfForQuiz } from "../api/quiz";
@@ -309,6 +350,25 @@ const jsonCanSubmit = computed(() => {
   );
 });
 
+// ==================== 格式化 Tab 表单（PDF 试卷解析） ====================
+const formatForm = reactive({ textbookName: "", examName: "", description: "" });
+const formatFile = ref(null);
+
+function onFormatFileChange(event) {
+  const file = event.target.files?.[0];
+  if (file) formatFile.value = file;
+  event.target.value = "";
+}
+
+const formatCanSubmit = computed(() => {
+  if (loading.value) return false;
+  return (
+    formatForm.textbookName.trim() &&
+    formatForm.examName.trim() &&
+    formatFile.value
+  );
+});
+
 // ==================== 共享状态 ====================
 const loading = ref(false);
 const importResult = ref(null);
@@ -327,6 +387,9 @@ function resetAll() {
   mdFile.value = null; mdContent.value = ""; applyMdPreset("standard");
   // JSON
   jsonForm.textbookName = ""; jsonForm.examName = ""; jsonForm.description = ""; jsonForm.questionsJson = "";
+  // 格式化
+  formatForm.textbookName = ""; formatForm.examName = ""; formatForm.description = "";
+  formatFile.value = null;
   // 共享
   importResult.value = null;
 }
@@ -370,6 +433,37 @@ async function handlePdfSubmit() {
     console.error(TAG + " PDF 提交异常:", error);
     const errMsg = error?.response?.data?.message || error.message || "上传失败";
     ElMessage.error("PDF 提交失败: " + errMsg);
+  } finally {
+    loading.value = false;
+  }
+}
+
+/** 格式化 Tab：上传 PDF 试卷 → 解析已有题目（format 模式，无需题型配额） */
+async function handleFormatSubmit() {
+  if (!formatCanSubmit.value) return;
+  loading.value = true;
+
+  try {
+    const formData = new FormData();
+    formData.append("file", formatFile.value);
+    formData.append("textbookName", formatForm.textbookName.trim());
+    formData.append("examName", formatForm.examName.trim());
+    if (formatForm.description.trim()) formData.append("description", formatForm.description.trim());
+    // format 模式：AI 只解析已有的题目结构和答案，不生成新题
+    formData.append("mode", "format");
+
+    const result = await uploadPdfForQuiz(formData);
+
+    if (result.code === 0) {
+      ElMessage.success("PDF 试卷已上传，后台正在解析题目...");
+      emit("success", { textbookId: result.data.textbookId });
+    } else {
+      ElMessage.error(result.message || "PDF 上传失败");
+    }
+  } catch (error) {
+    console.error(TAG + " 格式化提交异常:", error);
+    const errMsg = error?.response?.data?.message || error.message || "上传失败";
+    ElMessage.error("格式化提交失败: " + errMsg);
   } finally {
     loading.value = false;
   }

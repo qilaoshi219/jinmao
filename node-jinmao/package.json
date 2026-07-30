@@ -1,6 +1,6 @@
 {
   "name": "jinmao",
-  "version": "1.23.0",
+  "version": "1.26.0",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -13,7 +13,6 @@
   "dependencies": {
     "@prisma/client": "^6.0.0",
     "@scalar/express-api-reference": "^0.10.11",
-    "adm-zip": "^0.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",

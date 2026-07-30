@@ -39,6 +39,7 @@ model User {
   quizReports      QuizReport[]         // 刷题报告
   quizUserAnswers  QuizUserAnswer[]     // 作答记录
   quizWrongQuestions QuizWrongQuestion[] // 错题本
+  quizBookBorrows    QuizBookBorrow[]    // 借用的题库
 
   @@map("User") // 映射数据库表名
 }
@@ -141,7 +142,7 @@ model billing_record {
   user_id              String   @db.VarChar(50)                            // 用户 ID（JWT 中的 userId 字符串）
   provider             String   @db.VarChar(20)                            // 提供商：deepseek / grsai / volcengine
   model                String   @db.VarChar(50)                            // 模型名称
-  call_tag             String   @db.VarChar(30)                            // 调用标签：elaboration / outline / title / getline / htmlppt / create_image / tts
+  call_tag             String   @db.VarChar(30)                            // 调用标签：elaboration / outline / title / getline / htmlppt / create_image / tts / doc2x
   status               String   @default("success") @db.VarChar(10)        // success / failed
   prompt_tokens        Int?                                                // 输入总 token 数（LLM 专用）
   cache_hit_tokens     Int?                                                // 缓存命中 token 数（LLM 专用）
@@ -152,12 +153,14 @@ model billing_record {
   image_resolution     String?   @db.VarChar(20)                           // 图片分辨率（文生图专用，仅日志记录）
   text_length          Int?                                                // 文本长度（字符数，TTS 专用）
   audio_duration       Float?                                              // 音频时长（秒，TTS 专用，可选）
+  page_count           Int?                                                // 页数（doc2x PDF解析专用）
   time_period          String    @default("default") @db.VarChar(20)       // 计费时段名称
   input_unit_price     Decimal?  @db.Decimal(18, 7)                        // 输入单价（元/百万tokens，缓存未命中）
   input_cache_hit_price Decimal? @db.Decimal(18, 7)                        // 输入单价（元/百万tokens，缓存命中，LLM 专用）
   output_unit_price    Decimal?  @db.Decimal(18, 7)                        // 输出单价（元/百万tokens，LLM 专用）
   image_unit_price     Decimal?  @db.Decimal(18, 7)                        // 图片单价（元/张，文生图专用）
   tts_unit_price       Decimal?  @db.Decimal(18, 7)                        // TTS 单价（元/字符，TTS 专用）
+  page_unit_price      Decimal?  @db.Decimal(18, 7)                        // 每页单价（元/页，doc2x 专用）
   input_cost           Decimal?  @db.Decimal(18, 7)                        // 输入费用（元）
   output_cost          Decimal?  @db.Decimal(18, 7)                        // 输出费用（元）
   total_cost           Decimal   @db.Decimal(18, 7)                        // 总费用（元）
@@ -180,6 +183,7 @@ model QuizTextbook {
   createTime     DateTime  @default(now()) @map("create_time")              // 创建时间
   updateTime     DateTime  @updatedAt @map("update_time")                   // 更新时间
   isDeleted      Boolean   @default(false) @map("is_deleted")               // 软删除标记
+  isShared       Boolean   @default(false) @map("is_shared")                // 是否共享到题库市场
   generatingTaskId String? @map("generating_task_id") @db.VarChar(36)       // 关联的后台生成任务ID（有值时表示正在生成中）
 
   user           User      @relation(fields: [userId], references: [id])    // 所属用户
@@ -188,6 +192,7 @@ model QuizTextbook {
   wrongQuestions QuizWrongQuestion[]                                         // 错题关联
   quizSessions   QuizSession[]                                               // 刷题会话
   quizReports    QuizReport[]                                                // 刷题报告
+  borrows        QuizBookBorrow[]                                            // 借用记录
 
   @@map("QuizTextbook")
 }
@@ -386,4 +391,20 @@ enum QuizReportItemStatus {
   RUNNING // 批改中
   DONE    // 已完成
   FAILED  // 失败
+}
+
+// ==================== 题库借用表 QuizBookBorrow ====================
+// 记录用户借用的共享题库，联合唯一约束 (userId, textbookId)
+// 借用者与被借用题库的多对多关联表
+model QuizBookBorrow {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt  // 记录ID，主键自增
+  userId     BigInt   @map("user_id") @db.UnsignedBigInt                // 借用者用户ID
+  textbookId BigInt   @map("textbook_id") @db.UnsignedBigInt            // 被借用的题库ID
+  createTime DateTime @default(now()) @map("create_time")               // 借用时间
+
+  user     User         @relation(fields: [userId], references: [id])       // 借用者
+  textbook QuizTextbook @relation(fields: [textbookId], references: [id])   // 题库
+
+  @@unique([userId, textbookId]) // 同一用户同一题库只能借用一次
+  @@map("QuizBookBorrow")
 }

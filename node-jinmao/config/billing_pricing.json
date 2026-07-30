@@ -21,6 +21,9 @@
           },
           "volcengine": {
             "seed-tts-2.0": { "per_char": 0.0002 }
+          },
+          "doc2x": {
+            "doc2x-api-v2": { "per_page": 0.02 }
           }
         }
       },
@@ -39,6 +42,9 @@
           },
           "volcengine": {
             "seed-tts-2.0": { "per_char": 0.00024 }
+          },
+          "doc2x": {
+            "doc2x-api-v2": { "per_page": 0.02 }
           }
         }
       },
@@ -57,6 +63,9 @@
           },
           "volcengine": {
             "seed-tts-2.0": { "per_char": 0.00016 }
+          },
+          "doc2x": {
+            "doc2x-api-v2": { "per_page": 0.02 }
           }
         }
       }

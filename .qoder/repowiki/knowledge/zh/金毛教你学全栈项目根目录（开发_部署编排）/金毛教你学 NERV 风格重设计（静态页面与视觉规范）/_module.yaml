@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: jinmao_redesign
+title: 金毛教你学 NERV 风格重设计（静态页面与视觉规范）
+scope:
+    - jinmao-nerv-redesign/
+source_files: []
+depends_on: []
+related_to: []
