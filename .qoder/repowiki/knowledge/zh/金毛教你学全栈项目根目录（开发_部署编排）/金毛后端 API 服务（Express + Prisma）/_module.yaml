@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_api
-title: 金毛后端 API 服务（Express + Prisma）
-scope:
-    - node-jinmao/
-source_files: []
-depends_on: []
-related_to: []
