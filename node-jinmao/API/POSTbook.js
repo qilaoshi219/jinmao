@@ -18,6 +18,8 @@ const path = require("path"); // 路径工具，用于解析文件扩展名
 const { uploadBook } = require("../service/POSTbook");
 // 导入 Repository 层：教材数据库操作
 const bookRepo = require("../utils/repo/book_repo");
+// 导入 doc2x 工具的本地 PDF 页数读取函数（纯本地读取，不调用外部 API）
+const { getPdfPageCountLocally } = require("../utils/doc2x");
 // 导入 JWT 鉴权中间件
 const { authenticateToken } = require("../middleware/auth");
 
@@ -121,7 +123,7 @@ function handleMulterError(err, res) {
  *     tags: [教材]
  *     summary: 上传教材文件
  *     description: |
- *       上传教材文件（PDF/DOCX/DOC/MD/ZIP/RAR/7Z），自动进行格式归一化处理并启动课程生成流水线。
+ *       上传教材文件（PDF/MD/ZIP/RAR/7Z），自动进行格式归一化处理并启动课程生成流水线。
  *       上传完成后立即返回教材 ID，后续可通过 GET /api/v1/book/{book_id}/status 查询处理进度。
  *     security:
  *       - bearerAuth: []
@@ -136,7 +138,7 @@ function handleMulterError(err, res) {
  *               file:
  *                 type: string
  *                 format: binary
- *                 description: 教材文件（最大 500MB，支持 pdf/docx/doc/md/zip/rar/7z）
+ *                 description: 教材文件（最大 500MB，支持 pdf/md/zip/rar/7z）
  *               name:
  *                 type: string
  *                 description: 教材名称（可选，默认取文件名）
@@ -180,7 +182,7 @@ function handleMulterError(err, res) {
  *               type: object
  *               properties:
  *                 code: { type: integer, example: 422 }
- *                 message: { type: string, example: "不支持的文件格式，仅支持 pdf/docx/doc/md/zip/rar/7z" }
+ *                 message: { type: string, example: "不支持的文件格式，仅支持 pdf/md/zip/rar/7z" }
  *       500:
  *         description: 服务器内部错误
  *         content:
@@ -617,6 +619,82 @@ router.get("/book/:book_id/progress", authenticateToken, async (req, res) => {
     });
   }
 });
+
+// ==================== 路由：PDF 页数检查 ====================
+
+/**
+ * POST /api/v1/book/check-pdf-pages — 检查 PDF 文件页数（不上传，仅校验）
+ *
+ * 鉴权由 authenticateToken 中间件完成。
+ * 使用 doc2x 模块的 getPdfPageCountLocally 函数，纯本地读取 PDF 二进制统计页数，
+ * 不调用任何外部 API，速度极快（毫秒级）。
+ *
+ * 请求格式：multipart/form-data
+ * 字段：
+ *   - file: PDF 文件（必传）
+ *
+ * 响应：{ code: 0, data: { pageCount, fileName } }
+ */
+router.post(
+  "/book/check-pdf-pages",
+  authenticateToken, // 第一步：JWT 鉴权
+  (req, res, next) => {
+    // 第二步：multer 处理文件上传
+    upload.single("file")(req, res, (err) => {
+      if (err) {
+        const handled = handleMulterError(err, res);
+        if (!handled) next(err);
+        return;
+      }
+
+      if (!req.file) {
+        console.log(TAG + "[POST /book/check-pdf-pages] 未提供文件");
+        return res.status(422).json({
+          code: 422,
+          message: "请上传 PDF 文件（字段名: file）",
+          data: null,
+        });
+      }
+
+      next();
+    });
+  },
+  async (req, res) => {
+    const TAG_LOCAL = TAG + "[POST /book/check-pdf-pages]";
+    console.log(TAG_LOCAL + " 收到 PDF 页数检查请求，文件名: " + req.file.originalname);
+
+    try {
+      // 校验文件扩展名是否为 PDF
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      if (ext !== ".pdf") {
+        console.log(TAG_LOCAL + " 非 PDF 文件，跳过页数检查: " + ext);
+        // 非 PDF 文件返回 0 页（不需要检查页数限制）
+        return res.status(200).json({
+          code: 0,
+          message: "非 PDF 文件，无需检查页数",
+          data: { pageCount: 0, fileName: req.file.originalname },
+        });
+      }
+
+      // 调用 doc2x 模块的 PDF 页数读取函数（pdf-parse = Mozilla pdfjs-dist，准确解析所有现代 PDF）
+      const pageCount = await getPdfPageCountLocally(req.file.path);
+      console.log(TAG_LOCAL + " PDF 页数: " + pageCount + " 页");
+
+      return res.status(200).json({
+        code: 0,
+        message: "页数检查完成",
+        data: { pageCount, fileName: req.file.originalname },
+      });
+    } catch (error) {
+      console.error(TAG_LOCAL + " 处理异常: " + error.message);
+      return res.status(500).json({
+        code: 500,
+        message: "页数检查失败: " + error.message,
+        data: null,
+      });
+    }
+  }
+);
 
 // 导出路由实例，供 app.js 挂载
 module.exports = router;

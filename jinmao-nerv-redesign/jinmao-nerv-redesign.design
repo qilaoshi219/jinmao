@@ -9,7 +9,14 @@
       "canvasData": {
         "x": 0,
         "y": 0,
-        "group": 0
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-85587ce3",
+          "measuredAt": 1785420612072
+        }
       },
       "devMetadata": {
         "htmlSrc": "pages/login-v2.html",
@@ -31,7 +38,14 @@
       "canvasData": {
         "x": 620,
         "y": 0,
-        "group": 0
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 933,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-a6b6ab4f",
+          "measuredAt": 1785420612072
+        }
       },
       "devMetadata": {
         "htmlSrc": "pages/home-v2.html",
@@ -64,6 +78,13 @@
         "windowSize": {
           "width": 1481,
           "height": 902
+        },
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 902,
+          "viewportWidth": 1481,
+          "sourceHash": "fnv1a-6098a5d2",
+          "measuredAt": 1785420612072
         }
       },
       "devMetadata": {

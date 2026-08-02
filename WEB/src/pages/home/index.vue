@@ -30,6 +30,8 @@
       @select="setActiveMenu"
       @upload="openUploadDialog"
       @navigate-billing="navigateToBilling"
+      @navigate-profile="navigateToProfile"
+      @navigate-redeem="navigateToRedeem"
     />
 
     <!-- ========== 右侧主区域 ========== -->
@@ -348,10 +350,15 @@
               <span class="text-blue-500 dark:text-blue-400 font-mono select-none" aria-hidden="true">&#x25E2;</span>
             </h2>
 
-            <!-- 导入题库按钮 -->
-            <el-button type="primary" @click="quizImportDialogVisible = true">
-              导入题库
-            </el-button>
+            <!-- 导入题库按钮（已隐藏，未来可能下架） -->
+            <div class="flex items-center gap-2">
+              <el-button @click="navigateToQuizImport">
+                文本导入
+              </el-button>
+              <!-- <el-button type="primary" @click="quizImportDialogVisible = true">
+                导入题库
+              </el-button> -->
+            </div>
           </div>
 
           <!-- 加载中 -->
@@ -376,6 +383,7 @@
               :key="tb.id"
               :textbook="tb"
               :task-progress="tb.generatingTaskId ? quizProgressMap[tb.generatingTaskId] : null"
+              @open="onOpenQuizTextbook"
               @start="onStartQuiz"
               @start-sequential="onStartSequentialQuiz"
               @delete="onDeleteQuizTextbook"

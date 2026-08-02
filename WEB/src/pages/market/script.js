@@ -4,6 +4,7 @@
 
 import { ref } from "vue";
 import { ElMessage } from "element-plus";
+import { Search } from "@element-plus/icons-vue";
 import { listMarketTextbooks, borrowTextbook } from "../../api/quiz";
 
 // 日志前缀
@@ -126,6 +127,8 @@ export default function useMarketScript() {
     pageSize,
     total,
     borrowingId,
+    // 图标
+    Search,
     // 方法
     loadMarketList,
     handleBorrow,

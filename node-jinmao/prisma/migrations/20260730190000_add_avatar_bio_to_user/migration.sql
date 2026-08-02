@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE `User` ADD COLUMN `avatar` VARCHAR(512) NULL;
+
+-- AlterTable
+ALTER TABLE `User` ADD COLUMN `bio` VARCHAR(200) NULL;

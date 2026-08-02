@@ -1,8 +1,52 @@
 <!DOCTYPE html>
 <!-- ==================== HTML 入口文件 ==================== -->
 <!-- Vite 构建时会自动处理 <script type="module"> 标签 -->
-<html lang="zh-CN">
+<html lang="zh-CN" class="preload">
   <head>
+    <!--
+    ==================== 防闪过渡抑制样式 ====================
+    html.preload 阶段禁用所有过渡动画，避免从亮色到暗黑的 500ms 渐变动画被用户感知。
+    DOM 就绪后由预加载脚本移除 preload class，恢复正常的主题切换过渡。
+    -->
+    <style>
+      html.preload,
+      html.preload *,
+      html.preload *::before,
+      html.preload *::after {
+        transition: none !important;
+        animation: none !important;
+      }
+    </style>
+    <!--
+    ==================== 暗黑模式预加载脚本 ====================
+    必须在任何内容渲染前执行，防止页面闪烁（FOUC）。
+    逻辑与 VueUse useDark 保持一致：
+      1. 优先读取 localStorage "app-theme" 键
+      2. 没有存储值时回退到系统 prefers-color-scheme
+      3. 立即设置 html.dark class，Tailwind dark: 变体生效
+      4. DOM 就绪后移除 html.preload class，恢复过渡动画
+    -->
+    <script>
+      (function() {
+        var html = document.documentElement;
+
+        // 1. 读取主题偏好，立即设置 dark class
+        var stored = localStorage.getItem("app-theme");
+        if (stored === "dark" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+          html.classList.add("dark");
+        }
+
+        // 2. DOM 就绪后移除 preload class，恢复过渡动画
+        function removePreload() {
+          html.classList.remove("preload");
+        }
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", removePreload);
+        } else {
+          removePreload();
+        }
+      })();
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

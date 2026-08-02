@@ -104,7 +104,7 @@ async function createMd2QuizTask(payload, userId) {
 
   // 6. 异步启动任务执行器（传入 markdownContent + pre-created IDs）
   setTimeout(() => {
-    runMarkdownJsonTask(taskId, payload.markdownContent, textbookId, examId)
+    runMarkdownJsonTask(taskId, payload.markdownContent, textbookId, examId, userId)
       .catch((err) => {
         console.error(TAG + " 任务执行器异常退出: " + err.message);
       });

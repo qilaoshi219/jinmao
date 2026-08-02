@@ -96,8 +96,13 @@
           <!-- 操作按钮 -->
           <div class="mt-3 pt-3 border-t border-[var(--color-border)]
                       transition-colors duration-500">
+            <!-- 自己的共享题库：显示标签 -->
+            <el-tag v-if="tb.isOwner" type="info" size="small" class="w-full justify-center">
+              自己的题库
+            </el-tag>
+            <!-- 已借用的题库：显示已借用 -->
             <el-button
-              v-if="tb.isBorrowed"
+              v-else-if="tb.isBorrowed"
               type="info"
               plain
               size="small"
@@ -106,6 +111,7 @@
             >
               已借用
             </el-button>
+            <!-- 可借用：显示借用按钮 -->
             <el-button
               v-else
               type="primary"
@@ -137,8 +143,8 @@
 
 <script setup>
 // 引用同目录下的独立业务逻辑文件
-// 注意：script.js 中使用 defineExpose 暴露给父组件的方法和属性
-import MarketScript from './script.js';
+// 注意：script.js 导出的是一个工厂函数，需要调用获取实例
+import useMarketScript from './script.js';
 const {
   marketList,
   loading,
@@ -147,11 +153,12 @@ const {
   pageSize,
   total,
   borrowingId,
+  Search,
   handleBorrow,
   handleSearch,
   handlePageChange,
   loadMarketList,
-} = MarketScript;
+} = useMarketScript();
 
 // 暴露 loadMarketList 给父组件在菜单切换时调用
 defineExpose({ loadMarketList });

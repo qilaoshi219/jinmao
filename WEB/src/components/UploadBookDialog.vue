@@ -144,7 +144,7 @@
             </p>
             <p class="text-gray-500 dark:text-gray-400 text-xs
                       transition-colors duration-500">
-              支持 PDF、DOCX、DOC、MD、ZIP、RAR、7Z（最大 500MB）
+              支持 PDF、MD、ZIP、RAR、7Z（最大 500MB）
             </p>
 
             <!-- 文件选择状态 -->
@@ -269,14 +269,14 @@
           取消
         </el-button>
 
-        <!-- 上传按钮：使用 :loading 防重复点击（设计规范规则4） -->
+        <!-- 上传按钮：余额锁定（欠费）时禁用并显示"余额不足"，防止无效上传（设计规范规则4） -->
         <el-button
           type="primary"
           :loading="isUploading"
-          :disabled="!selectedFile || isUploading"
+          :disabled="!selectedFile || isUploading || balanceLocked"
           @click="handleUpload"
         >
-          {{ isUploading ? '上传中...' : '上传' }}
+          {{ isUploading ? '上传中...' : (balanceLocked ? '余额不足' : '上传') }}
         </el-button>
       </div>
     </template>
@@ -288,15 +288,52 @@
 // 职责：管理文件选择、参数校验、调用 uploadBook API、成功/失败处理
 // 布局参考老项目 UploadCourseModal：左右两栏（268px 模式选择 + 上传区）
 
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { uploadBook } from "../api/books";
+import { getBilling } from "../api/billing"; // 账单 API（获取余额锁定状态，欠费时禁用上传）
+
+// pdfjs-dist：Mozilla 官方 PDF 解析库，用于准确读取 PDF 页数（处理压缩对象流等现代 PDF 特性）
+import * as pdfjsLib from "pdfjs-dist";
+// 设置 Worker 路径（Vite 构建时会将 worker 文件复制到 assets 目录）
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 // 日志前缀
 const TAG = "[UploadBookDialog]";
 
+// ==================== PDF 页数统计（pdfjs-dist 官方库，100% 准确） ====================
+
+/**
+ * 使用 Mozilla pdfjs-dist 库在浏览器端读取 PDF 页数
+ * 能正确处理压缩对象流、线性化 PDF、xref 流等所有现代 PDF 特性
+ * @param {File} file - PDF 文件对象
+ * @returns {Promise<number>} 页数
+ */
+async function getPdfPageCountInBrowser(file) {
+  // 将 File 转为 ArrayBuffer（pdfjs 需要原始二进制数据）
+  const arrayBuffer = await file.arrayBuffer();
+
+  // 创建 PDF 文档加载任务（disableAutoFetch 避免大文件预加载）
+  const loadingTask = pdfjsLib.getDocument({
+    data: arrayBuffer,
+    disableAutoFetch: true,
+    disableStream: true, // 一次性加载全部，避免流式解析在大文件上的内存问题
+  });
+
+  // 等待 PDF 解析完成，直接读取 numPages 属性
+  const pdf = await loadingTask.promise;
+  const numPages = pdf.numPages;
+
+  console.log(TAG + " [PDF页数] pdfjs 解析: " + numPages + " 页");
+  return numPages;
+}
+
 // ========== Props & Emits ==========
-defineProps({
+// 注意：需要 const props 持有 props 引用，供 watch(visible) 监听弹窗打开事件使用
+const props = defineProps({
   visible: {
     type: Boolean, // 弹窗是否可见（v-model）
     default: false,
@@ -322,6 +359,9 @@ const fileError = ref("");
 /** 上传中标识（防重复点击） */
 const isUploading = ref(false);
 
+/** 余额锁定状态（欠费不可生成时 true，由 billing 接口返回） */
+const balanceLocked = ref(false);
+
 /** 上传状态提示文字 */
 const uploadStatus = ref("");
 
@@ -346,10 +386,10 @@ const uploadRef = ref(null);
 // ========== 方法 ==========
 
 /**
- * 文件选择变化处理
- * 校验文件格式和大小
+ * 文件选择变化处理（异步，PDF 需等待页数预检）
+ * 校验文件格式和大小，PDF 文件额外检查页数（>100 页拒绝）
  */
-function handleFileChange(uploadFile) {
+async function handleFileChange(uploadFile) {
   fileError.value = "";
 
   // 检查是否有文件
@@ -383,6 +423,33 @@ function handleFileChange(uploadFile) {
     return;
   }
 
+  // ========== PDF 文件：纯前端检查页数（不上传文件，使用 FileReader 本地读取） ==========
+  // 策略：先读头 5MB / 尾 2MB / 全量扫描 /Count 元数据 → 兜底 /Type /Page 标记
+  if (ext === ".pdf") {
+    uploadStatus.value = "正在检查 PDF 页数...";
+    try {
+      const pageCount = await getPdfPageCountInBrowser(file);
+
+      if (pageCount > 100) {
+        // 超过 100 页，拒绝上传
+        fileError.value = "PDF 页数超过限制（当前 " + pageCount + " 页，最多允许 100 页）";
+        selectedFile.value = null;
+        uploadStatus.value = "";
+        if (uploadRef.value) {
+          uploadRef.value.clearFiles();
+        }
+        console.log(TAG + " PDF 页数超限: " + pageCount + " 页（最大 100 页）");
+        return;
+      }
+
+      console.log(TAG + " PDF 页数检查通过: " + pageCount + " 页");
+    } catch (err) {
+      // 页数检查失败不阻止上传，仅警告（避免文件读取异常阻断正常流程）
+      console.warn(TAG + " PDF 页数检查失败: " + err.message + "，跳过页数校验继续上传");
+    }
+    uploadStatus.value = "";
+  }
+
   // 校验通过，保存文件
   selectedFile.value = file;
   uploadStatus.value = "";
@@ -404,6 +471,22 @@ function handleFileRemove() {
   fileError.value = "";
   uploadStatus.value = "";
   console.log(TAG + " 文件已移除");
+}
+
+/**
+ * 检查用户余额锁定状态（欠费时禁用上传按钮）
+ * 每次弹窗打开时调用，保证充值/解锁后状态即时刷新
+ */
+async function checkBalanceStatus() {
+  try {
+    // 仅获取账务摘要（pageSize=1 最小化开销，与 HomeSidebar 一致）
+    const res = await getBilling(1, 1);
+    balanceLocked.value = !!(res.data && res.data.balanceLocked);
+    console.log(TAG + " 余额锁定状态: " + (balanceLocked.value ? "已锁定（欠费），禁用上传" : "正常，允许上传"));
+  } catch (err) {
+    // 余额检查失败不阻断上传流程，仅打印日志
+    console.warn(TAG + " 余额状态检查失败: " + (err.message || err));
+  }
 }
 
 /**
@@ -500,4 +583,19 @@ function resetForm() {
     uploadRef.value.clearFiles();
   }
 }
+
+// ==================== 生命周期 ====================
+// 组件常驻挂载（el-dialog destroy-on-close 仅销毁弹窗内容），
+// onMounted 只执行一次，必须配合 watch(visible) 在每次打开弹窗时刷新余额锁定状态
+onMounted(() => {
+  checkBalanceStatus();
+});
+
+// 弹窗每次打开时重新检查余额锁定状态（充值/解锁后立即生效）
+watch(
+  () => props.visible,
+  (val) => {
+    if (val) checkBalanceStatus();
+  }
+);
 </script>

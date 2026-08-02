@@ -192,16 +192,16 @@
                   class="inline-block w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400"></span>
             <span>{{ chapterLoading ? '内容加载中...' : (totalPages > 0 ? ('共 ' + totalPages + ' 页幻灯片') : '暂无内容') }}</span>
           </div>
-          <!-- 生成下一章按钮（当不存在生成中的章节且还有未生成的章节时显示） -->
+          <!-- 生成下一章按钮（始终显示，仅控制可点击状态和提示文本） -->
           <el-button
-            v-if="canGenerateNext"
             size="small"
             type="primary"
+            :disabled="generateBtnDisabled"
             :loading="isGeneratingChapter"
             @click="handleGenerateNextChapter"
             class="w-full !rounded-[10px] !text-xs"
           >
-            {{ isGeneratingChapter ? '创建中...' : '生成下一章' }}
+            {{ generateBtnText }}
           </el-button>
           <!-- 自动生成开关 -->
           <div class="flex items-center justify-between">

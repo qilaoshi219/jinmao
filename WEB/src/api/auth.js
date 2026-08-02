@@ -73,3 +73,23 @@ export async function updateProfile(fields) {
 
   return response.data;
 }
+
+/**
+ * 上传用户头像
+ * POST /api/v1/auth/avatar
+ * @param {File} file - 图片文件对象
+ * @returns {Promise} 后端返回 { code, message, data: { avatar: "url" } }
+ */
+export async function uploadAvatar(file) {
+  console.log(TAG + "[uploadAvatar] 请求上传头像");
+
+  const formData = new FormData();
+  formData.append("avatar", file);
+
+  const response = await apiClient.post("/auth/avatar", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  console.log(TAG + "[uploadAvatar] 响应: code=" + response.data.code);
+
+  return response.data;
+}

@@ -6,10 +6,14 @@
 //   POST /api/v1/login           — 验证码登录/注册
 //   GET  /api/v1/auth/profile   — 获取当前用户信息（需 Token）
 //   PUT  /api/v1/auth/profile   — 更新当前用户信息（需 Token + 邮箱验证码）
+//   POST /api/v1/auth/avatar    — 上传用户头像（需 Token）
 
 const express = require("express"); // Express 框架
 const router = express.Router(); // 创建路由实例
+const multer = require("multer"); // multipart/form-data 文件上传处理
+const os = require("os"); // 操作系统工具，用于获取临时目录
 const authService = require("../service/auth"); // 认证业务逻辑服务
+const { uploadAvatar } = require("../service/auth/avatar"); // 头像上传服务
 const { authenticateToken } = require("../middleware/auth"); // JWT 鉴权中间件
 
 // 日志前缀
@@ -431,6 +435,49 @@ router.put("/auth/profile", authenticateToken, async (req, res) => {
   const httpStatus = statusMap[result.code] || 500;
 
   console.log(TAG + "[PUT /auth/profile] 响应: code=" + result.code + ", message=" + (result.message || "ok"));
+  return res.status(httpStatus).json(result);
+});
+
+// ==================== Multer 头像上传配置 ====================
+
+// 允许的图片 MIME 类型
+const AVATAR_ALLOWED_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+// 创建头像上传 multer 实例
+const avatarUpload = multer({
+  dest: os.tmpdir(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    if (AVATAR_ALLOWED_MIME.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("仅支持 PNG、JPEG、WebP、GIF 格式的图片。"), false);
+    }
+  },
+});
+
+/**
+ * POST /api/v1/auth/avatar — 上传用户头像（需 Token）
+ * Content-Type: multipart/form-data，字段名 avatar
+ * 响应：{ code: 200, data: { avatar: "url" } }
+ */
+router.post("/auth/avatar", authenticateToken, avatarUpload.single("avatar"), async (req, res) => {
+  console.log(TAG + "[POST /auth/avatar] 收到头像上传请求，userId: " + req.userId);
+
+  // Multer 错误处理（文件类型不符等）
+  if (req.fileValidationError) {
+    return res.status(400).json({ code: 400, message: req.fileValidationError });
+  }
+
+  // 调用 Service 层执行业务逻辑
+  const result = await uploadAvatar(req.userId, req.file);
+
+  const statusMap = { 200: 200, 400: 400, 500: 500 };
+  const httpStatus = statusMap[result.code] || 500;
+
+  console.log(TAG + "[POST /auth/avatar] 响应: code=" + result.code + ", message=" + (result.message || "ok"));
   return res.status(httpStatus).json(result);
 });
 

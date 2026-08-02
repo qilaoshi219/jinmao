@@ -1,9 +1,10 @@
 // ==================== Axios HTTP 客户端封装 ====================
 // 职责：创建统一的 Axios 实例，配置请求/响应拦截器
 // 请求拦截器：自动附加 JWT Token
-// 响应拦截器：统一处理 401 未授权错误
+// 响应拦截器：统一处理 401 未授权错误、402 余额不足全局弹窗
 
 import axios from "axios"; // HTTP 请求库
+import { ElMessage } from "element-plus"; // Element Plus 消息提示（命令式 API，不依赖 Vue 上下文）
 
 // 日志前缀
 const TAG = "[api_client]";
@@ -54,6 +55,23 @@ apiClient.interceptors.response.use(
         localStorage.removeItem("token");
         // 跳转到登录页（后续页面开发后生效）
         window.location.href = "/login";
+      }
+
+      // 402 余额不足：全局弹窗提示，无需各组件单独处理
+      if (status === 402) {
+        const serverMessage = data?.message || "余额不足，请充值后再试。";
+        const balance = data?.data?.balance;
+        const balanceStr = balance ? `（当前余额：¥${parseFloat(balance).toFixed(2)}）` : "";
+
+        console.warn(TAG + "[response] 402 余额不足: " + serverMessage);
+
+        // 使用 Element Plus ElMessage 全局弹窗（命令式 API，自动挂载到 body）
+        ElMessage({
+          message: serverMessage + balanceStr,
+          type: "warning",
+          duration: 5000,
+          showClose: true,
+        });
       }
 
       // 打印服务端返回的错误信息（便于调试）

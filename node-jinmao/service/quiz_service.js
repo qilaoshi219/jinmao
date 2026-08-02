@@ -625,6 +625,146 @@ async function completeRandomSession(userId, sessionId) {
   };
 }
 
+// ==================== 基于试卷的刷题会话 ====================
+
+/**
+ * 基于试卷开始顺序刷题（按 sortOrder 升序出题）
+ * @param {string} userId - 用户ID
+ * @param {string} examId - 试卷ID
+ * @returns {Promise<{sessionId, examId, examName, totalCount, status, createdFrom}>}
+ */
+async function startExamSequentialSession(userId, examId) {
+  console.log(TAG + " startExamSequentialSession — userId: " + userId + ", examId: " + examId);
+
+  // 1. 验证试卷存在
+  const prisma = require("../utils/prisma");
+  const exam = await prisma.quizExam.findFirst({
+    where: { id: BigInt(examId) },
+    include: { textbook: { select: { id: true, name: true } } },
+  });
+
+  if (!exam) {
+    throw new Error("EXAM_NOT_FOUND");
+  }
+
+  const textbookId = exam.textbookId.toString();
+  const textbookName = exam.textbook?.name || "未知题库";
+
+  // 2. 检查是否存在进行中的顺序刷题会话
+  const existingSession = await quizRepo.findActiveExamSession(userId, examId, "SEQUENTIAL");
+  if (existingSession) {
+    console.log(TAG + " 命中未完成顺序刷题会话 — sessionId: " + existingSession.id);
+    return {
+      sessionId: existingSession.id.toString(),
+      examId: examId,
+      examName: exam.name,
+      textbookId: textbookId,
+      textbookName: textbookName,
+      totalCount: existingSession.totalCount,
+      status: existingSession.status,
+      createdFrom: "existing",
+    };
+  }
+
+  // 3. 按顺序获取试卷下所有题目
+  const allIds = await quizRepo.getAllQuestionIdsByExamId(examId);
+  if (allIds.length === 0) {
+    throw new Error("NO_QUESTIONS_AVAILABLE");
+  }
+
+  // 4. 创建新会话
+  const session = await quizRepo.createQuizSession({
+    userId,
+    textbookId,
+    examId,
+    mode: "SEQUENTIAL",
+    questionIds: allIds,
+    totalCount: allIds.length,
+  });
+
+  console.log(TAG + " 顺序刷题会话创建成功（试卷维度）— sessionId: " + session.id + ", 题目数: " + allIds.length);
+
+  return {
+    sessionId: session.id.toString(),
+    examId: examId,
+    examName: exam.name,
+    textbookId: textbookId,
+    textbookName: textbookName,
+    totalCount: session.totalCount,
+    status: session.status,
+    createdFrom: "new",
+  };
+}
+
+/**
+ * 基于试卷开始随机刷题（每种题型随机抽取最多5题）
+ * @param {string} userId - 用户ID
+ * @param {string} examId - 试卷ID
+ * @returns {Promise<{sessionId, examId, examName, totalCount, status, createdFrom}>}
+ */
+async function startExamRandomSession(userId, examId) {
+  console.log(TAG + " startExamRandomSession — userId: " + userId + ", examId: " + examId);
+
+  // 1. 验证试卷存在
+  const prisma = require("../utils/prisma");
+  const exam = await prisma.quizExam.findFirst({
+    where: { id: BigInt(examId) },
+    include: { textbook: { select: { id: true, name: true } } },
+  });
+
+  if (!exam) {
+    throw new Error("EXAM_NOT_FOUND");
+  }
+
+  const textbookId = exam.textbookId.toString();
+  const textbookName = exam.textbook?.name || "未知题库";
+
+  // 2. 检查是否存在进行中的随机刷题会话
+  const existingSession = await quizRepo.findActiveExamSession(userId, examId, "RANDOM");
+  if (existingSession) {
+    console.log(TAG + " 命中未完成随机刷题会话 — sessionId: " + existingSession.id);
+    return {
+      sessionId: existingSession.id.toString(),
+      examId: examId,
+      examName: exam.name,
+      textbookId: textbookId,
+      textbookName: textbookName,
+      totalCount: existingSession.totalCount,
+      status: existingSession.status,
+      createdFrom: "existing",
+    };
+  }
+
+  // 3. 按题型随机抽取题目
+  const sampledIds = await quizRepo.sampleQuestionIdsByExamId(examId);
+  if (sampledIds.length === 0) {
+    throw new Error("NO_QUESTIONS_AVAILABLE");
+  }
+
+  // 4. 创建新会话
+  const session = await quizRepo.createQuizSession({
+    userId,
+    textbookId,
+    examId,
+    mode: "RANDOM",
+    questionIds: sampledIds,
+    totalCount: sampledIds.length,
+  });
+
+  console.log(TAG + " 随机刷题会话创建成功（试卷维度）— sessionId: " + session.id + ", 题目数: " + sampledIds.length);
+
+  return {
+    sessionId: session.id.toString(),
+    examId: examId,
+    examName: exam.name,
+    textbookId: textbookId,
+    textbookName: textbookName,
+    totalCount: session.totalCount,
+    status: session.status,
+    createdFrom: "new",
+  };
+}
+
 module.exports = {
   getRandomSessionStatus,
   startRandomSession,
@@ -636,6 +776,9 @@ module.exports = {
   getSequentialSessionDetail: getRandomSessionDetail,
   saveSequentialSessionProgress: saveRandomSessionProgress,
   completeSequentialSession: completeRandomSession,
+  // 基于试卷的刷题
+  startExamSequentialSession,
+  startExamRandomSession,
   evaluateAnswer,
   RANDOM_QUESTIONS_PER_TYPE,
 };

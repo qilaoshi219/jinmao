@@ -8,8 +8,8 @@ const path = require("path");
 const prisma = require("../../utils/prisma");
 const quizRepo = require("../../repo/quiz_repo");
 const { recordTokenUsage } = require("../../utils/billing");
+const { chatStream } = require("../../utils/llm_client");
 const { chunkMarkdownByLineThreshold } = require("./chunker");
-const { requestDeepseekJsonCompletionStream } = require("./deepseek-client");
 const { validateQuestionBlockResult } = require("./result-validator");
 const { updateTask } = require("./task-store");
 // 新增：AI 无损分块模块
@@ -183,7 +183,7 @@ function buildCorrectionPrompt({ errorMessage, chunk, generationConfig }) {
  * @param {import("./types").GenerationConfig} params.generationConfig
  * @returns {Promise<import("./types").ValidationSuccess>}
  */
-async function generateQuestionsForChunk({ taskId, promptTemplate, chunk, generationConfig }) {
+async function generateQuestionsForChunk({ taskId, promptTemplate, chunk, generationConfig, userId }) {
   /** @type {import("./types").DeepseekMessage[]} */
   const messages = [
     {
@@ -251,12 +251,15 @@ async function generateQuestionsForChunk({ taskId, promptTemplate, chunk, genera
 
     let completionResult;
     try {
-      completionResult = await requestDeepseekJsonCompletionStream(messages, {
+      completionResult = await chatStream(userId, "md2quiz_generate", {
+        modelSize: "big",
+        messages,
         onDelta(deltaText) {
           currentChunkStreamed += deltaText.length;
           pendingStreamDelta += deltaText.length;
           flushPendingStream(false);
         },
+        response_format: { type: "json_object" },
       });
       flushPendingStream(true);
     } catch (error) {
@@ -422,9 +425,90 @@ function mergeResults(questionMap, answerMap, completeQuestions) {
   const usedAnswerIds = new Set();
   const mergeWarnings = [];
 
-  // 2. 将答案按题号填入题目
+  // ---- 1.5 预处理：按题型对 questionMap 建索引，支持题型前缀匹配 ----
+  // AI 有时会在答案块中使用题型前缀键（如"单5""多3""判7""简1"），
+  // 这是因为它看到不同类型的题有重复编号（都从1开始），
+  // 这里建立 (type, localIndex) → questionObj 的映射来解决此问题
+  /** @type {Record<string, {id: number, q: Object}[]>} */
+  const questionsByType = {};
   for (const [id, q] of questionMap.entries()) {
-    const rawAnswer = answerMap.get(String(id));
+    const t = q.type || "short_answer";
+    if (!questionsByType[t]) questionsByType[t] = [];
+    questionsByType[t].push({ id, q });
+  }
+  // 每种题型内按 id 排序，保证"第 X 道单选题"的语义正确
+  for (const t of Object.keys(questionsByType)) {
+    questionsByType[t].sort((a, b) => a.id - b.id);
+  }
+
+  // 题型前缀 → 标准 type 映射表（同时支持中文缩写和英文全名，防御 AI 返回不同格式）
+  const PREFIX_TO_TYPE = {
+    "单": "single",
+    "多": "multiple",
+    "判": "judge",
+    "简": "short_answer",
+    "填": "fill",
+    // 英文类型名（AI 可能使用英文作为前缀，如 "single5"）
+    "single": "single",
+    "multiple": "multiple",
+    "judge": "judge",
+    "fill": "fill",
+    "short_answer": "short_answer"
+  };
+
+  /**
+   * 将带题型前缀的答案键转换为纯数字 ID
+   * 例如 "单5" → 在 single 题中按 id 排序后第 5 道题的 id
+   * @param {string} key - 原始答案键（可能含题型前缀）
+   * @param {string} answer - 答案值
+   * @returns {number|null} 匹配到的题目 id，失败返回 null
+   */
+  function resolvePrefixedKey(key, answer) {
+    if (/^\d+$/.test(key)) {
+      // 纯数字键，直接返回（不需要前缀解析）
+      return parseInt(key, 10);
+    }
+
+    for (const [prefix, type] of Object.entries(PREFIX_TO_TYPE)) {
+      if (!key.startsWith(prefix)) continue;
+      const numStr = key.slice(prefix.length);
+      if (!/^\d+$/.test(numStr)) continue;
+
+      const localIndex = parseInt(numStr, 10);
+      const typedQuestions = questionsByType[type];
+      if (!typedQuestions || localIndex < 1 || localIndex > typedQuestions.length) {
+        // 该题型下没有足够的题目（题目可能未被识别或尚未解析）
+        console.warn(TAG + " 前缀键 \"" + key + "\" (type=" + type + ", idx=" + localIndex + ") 在该题型下无对应题目（共 " + (typedQuestions?.length || 0) + " 题），跳过匹配");
+        return null;
+      }
+
+      const matched = typedQuestions[localIndex - 1]; // 0-based 索引
+      console.log(TAG + " 题型前缀匹配: \"" + key + "\"(\"" + answer + "\") → 题目 id=" + matched.id + " (type=" + type + ")");
+      return matched.id;
+    }
+
+    // 无法解析的前缀键
+    mergeWarnings.push("答案键 \"" + key + "\" 格式无法识别，既非纯数字也非已知题型前缀");
+    return null;
+  }
+
+  // ---- 2. 预处理 answerMap：将题型前缀键解析为纯数字 ID ----
+  /** @type {Map<number, string>} */
+  const resolvedAnswers = new Map();
+  for (const [rawKey, answer] of answerMap.entries()) {
+    const resolvedId = resolvePrefixedKey(rawKey, answer);
+    if (resolvedId !== null) {
+      resolvedAnswers.set(resolvedId, answer);
+    }
+  }
+
+  // ---- 3. 将答案按题号填入题目 ----
+  for (const [id, q] of questionMap.entries()) {
+    // 优先从解析后的答案中查找，兜底用原始 answerMap（兼容旧格式）
+    let rawAnswer = resolvedAnswers.get(id);
+    if (rawAnswer === undefined) {
+      rawAnswer = answerMap.get(String(id));
+    }
 
     if (rawAnswer !== undefined) {
       // 找到匹配答案 → 归一化后填入
@@ -438,17 +522,24 @@ function mergeResults(questionMap, answerMap, completeQuestions) {
     mergedQuestions.push(q);
   }
 
-  // 3. 检查未被使用的答案（有答案但无题目）
+  // ---- 4. 检查未被使用的答案（有答案但无题目） ----
+  for (const [id, answer] of answerMap.entries()) {
+    // 如果该答案键已经被前缀解析匹配过，跳过（不再报"未使用"警告）
+    const resolvedId = resolvePrefixedKey(id, answer);
+    if (resolvedId !== null && usedAnswerIds.has(String(resolvedId))) {
+      usedAnswerIds.add(id); // 标记原始键，防止下面重复报错
+    }
+  }
   for (const [id, answer] of answerMap.entries()) {
     if (!usedAnswerIds.has(id)) {
       mergeWarnings.push("答案 #" + id + "（\"" + answer + "\"）未匹配到对应题目");
     }
   }
 
-  // 4. 按 id 排序
+  // ---- 5. 按 id 排序 ----
   mergedQuestions.sort((a, b) => (a.id || 0) - (b.id || 0));
 
-  // 5. 入库前最终校验：选择题选项完整性
+  // ---- 6. 入库前最终校验：选择题选项完整性 ----
   for (const q of mergedQuestions) {
     if ((q.type === "single" || q.type === "multiple") &&
         (!Array.isArray(q.options) || q.options.length < 2)) {
@@ -457,7 +548,12 @@ function mergeResults(questionMap, answerMap, completeQuestions) {
   }
 
   console.log(TAG + " 合并完成 — 总计 " + mergedQuestions.length + " 题（完整题 " + completeQuestions.length + " + 匹配题 " + (mergedQuestions.length - completeQuestions.length) + "）");
-  console.log(TAG + " 答案匹配: " + usedAnswerIds.size + " 条成功, " + (answerMap.size - usedAnswerIds.size) + " 条未使用");
+  // 统计真正未使用的答案（不在 usedAnswerIds 中的原始 answerMap key）
+  const unusedKeys = [];
+  for (const key of answerMap.keys()) {
+    if (!usedAnswerIds.has(key)) unusedKeys.push(key);
+  }
+  console.log(TAG + " 答案匹配: " + usedAnswerIds.size + " 条已追踪, " + unusedKeys.length + " 条未使用");
   console.log(TAG + " 合并警告: " + mergeWarnings.length + " 条");
 
   return { mergedQuestions, mergeWarnings };
@@ -575,7 +671,7 @@ function normalizeAnswer(q) {
  * @param {bigint} textbookId          - 预创建的题库 ID
  * @param {bigint} examId              - 预创建的试卷 ID
  */
-async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) {
+async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId, userId) {
   console.log(TAG + " [generate] ========== 任务开始执行 ==========", { taskId });
 
   try {
@@ -606,7 +702,7 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
         "开始 AI 无损分段。"
       );
 
-      const chunks = await splitQuizIntoChunks(markdownContent);
+      const chunks = await splitQuizIntoChunks(markdownContent, userId);
 
       updateTaskProgress(
         taskId,
@@ -620,7 +716,7 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
 
       // ---- 阶段 3：分块处理器 ----
       const { questionMap, answerMap, completeQuestions, allWarnings } =
-        await processAllChunks(chunks);
+        await processAllChunks(chunks, userId);
 
       allPipelineWarnings.push(...allWarnings);
 
@@ -677,6 +773,7 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
           promptTemplate,
           chunk,
           generationConfig: getCurrentTask(taskId).generationConfig,
+          userId,
         });
 
         totalGeneratedCountByType = addGeneratedCount(
@@ -798,6 +895,16 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
       pipeline: usedNewPipeline ? "AI无损分块" : "传统盲切(降级)",
       warnings: allPipelineWarnings.length,
     });
+
+    // ========== 后置余额检查：任务完成后若余额为负则锁定用户 ==========
+    const { lockUserIfNegative } = require("../../utils/balance");
+    lockUserIfNegative(userId).then(locked => {
+      if (locked) {
+        console.log(TAG + " ⚠️ 用户 " + userId + " 余额已为负，已锁定！请尽快充值。");
+      }
+    }).catch(err => {
+      console.error(TAG + " 后置余额检查异常: " + err.message);
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "任务执行失败。";
@@ -827,6 +934,10 @@ async function runMarkdownJsonTask(taskId, markdownContent, textbookId, examId) 
       recentEvents: appendRecentEvent(t, "任务失败：" + message),
       updatedAt: new Date().toISOString(),
     }));
+
+    // ========== 后置余额检查：即使任务失败，已产生的 AI 费用也可能导致余额变负 ==========
+    const { lockUserIfNegative } = require("../../utils/balance");
+    lockUserIfNegative(userId).catch(() => {});
   }
 }
 
@@ -841,4 +952,4 @@ function getCurrentTask(taskId) {
   return task;
 }
 
-module.exports = { runMarkdownJsonTask };
+module.exports = { runMarkdownJsonTask, mergeResults, normalizeAnswerFromRaw };

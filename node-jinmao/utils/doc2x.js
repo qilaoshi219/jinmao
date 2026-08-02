@@ -17,7 +17,7 @@
 //   code 502 — API 返回数据解析失败
 //   code 504 — 配置加载失败（doc2x 配置不存在或格式错误）
 //
-// 依赖：Node.js 内置模块 https、http、fs、path
+// 依赖：Node.js 内置模块 https、http、fs、path + pdf-parse（Mozilla pdfjs-dist）
 // 配置：config/doc2x_config.json（DOC2X_API_KEY / DOC2X_API_BASE）
 // API 参考：doc/Doc2x-API-v2-PDF-接口文档最新版.md
 
@@ -25,6 +25,7 @@ const https = require("https");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { PDFParse } = require("pdf-parse"); // Mozilla pdfjs-dist 封装，用于准确读取 PDF 页数（处理压缩对象流等所有现代 PDF 特性）
 const { validateString } = require("./input_validator");
 const { doc2x: doc2xConfig } = require("../config"); // 统一配置入口（敏感字段从 .env 注入）
 
@@ -238,6 +239,7 @@ function uploadFileToOss(uploadUrl, filePath) {
 
 /**
  * 轮询 Doc2x 解析任务状态，直到成功或失败
+ * 注意：Doc2x API 不会返回页数，页数由调用方从 PDF 本地读取
  * @param {string} baseUrl - Doc2x API Base URL
  * @param {string} apiKey - API Key
  * @param {string} uid - 任务 ID
@@ -263,11 +265,8 @@ async function pollParseStatus(baseUrl, apiKey, uid, maxWaitMs, intervalMs) {
     console.log("[doc2x][pollParseStatus] 解析状态: " + status + "，进度: " + (statusData.progress || 0) + "%");
 
     if (status === "success") {
-      // 获取页数（doc2x API 返回 result.pages 数组，每页一个元素）
-      const pages = statusData.result?.pages;
-      const pageCount = Array.isArray(pages) ? pages.length : 0;
-      console.log("[doc2x][pollParseStatus] PDF 解析完成，页数: " + pageCount);
-      return { success: true, pageCount };
+      console.log("[doc2x][pollParseStatus] PDF 解析完成。");
+      return { success: true };
     }
 
     if (status === "failed") {
@@ -338,19 +337,46 @@ async function pollExportResult(baseUrl, apiKey, uid, maxWaitMs, intervalMs) {
   return { success: false, errorCode: 500, error: errMsg };
 }
 
+// ==================== PDF 页数读取 ====================
+
+/**
+ * 从 PDF 文件中读取页数（使用 pdf-parse = Mozilla pdfjs-dist）
+ * 能正确处理压缩对象流（ObjStm）、线性化 PDF、xref 流等所有现代 PDF 特性
+ * 参考前端 UploadBookDialog.vue 中 getPdfPageCountInBrowser() 的成功模式
+ * Doc2x API 不会返回页数信息，因此必须从 PDF 文件本身读取
+ *
+ * @param {string} pdfFilePath - PDF 文件绝对路径
+ * @returns {Promise<number>} 页数，读取失败返回 0
+ */
+async function getPdfPageCountLocally(pdfFilePath) {
+  try {
+    console.log("[doc2x][getPdfPageCountLocally] 使用 pdf-parse (PDFParse) 解析 PDF...");
+    const buf = fs.readFileSync(pdfFilePath);
+    const pdf = new PDFParse({ data: buf });
+    const info = await pdf.getInfo();
+    const count = info.total || 0;
+    console.log("[doc2x][getPdfPageCountLocally] PDF 页数: " + count);
+    return count;
+  } catch (err) {
+    console.error("[doc2x][getPdfPageCountLocally] 读取 PDF 页数失败: " + err.message);
+    return 0;
+  }
+}
+
 // ==================== 核心转换函数 ====================
 
 /**
  * 将本地 PDF 文件通过 Doc2x API 转换为 Markdown 压缩包，返回下载链接
  *
  * 完整流程：
+ *   0. 从 PDF 文件读取页数（pdf-parse = Mozilla pdfjs-dist，用于计费）
  *   1. 输入校验 → 2. 加载配置 → 3. 预上传获取 URL → 4. 上传文件到 OSS
  *   → 5. 轮询解析状态 → 6. 触发导出 → 7. 轮询导出结果 → 返回下载链接
  *
  * @param {string} localPdfPath - 本地 PDF 文件绝对路径
  * @returns {Promise<{ code: number, downloadUrl?: string, pageCount?: number, message?: string }>}
  *   始终返回对象，不会抛出异常：
- *   - code 200 时 downloadUrl 和 pageCount 有值，可直接使用
+ *   - code 200 时 downloadUrl 和 pageCount（pdf-parse 读取）有值，可直接使用
  *   - code ≥ 400 时通过 message 了解失败原因
  */
 async function main(localPdfPath) {
@@ -384,6 +410,11 @@ async function main(localPdfPath) {
   }
 
   console.log("[doc2x][main] 输入验证通过，文件路径: " + absolutePath);
+
+  // ========== 第一步附：从 PDF 文件读取页数（用于计费） ==========
+  // Doc2x API 不会返回页数，使用 pdf-parse（Mozilla pdfjs-dist）准确读取
+  const pageCount = await getPdfPageCountLocally(absolutePath);
+  console.log("[doc2x][main] PDF 页数: " + pageCount);
 
   // ========== 第二步：校验配置完整性 ==========
   // 配置已通过统一入口 config/index.js 加载（敏感字段从 .env 注入）
@@ -423,7 +454,6 @@ async function main(localPdfPath) {
   if (!parseResult.success) {
     return { code: parseResult.errorCode, message: parseResult.error };
   }
-  const pageCount = parseResult.pageCount || 0; // 提取页数，用于后续计费
 
   // ========== 第六步：触发 Markdown 导出 ==========
   console.log("[doc2x][main] 步骤 4/5：触发 Markdown 导出...");
@@ -456,4 +486,4 @@ async function main(localPdfPath) {
 }
 
 // ==================== 模块导出 ====================
-module.exports = { convertPdfToMarkdown: main };
+module.exports = { convertPdfToMarkdown: main, getPdfPageCountLocally };

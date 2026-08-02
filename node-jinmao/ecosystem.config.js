@@ -36,10 +36,10 @@ module.exports = {
       // 执行模式：fork 适合单进程，cluster 适合多核负载均衡
       exec_mode: "fork",
 
-      // 环境变量注入（生产环境标识 + 端口号）
+      // 环境变量注入（端口由各环境 .env 中的 PORT 控制：测试 8888 / 生产 8889，
+      // 不在 PM2 层硬编码，避免 PM2 注入的 PORT 覆盖 .env 中配置的端口）
       env: {
         NODE_ENV: "production",
-        PORT: 8888,
       },
 
       // ========== 自动重启策略 ==========

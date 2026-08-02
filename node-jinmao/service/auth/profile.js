@@ -54,6 +54,8 @@ async function getProfile(userId) {
     nickname: user.nickname,         // 可能为 null
     email: user.email,               // 一定存在
     phone: user.phone,               // 可能为 null
+    avatar: user.avatar,             // 头像 URL（MinIO 存储路径），可能为 null
+    bio: user.bio,                   // 个性签名，可能为 null
     role: user.role,                 // 默认 "user"
     vipLevel: user.vipLevel,         // VIP 等级：free / vip1 / vip2 / vip3
     balance: String(user.balance),   // 余额（Decimal → String，精确到小数点后 7 位）
@@ -88,7 +90,7 @@ async function getProfile(userId) {
 async function updateProfile(userId, body) {
   console.log(TAG + "[updateProfile] 收到更新用户信息请求，userId: " + userId);
 
-  const { nickname, phone, password, code } = body;
+  const { username, nickname, phone, password, bio, code } = body;
 
   // ========== 1. 验证码必填校验 ==========
   if (!code) {
@@ -97,21 +99,30 @@ async function updateProfile(userId, body) {
   }
 
   // ========== 2. 构建可更新字段列表，检查是否至少有一个更新字段 ==========
-  // 可更新的字段白名单，排除 username 和 email
+  // 可更新的字段白名单：username, nickname, bio, phone, password（email 和 avatar 不可通过此接口修改）
   const updateFields = {};
+  if (username !== undefined && username !== null) updateFields.username = username;
   if (nickname !== undefined && nickname !== null) updateFields.nickname = nickname;
+  if (bio !== undefined && bio !== null) updateFields.bio = bio;
   if (phone !== undefined && phone !== null) updateFields.phone = phone;
   if (password !== undefined && password !== null) updateFields.password = password;
 
   // 检查是否有至少一个非 code 的更新字段
   if (Object.keys(updateFields).length === 0) {
     console.log(TAG + "[updateProfile] 没有提供任何更新字段，userId: " + userId);
-    return { code: 400, message: "没有提供需要更新的字段，请至少提供 nickname、phone 或 password 中的一个。" };
+    return { code: 400, message: "没有提供需要更新的字段，请至少提供 username、nickname、bio、phone 或 password 中的一个。" };
   }
 
   // ========== 3. 输入校验（对每个更新字段进行安全检查） ==========
   const fieldsToValidate = {};
   // 动态构建校验配置
+  if (updateFields.username !== undefined) {
+    fieldsToValidate.username = {
+      value: updateFields.username,
+      type: "string",
+      options: { maxLength: 50, required: true, checkInjection: true, checkDangerousChars: true },
+    };
+  }
   if (updateFields.nickname !== undefined) {
     fieldsToValidate.nickname = {
       value: updateFields.nickname,
@@ -124,6 +135,13 @@ async function updateProfile(userId, body) {
       value: updateFields.phone,
       type: "string",
       options: { maxLength: 20, required: true, checkInjection: true, checkDangerousChars: true },
+    };
+  }
+  if (updateFields.bio !== undefined) {
+    fieldsToValidate.bio = {
+      value: updateFields.bio,
+      type: "string",
+      options: { maxLength: 200, required: true, checkInjection: true, checkDangerousChars: true },
     };
   }
   if (updateFields.password !== undefined) {
@@ -205,6 +223,8 @@ async function updateProfile(userId, body) {
     nickname: updatedUser.nickname,            // 可能为 null
     email: updatedUser.email,                  // 一定存在
     phone: updatedUser.phone,                  // 可能为 null
+    avatar: updatedUser.avatar,                // 头像 URL
+    bio: updatedUser.bio,                      // 个性签名
     role: updatedUser.role,                    // 默认 "user"
     vipLevel: updatedUser.vipLevel,            // VIP 等级
     balance: String(updatedUser.balance),      // 余额（Decimal → String）

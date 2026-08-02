@@ -78,14 +78,25 @@
                       border flex items-center justify-between"
                :style="{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border)' }">
             <div>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-1 transition-colors duration-500">余额</p>
+              <div class="flex items-center gap-2 mb-1">
+                <p class="text-xs text-gray-500 dark:text-gray-400 transition-colors duration-500">余额</p>
+                <!-- 锁定状态标记 -->
+                <span v-if="balanceLocked"
+                      class="text-[10px] px-1.5 py-0.5 rounded-[4px]
+                             bg-red-50 dark:bg-red-900/30
+                             text-red-500 dark:text-red-400
+                             border border-red-200 dark:border-red-800
+                             font-medium">
+                  已锁定
+                </span>
+              </div>
               <p class="text-lg font-bold text-black dark:text-white transition-colors duration-500">
                 ¥{{ formattedBalance }}
               </p>
             </div>
-            <!-- 去充值按钮：醒目样式，置于余额右侧 -->
-            <el-button type="warning" size="large" round disabled>
-              去充值
+            <!-- 去兑换码按钮：点击跳转到兑换码输入页面（充值已迁移到兑换码系统） -->
+            <el-button type="warning" size="large" round @click="goRedeem">
+              去兑换码
             </el-button>
           </div>
 
@@ -153,13 +164,33 @@
             </el-table-column>
 
             <!-- 状态列 -->
-            <el-table-column label="状态" width="100" align="center">
+            <el-table-column label="状态" width="120" align="center">
               <template #default="{ row }">
+                <el-tooltip
+                  v-if="row.status === 'failed' && row.errorMessage"
+                  :content="'失败原因：' + row.errorMessage"
+                  placement="top"
+                  :show-after="300">
+                  <el-tag
+                    :type="row.status === 'success' ? 'success' : 'danger'"
+                    size="small"
+                    effect="plain"
+                    class="cursor-help">
+                    {{ row.status === 'success' ? '成功' : '失败' }}
+                    <span v-if="row.retryCount > 0" class="ml-1 text-[10px] opacity-70">
+                      (重试{{ row.retryCount }}次)
+                    </span>
+                  </el-tag>
+                </el-tooltip>
                 <el-tag
+                  v-else
                   :type="row.status === 'success' ? 'success' : 'danger'"
                   size="small"
                   effect="plain">
                   {{ row.status === 'success' ? '成功' : '失败' }}
+                  <span v-if="row.retryCount > 0" class="ml-1 text-[10px] opacity-70">
+                    (重试{{ row.retryCount }}次)
+                  </span>
                 </el-tag>
               </template>
             </el-table-column>

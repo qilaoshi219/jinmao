@@ -103,6 +103,18 @@ export const useAuthStore = defineStore("auth", () => {
     removeToken();
   }
 
+  /**
+   * 更新用户单个字段（无需请求后端，仅更新本地状态）
+   * 用于头像上传后立即反映到 UI
+   * @param {string} key - 字段名
+   * @param {any} value - 字段值
+   */
+  function updateUserField(key, value) {
+    if (user.value) {
+      user.value = { ...user.value, [key]: value };
+    }
+  }
+
   // ========== 导出给外部使用的状态和方法 ==========
   return {
     // 状态
@@ -114,5 +126,6 @@ export const useAuthStore = defineStore("auth", () => {
     login,
     fetchProfile,
     logout,
+    updateUserField,
   };
 });

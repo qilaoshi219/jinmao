@@ -172,6 +172,24 @@
     <div class="border-t px-3 py-3 transition-colors duration-500"
          :style="{ borderColor: 'var(--color-border)' }">
 
+      <!-- ===== 促销活动占位区（余额上方） ===== -->
+      <!-- 通用广告位，用于展示各类促销活动（兑换码福利、限时优惠等） -->
+      <!-- 背景融合侧边栏底色，绿色文字低调提示，不遮挡余额按钮 -->
+      <div
+        v-if="showRedeemPopup"
+        class="mb-2 px-2.5 py-2 rounded-[10px] cursor-pointer
+               bg-[var(--color-bg-secondary)] border border-green-200 dark:border-green-800
+               hover:bg-green-50 dark:hover:bg-green-900/10
+               transition-all duration-500"
+        @click="goToRedeem">
+        <div class="flex items-center gap-1.5">
+          <span class="text-sm">🎁</span>
+          <span class="text-xs text-green-600 dark:text-green-400 font-medium leading-tight">
+            新用户福利！点此领取免费额度
+          </span>
+        </div>
+      </div>
+
       <!-- 余额入口（点击进入账单页面） -->
       <button
         @click="$emit('navigate-billing')"
@@ -182,15 +200,20 @@
           'text-black dark:text-white'
         ]">
         <span class="text-xs font-medium transition-colors duration-500">余额</span>
-        <span class="text-xs font-mono font-bold
-                     text-blue-500 dark:text-blue-400
-                     transition-colors duration-500">
-          ¥{{ formattedBalance }}
+        <span :class="[
+          'text-xs font-mono font-bold transition-colors duration-500',
+          balanceLocked
+            ? 'text-red-500 dark:text-red-400'
+            : 'text-blue-500 dark:text-blue-400'
+        ]">
+          {{ balanceLocked ? '⚠ ' : '' }}¥{{ formattedBalance }}
         </span>
       </button>
 
-      <!-- 用户信息（收缩时仅显示头像） -->
-      <div class="flex items-center gap-2 px-1 transition-colors duration-500">
+      <!-- 用户信息（收缩时仅显示头像），点击进入个人设置 -->
+      <div class="flex items-center gap-2 px-1 transition-colors duration-500
+                  cursor-pointer hover:opacity-80"
+           @click="$emit('navigate-profile')">
         <el-avatar :size="32" class="bg-blue-500 dark:bg-blue-400 text-white text-sm flex-shrink-0">
           {{ userInitial }}
         </el-avatar>
@@ -233,13 +256,27 @@ const props = defineProps({
 });
 
 // ========== Emits ==========
-defineEmits(["select", "upload", "navigate-billing"]);
+const emit = defineEmits(["select", "upload", "navigate-billing", "navigate-profile", "navigate-redeem"]);
 
 // ========== 响应式收缩状态 ==========
 const collapsed = ref(false);
 
 // ========== 余额状态 ==========
 const balance = ref("0"); // 用户余额（字符串）
+const balanceLocked = ref(false); // 余额锁定状态
+
+// ========== 兑换码入口状态（常驻显示） ==========
+// 始终显示兑换码入口，用户可能持有多个兑换码
+const showRedeemPopup = ref(true); // 常驻显示
+
+/**
+ * 点击兑换码入口 → 跳转到兑换码领取页面
+ */
+function goToRedeem() {
+  console.log(TAG + " 用户点击兑换码入口，跳转兑换码页面");
+  // emit 事件到父组件
+  emit("navigate-redeem");
+}
 
 /**
  * 加载用户余额（从 billing API 获取账务摘要）
@@ -249,6 +286,7 @@ async function loadBalance() {
     const res = await getBilling(1, 1); // 仅获取摘要数据（pageSize=1 最小化开销）
     if (res.code === 0 && res.data) {
       balance.value = res.data.balance || "0";
+      balanceLocked.value = res.data.balanceLocked || false;
     }
   } catch (err) {
     console.log(TAG + " 余额加载失败: " + (err.message || err));
@@ -292,8 +330,8 @@ const userEmail = computed(() => {
   return props.user?.email || "";
 });
 
-/** 格式化后的余额（保留 2 位小数） */
+/** 格式化后的余额（保留 4 位小数） */
 const formattedBalance = computed(() => {
-  return parseFloat(balance.value).toFixed(2);
+  return parseFloat(balance.value).toFixed(4);
 });
 </script>

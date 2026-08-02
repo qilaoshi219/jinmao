@@ -90,6 +90,13 @@ const TAG = "[billing_api]";
  *                             type: string
  *                           status:
  *                             type: string
+ *                           errorMessage:
+ *                             type: string
+ *                             nullable: true
+ *                             description: 失败原因（仅失败时有值）
+ *                           retryCount:
+ *                             type: integer
+ *                             description: 重试次数（0 表示首次调用）
  *                           createdAt:
  *                             type: string
  *                             format: date-time
@@ -175,6 +182,8 @@ router.get("/billing", authenticateToken, async (req, res) => {
           call_tag: true,
           total_cost: true,
           status: true,
+          error_message: true,   // 失败原因
+          retry_count: true,     // 重试次数
           created_at: true,
         },
       }),
@@ -204,6 +213,8 @@ router.get("/billing", authenticateToken, async (req, res) => {
       callTagLabel: CALL_TAG_LABELS[r.call_tag] || r.call_tag, // 中文标签映射
       totalCost: String(r.total_cost),             // Decimal → 字符串
       status: r.status,
+      errorMessage: r.error_message || null,       // 失败原因（仅失败时有值）
+      retryCount: r.retry_count || 0,              // 重试次数
       createdAt: r.created_at.toISOString(),        // DateTime → ISO 字符串
     }));
 
@@ -212,6 +223,7 @@ router.get("/billing", authenticateToken, async (req, res) => {
       vipLevel: user.vipLevel,
       plan: user.plan,
       balance: String(user.balance),               // Decimal → 字符串
+      balanceLocked: user.balanceLocked,            // 余额锁定状态
       totalUsed: String(totalUsed),                 // Decimal → 字符串
       records: formattedRecords,
       pagination: {

@@ -5,6 +5,9 @@
 
 const express = require("express"); // Express 框架
 const router = express.Router(); // 创建路由实例
+const fs = require("fs");          // 文件系统：读取临时 MD 文件计算行数
+const os = require("os");          // 操作系统：获取临时目录路径
+const path = require("path");      // 路径处理：拼接临时文件路径
 
 // 导入 JWT 鉴权中间件（路径从 API/book/detail.js 向上两级到项目根目录）
 const { authenticateToken } = require("../../middleware/auth");
@@ -14,10 +17,71 @@ const bookRepo = require("../../utils/repo/book_repo");
 // 导入统一判断函数：是否可以生成下一章
 const { computeCanGenerateNext } = require("../../utils/can_generate_next");
 
+// MinIO 客户端（延迟初始化，仅在需要补填 maxline 时创建）
+const Minio = require("minio");
+let _minioClient = null;
+function getMinioClient() {
+  if (!_minioClient) {
+    _minioClient = new Minio.Client({
+      endPoint: process.env.MINIO_ENDPOINT || "127.0.0.1",
+      port: parseInt(process.env.MINIO_PORT) || 9000,
+      useSSL: process.env.MINIO_USE_SSL === "true",
+      accessKey: process.env.MINIO_ACCESS_KEY,
+      secretKey: process.env.MINIO_SECRET_KEY,
+    });
+  }
+  return _minioClient;
+}
+const BUCKET = process.env.MINIO_BUCKET || "jinmao";
+
 // 日志前缀
 const TAG = "[API_book_detail]";
 
 // ==================== 辅助函数 ====================
+
+/**
+ * 懒加载补填 maxline：当课程 maxline=0 且 textbookPath 有效时，
+ * 从 MinIO 下载 MD 文件计算总行数并写入数据库。
+ * 采用 fire-and-forget 模式，不阻塞 API 响应。
+ *
+ * @param {Object} course - 课程对象（含 id、maxline、textbookPath）
+ */
+function lazyFillMaxline(course) {
+  // 仅当 maxline 未设置且 textbookPath 有效时才执行
+  if (!course || (course.maxline && course.maxline > 0)) return;
+  if (!course.textbookPath || course.textbookPath === "pending") return;
+
+  const courseId = String(course.id);
+  console.log(TAG + " [lazyFillMaxline] 课程 " + courseId + " maxline=0，异步补填中...");
+
+  // 异步执行，不阻塞主流程
+  (async () => {
+    try {
+      const minioClient = getMinioClient();
+      const tmpPath = path.join(os.tmpdir(), "jinmao-maxline-" + courseId + ".md");
+
+      // 从 MinIO 下载 MD 文件到临时目录
+      await minioClient.fGetObject(BUCKET, course.textbookPath, tmpPath);
+
+      // 计算总行数
+      const content = fs.readFileSync(tmpPath, "utf8");
+      const maxline = content.split("\n").length;
+
+      // 写入数据库
+      const result = await bookRepo.updateMaxline(courseId, maxline);
+      if (result.code === 200) {
+        console.log(TAG + " [lazyFillMaxline] 课程 " + courseId + " maxline 补填成功: " + maxline);
+        // 同步更新内存中的 course 对象，使本次响应中 canGenerateNext 计算正确
+        course.maxline = maxline;
+      }
+
+      // 清理临时文件
+      try { fs.unlinkSync(tmpPath); } catch (_) { /* 忽略清理错误 */ }
+    } catch (err) {
+      console.warn(TAG + " [lazyFillMaxline] 课程 " + courseId + " maxline 补填失败: " + err.message);
+    }
+  })();
+}
 
 /**
  * 安全的 JSON 解析，解析失败时返回 null
@@ -201,6 +265,9 @@ router.get("/books/:id", authenticateToken, async (req, res) => {
       });
     }
 
+    // ========== 3.5 懒加载补填 maxline（旧课程兼容，fire-and-forget 不阻塞响应） ==========
+    lazyFillMaxline(course);
+
     // ========== 4. 数据转换：BigInt → String ==========
     // 将课程和章节中的 BigInt 字段转为字符串
     const chapters = (course.chapters || []).map((ch) => ({
@@ -234,6 +301,7 @@ router.get("/books/:id", authenticateToken, async (req, res) => {
       coverUrl: course.coverPath ? "/api/v1/files" + course.coverPath : null, // 【新增】封面图代理访问 URL
       elaborationEnabled: course.elaborationEnabled,
       endline: course.endline,
+      maxline: course.maxline,  // 【新增】MD 文件总行数（用于权威判断教材是否已全部生成完毕）
       pipelineStatus: course.pipelineStatus,
       pipelineProgress: course.pipelineProgress ? safeJsonParse(course.pipelineProgress) : null, // 流水线进度（含 isLastChapter 标记）
       canGenerateNext: computeCanGenerateNext(course, chapters).can, // 后端统一计算：是否可以生成下一章

@@ -8,7 +8,7 @@
 
 const path = require("path");
 const fs = require("fs");
-const { requestDeepseekJsonCompletionStream } = require("./deepseek-client");
+const { chatStream } = require("../../utils/llm_client");
 
 // 日志前缀，用于控制台输出标识
 const TAG = "[md2quiz_splitter]";
@@ -65,7 +65,7 @@ function sanitizeMaxLine(maxLine, currentStartLine, endLine) {
  * @param {string} markdownContent - 完整 Markdown 题库文本
  * @returns {Promise<Array<{startLine: number, endLine: number, text: string}>>} 切分好的块列表
  */
-async function splitQuizIntoChunks(markdownContent) {
+async function splitQuizIntoChunks(markdownContent, userId) {
   // 统一换行符并按行拆分
   const lines = markdownContent.replace(/\r\n/g, "\n").split("\n");
   const totalLines = lines.length;
@@ -97,13 +97,17 @@ async function splitQuizIntoChunks(markdownContent) {
     // ---- 步骤 3：调用 DeepSeek AI 判断本次的分界点 ----
     let maxLine;
     try {
-      const result = await requestDeepseekJsonCompletionStream([
-        { role: "system", content: "你是文本分段助手，只返回 maxLine。" },
-        { 
-          role: "user", 
-          content: promptTemplate + "\n\n---\n【待分段文本，行号 " + currentStartLine + "-" + extractEnd + "】\n" + indexedText 
-        },
-      ]);
+      const result = await chatStream(userId, "md2quiz_split", {
+        modelSize: "big",
+        messages: [
+          { role: "system", content: "你是文本分段助手，只返回 maxLine。" },
+          { 
+            role: "user", 
+            content: promptTemplate + "\n\n---\n【待分段文本，行号 " + currentStartLine + "-" + extractEnd + "】\n" + indexedText 
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
       // 清洗可能的 markdown 代码块包裹
       let clean = result.content.trim();
       const codeMatch = clean.match(/```(?:json)?\s*\n?([\s\S]*?)```/);

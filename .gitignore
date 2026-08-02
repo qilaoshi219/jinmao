@@ -1,0 +1,42 @@
+# ===== AI 运行时生成 =====
+.hermes/
+.qoder/
+
+# ===== 设计稿 / 宣传片等辅助产物 =====
+video-promo/
+profile-settings-design/
+jinmao-nerv-redesign/
+
+# ===== 敏感凭证（绝对禁止提交）=====
+ftp.txt
+token.txt
+.env
+
+# ===== 运行时文件 =====
+.backend.log
+.backend.pid
+.frontend.log
+*.log
+*.pid
+.uploads/
+
+# ===== 依赖 =====
+node_modules/
+
+# ===== 构建 & 生成产物 =====
+jinmao.zip
+outline.json
+
+# ===== 测试数据 =====
+test/
+test.js
+_test_db.js
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+pages/
+
+# ===== IDE 配置 =====
+.idea/
+.vscode/

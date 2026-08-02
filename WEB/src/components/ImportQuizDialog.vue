@@ -32,7 +32,7 @@
       <el-tabs v-model="activeTab" class="import-dialog__tabs">
 
         <!-- ==================== 文档导入 Tab ==================== -->
-        <el-tab-pane label="文档导入" name="pdf">
+        <el-tab-pane v-if="tabs.includes('pdf')" label="文档导入" name="pdf">
           <el-alert
             type="info" :closable="false" show-icon
             title="上传 PDF 文档，系统自动转换为 Markdown 后由 AI 生成题目并入库。"
@@ -40,7 +40,7 @@
 
           <el-form label-position="top" class="import-dialog__form" @submit.prevent>
             <el-form-item label="题库名称" required>
-              <el-input v-model="pdfForm.textbookName" maxlength="100" placeholder="请输入题库名称" />
+              <el-input v-model="pdfForm.textbookName" :disabled="!!defaultTextbookName" maxlength="100" placeholder="请输入题库名称" />
             </el-form-item>
 
             <el-form-item label="试卷名称" required>
@@ -90,7 +90,7 @@
         </el-tab-pane>
 
         <!-- ==================== Markdown 导入 Tab ==================== -->
-        <el-tab-pane label="Markdown 导入" name="markdown">
+        <el-tab-pane v-if="tabs.includes('markdown')" label="Markdown 导入" name="markdown">
           <el-alert
             type="info" :closable="false" show-icon
             title="上传 Markdown 文件，系统由 AI 生成题目并自动入库。"
@@ -98,7 +98,7 @@
 
           <el-form label-position="top" class="import-dialog__form" @submit.prevent>
             <el-form-item label="题库名称" required>
-              <el-input v-model="mdForm.textbookName" maxlength="100" placeholder="请输入题库名称" />
+              <el-input v-model="mdForm.textbookName" :disabled="!!defaultTextbookName" maxlength="100" placeholder="请输入题库名称" />
             </el-form-item>
 
             <el-form-item label="试卷名称" required>
@@ -147,7 +147,7 @@
         </el-tab-pane>
 
         <!-- ==================== JSON 导入 Tab ==================== -->
-        <el-tab-pane label="JSON 导入" name="json">
+        <el-tab-pane v-if="tabs.includes('json')" label="JSON 导入" name="json">
           <el-alert
             type="info" :closable="false" show-icon
             title="直接粘贴 JSON 数组格式的题目数据，立即入库。"
@@ -155,7 +155,7 @@
 
           <el-form label-position="top" class="import-dialog__form" @submit.prevent>
             <el-form-item label="题库名称" required>
-              <el-input v-model="jsonForm.textbookName" maxlength="100" placeholder="例如：教师资格证考试题库" show-word-limit />
+              <el-input v-model="jsonForm.textbookName" :disabled="!!defaultTextbookName" maxlength="100" placeholder="例如：教师资格证考试题库" show-word-limit />
             </el-form-item>
             <el-form-item label="试卷名称" required>
               <el-input v-model="jsonForm.examName" maxlength="100" placeholder="例如：综合素质" show-word-limit />
@@ -171,7 +171,7 @@
         </el-tab-pane>
 
         <!-- ==================== 题库格式化 Tab ==================== -->
-        <el-tab-pane label="题库格式化" name="format">
+        <el-tab-pane v-if="tabs.includes('format')" label="题库格式化" name="format">
           <el-alert
             type="info" :closable="false" show-icon
             title="上传已出好题的 PDF 文件（如考试试卷扫描件），系统转换为 MD 后由 DeepSeek 自动解析题目和答案并入库。"
@@ -179,7 +179,7 @@
 
           <el-form label-position="top" class="import-dialog__form" @submit.prevent>
             <el-form-item label="题库名称" required>
-              <el-input v-model="formatForm.textbookName" maxlength="100" placeholder="请输入题库名称" />
+              <el-input v-model="formatForm.textbookName" :disabled="!!defaultTextbookName" maxlength="100" placeholder="请输入题库名称" />
             </el-form-item>
 
             <el-form-item label="试卷名称" required>
@@ -254,11 +254,32 @@ const TAG = "[ImportQuizDialog]";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
+  /** 预填的题库名称（传入时各 Tab 的题库名称输入框自动填入并 disabled） */
+  defaultTextbookName: { type: String, default: "" },
+  /** 显示的 Tab 列表，默认全部（pdf/markdown/json/format）。详情页只传 ["format"] */
+  tabs: { type: Array, default: () => ["pdf", "markdown", "json", "format"] },
 });
 const emit = defineEmits(["update:visible", "success"]);
 
+// 弹窗打开时自动填入预设题库名称
+watch(() => props.visible, (val) => {
+  if (val && props.defaultTextbookName) {
+    pdfForm.textbookName = props.defaultTextbookName;
+    mdForm.textbookName = props.defaultTextbookName;
+    jsonForm.textbookName = props.defaultTextbookName;
+    formatForm.textbookName = props.defaultTextbookName;
+  }
+});
+
 // ==================== Tab 状态 ====================
-const activeTab = ref("pdf");
+const activeTab = ref(props.tabs[0] || "pdf");
+
+// 当 tabs prop 变化时，激活第一个可用 Tab
+watch(() => props.tabs, (newTabs) => {
+  if (newTabs.length > 0 && !newTabs.includes(activeTab.value)) {
+    activeTab.value = newTabs[0];
+  }
+});
 
 // ==================== 题型预设配置 ====================
 const PRESET_MAP = {

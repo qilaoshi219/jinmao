@@ -326,6 +326,32 @@ async function incrementPipelineProgress(id, field, delta) {
   }
 }
 
+/**
+ * 更新 maxline（MD文件总行数）
+ * 归一化完成时调用，或在流水线首次下载 MD 文件时补填（旧课程兼容）
+ * @param {string|number} id - 课程 ID
+ * @param {number} maxline - MD 文件总行数
+ * @returns {Promise<{ code: number, message?: string }>}
+ */
+async function updateMaxline(id, maxline) {
+  console.log("[book_repo][updateMaxline] 课程 " + id + " 更新 maxline → " + maxline);
+
+  try {
+    await prisma.course.update({
+      where: { id: BigInt(id), isDeleted: false },
+      data: { maxline: maxline },
+    });
+    console.log("[book_repo][updateMaxline] maxline 更新成功");
+    return { code: 200 };
+  } catch (error) {
+    if (error.code === "P2025") {
+      return { code: 404, message: "课程不存在。" };
+    }
+    console.error("[book_repo][updateMaxline] 数据库更新异常: " + error.message);
+    return { code: 500, message: "数据库更新异常: " + error.message };
+  }
+}
+
 // 导出模块函数
 module.exports = {
   createCourse,
@@ -333,6 +359,7 @@ module.exports = {
   listCoursesByUser,
   updateCourse,
   updateEndline,
+  updateMaxline,
   updatePipelineStatus,
   updatePipelineProgress,
   incrementPipelineProgress,

@@ -1,6 +1,7 @@
 // ==================== 账单 API 封装 ====================
 // 职责：封装账单查询相关的 HTTP 请求，供账单页面和侧边栏使用
 // 所有请求自动携带 JWT Bearer Token（由 client.js 拦截器注入）
+// 注意：充值功能已迁移到兑换码系统（api/redeem.js），此处仅保留账单查询
 
 import apiClient from "./client"; // Axios 实例（baseURL: /api/v1）
 

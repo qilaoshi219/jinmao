@@ -2,103 +2,78 @@
 ============================================================================
 文件名：QuizTextbookCard.vue（题库卡片组件）
 文件作用：首页题库列表中每条题库的展示卡片 — 支持生成中进度条
-遵守设计规范：纯黑纯白文字、10px 圆角、500ms 过渡、暗黑双轨适配
+遵守设计规范：纯黑纯白文字、10px 圆角、500ms 过渡、暗黑双轨适配、Element Plus优先
 ============================================================================
 -->
 
 <template>
   <!-- 题库卡片容器 -->
-  <div class="rounded-[10px] border p-5 transition-all duration-500 hover:shadow-md cursor-pointer relative"
+  <div class="rounded-[10px] border p-4 transition-all duration-500 hover:shadow-md cursor-pointer flex flex-col gap-3"
        :style="{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border)' }"
        @click="onCardClick">
 
-    <!-- ===== 三点操作菜单按钮（左上角，参考 CourseCard 样式） ===== -->
-    <div class="absolute top-3 left-3 z-[3]" @click.stop>
-      <!-- 三点触发按钮 -->
-      <button
-        class="w-7 h-7 rounded-[6px] bg-white/90 dark:bg-gray-800/90
-               border border-black/10 dark:border-white/10
-               flex items-center justify-center
-               text-gray-700 dark:text-gray-300
-               hover:bg-white dark:hover:bg-gray-700
-               hover:shadow-md hover:-translate-y-px
-               transition-all duration-200"
-        @click="showMenu = !showMenu"
-        title="更多操作"
-      >
-        <!-- 三点图标 -->
-        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
-          <circle cx="3" cy="8" r="1.5" />
-          <circle cx="8" cy="8" r="1.5" />
-          <circle cx="13" cy="8" r="1.5" />
-        </svg>
-      </button>
+    <!-- ===== 第一行：题库名称 + 标签 + 三点菜单 ===== -->
+    <div class="flex items-start gap-2">
+      <!-- 题库名称（flex-1 撑满剩余空间） -->
+      <h3 class="text-black dark:text-white font-bold text-[15px] leading-snug line-clamp-2 transition-colors duration-500 flex-1 min-w-0"
+          :title="textbook.name">
+        {{ textbook.name }}
+      </h3>
 
-      <!-- 下拉操作菜单 -->
-      <div
-        v-if="showMenu"
-        ref="menuRef"
-        class="absolute left-0 top-full mt-1.5
-               bg-white dark:bg-gray-800
-               rounded-[10px] shadow-lg
-               border border-gray-200 dark:border-gray-700
-               min-w-[120px] py-1 z-20"
-        @click.stop
-      >
-        <!-- 共享切换（仅自有题库） -->
-        <button
-          v-if="textbook.ownType !== 'borrowed'"
-          class="w-full text-left px-3 py-2 text-sm
-                 text-blue-500 dark:text-blue-400
-                 hover:bg-blue-50 dark:hover:bg-blue-900/20
-                 rounded-[6px] transition-colors duration-200
-                 flex items-center gap-2"
-          :disabled="sharing"
-          @click="handleToggleShare"
-        >
-          <span v-if="sharing">处理中...</span>
-          <span v-else>{{ textbook.isShared ? '取消共享' : '共享到市场' }}</span>
-        </button>
-        <!-- 删除选项 -->
-        <button
-          class="w-full text-left px-3 py-2 text-sm
-                 text-red-500 dark:text-red-400
-                 hover:bg-red-50 dark:hover:bg-red-900/20
-                 rounded-[6px] transition-colors duration-200"
-          @click="handleDelete"
-        >
-          删除题库
-        </button>
+      <!-- 状态标签 -->
+      <el-tag v-if="isGenerating" :type="statusTagType" size="small" class="flex-shrink-0">
+        {{ statusLabel }}
+      </el-tag>
+      <el-tag v-else-if="textbook.ownType === 'borrowed'" type="info" size="small" class="flex-shrink-0">
+        借用的
+      </el-tag>
+      <el-tag v-else-if="textbook.isShared" type="success" size="small" class="flex-shrink-0">
+        已共享
+      </el-tag>
+
+      <!-- 三点操作菜单（el-dropdown，右上角），外层 div 阻止冒泡 -->
+      <div class="flex-shrink-0" @click.stop>
+        <el-dropdown trigger="click" @command="handleMenuCommand">
+          <button class="w-7 h-7 rounded-[6px] bg-transparent
+                         flex items-center justify-center
+                         text-gray-400 dark:text-gray-500
+                         hover:bg-gray-100 dark:hover:bg-gray-800
+                         hover:text-gray-600 dark:hover:text-gray-300
+                         transition-all duration-200"
+                  title="更多操作">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
+              <circle cx="3" cy="8" r="1.5" />
+              <circle cx="8" cy="8" r="1.5" />
+              <circle cx="13" cy="8" r="1.5" />
+            </svg>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <!-- 共享切换（仅自有题库） -->
+              <el-dropdown-item
+                v-if="textbook.ownType !== 'borrowed'"
+                command="toggleShare"
+                :disabled="sharing">
+                {{ sharing ? '处理中...' : (textbook.isShared ? '取消共享' : '共享到市场') }}
+              </el-dropdown-item>
+              <!-- 删除 -->
+              <el-dropdown-item command="delete" class="!text-red-500 dark:!text-red-400">
+                删除题库
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
-    <!-- 状态标签（生成中时显示） -->
-    <div class="flex items-center justify-between mb-2">
-      <h3 class="text-black dark:text-white font-bold text-[15px] line-clamp-2 transition-colors duration-500 flex-1 mr-2">
-        {{ textbook.name }}
-      </h3>
-      <el-tag v-if="isGenerating" :type="statusTagType" size="small" class="shadow-md">
-        {{ statusLabel }}
-      </el-tag>
-      <!-- 借用标签 -->
-      <el-tag v-else-if="textbook.ownType === 'borrowed'" type="info" size="small" class="shadow-md">
-        借用的
-      </el-tag>
-      <!-- 共享标签 -->
-      <el-tag v-else-if="textbook.isShared" type="success" size="small" class="shadow-md">
-        已共享
-      </el-tag>
-    </div>
-
-    <!-- 描述 -->
+    <!-- ===== 描述（可选） ===== -->
     <p v-if="textbook.description && !isGenerating"
-       class="text-gray-400 dark:text-gray-500 text-xs mb-3 line-clamp-2 transition-colors duration-500">
+       class="text-gray-400 dark:text-gray-500 text-xs line-clamp-2 transition-colors duration-500 -mt-1">
       {{ textbook.description }}
     </p>
 
-    <!-- 生成中进度条 -->
-    <div v-if="isGenerating && progressData" class="mb-3 space-y-1.5">
-      <!-- 阶段描述 -->
+    <!-- ===== 生成中进度条 ===== -->
+    <div v-if="isGenerating && progressData" class="space-y-1.5">
       <div class="flex items-center gap-2">
         <span class="text-xs text-black dark:text-white transition-colors duration-500">
           {{ progressLabel }}
@@ -107,7 +82,6 @@
           {{ progressCountText }}
         </span>
       </div>
-      <!-- 进度条 -->
       <div class="h-1.5 rounded-[10px] w-full overflow-hidden" :style="{ backgroundColor: 'var(--color-border)' }">
         <div class="h-full rounded-[10px] transition-all duration-[220ms]"
              :style="{ width: progressBarWidth, backgroundColor: '#409EFF' }">
@@ -116,7 +90,7 @@
     </div>
 
     <!-- 无详细进度时的脉动进度条 -->
-    <div v-else-if="isGenerating" class="mb-3 space-y-1.5">
+    <div v-else-if="isGenerating" class="space-y-1.5">
       <span class="text-xs text-black dark:text-white transition-colors duration-500">
         {{ statusLabel }}
       </span>
@@ -126,35 +100,38 @@
       </div>
     </div>
 
-    <!-- 统计信息（非生成中时显示） -->
+    <!-- ===== 统计信息（非生成中时显示） ===== -->
     <div v-if="!isGenerating"
-         class="flex items-center gap-4 text-xs text-gray-400 dark:text-gray-500 transition-colors duration-500 mb-1">
-      <span>{{ textbook.totalQuestions || 0 }} 题</span>
-      <span>{{ textbook.totalExams || 0 }} 张试卷</span>
+         class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500 transition-colors duration-500">
+      <!-- 题数 -->
+      <span class="flex items-center gap-1">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        {{ textbook.totalQuestions || 0 }} 题
+      </span>
+      <!-- 试卷数 -->
+      <span class="flex items-center gap-1">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+        </svg>
+        {{ textbook.totalExams || 0 }} 张试卷
+      </span>
       <!-- 借用者看到的创建者信息 -->
-      <span v-if="textbook.ownType === 'borrowed' && textbook.creatorNickname" class="text-blue-400 dark:text-blue-500">
+      <span v-if="textbook.ownType === 'borrowed' && textbook.creatorNickname"
+            class="text-blue-400 dark:text-blue-500 ml-auto truncate">
         @{{ textbook.creatorNickname }}
       </span>
     </div>
 
-    <!-- 操作按钮 -->
-    <div class="flex gap-2" @click.stop>
-      <!-- 顺序刷题按钮（新增） -->
-      <el-button
-        type="success"
-        size="small"
-        class="flex-1"
-        :disabled="isGenerating"
-        @click="$emit('startSequential', textbook.id)">
+    <!-- ===== 操作按钮（非生成中时显示） ===== -->
+    <div v-if="!isGenerating" class="flex gap-2" @click.stop>
+      <el-button type="success" size="small" class="flex-1" @click="$emit('startSequential', textbook.id)">
         顺序刷题
       </el-button>
-      <!-- 随机刷题按钮（原"开始刷题"改名） -->
-      <el-button
-        type="primary"
-        size="small"
-        class="flex-1"
-        :disabled="isGenerating"
-        @click="$emit('start', textbook.id)">
+      <el-button type="primary" size="small" class="flex-1" @click="$emit('start', textbook.id)">
         随机刷题
       </el-button>
     </div>
@@ -165,8 +142,7 @@
 // ==================== QuizTextbookCard 逻辑 ====================
 import { ref, computed } from "vue";
 import { ElMessageBox } from "element-plus";
-import { onClickOutside } from "@vueuse/core"; // 监听点击外部关闭菜单
-import { toggleShareTextbook } from "../api/quiz"; // 共享切换 API
+import { toggleShareTextbook } from "../api/quiz";
 
 const TAG = "[QuizTextbookCard]";
 
@@ -180,22 +156,10 @@ const props = defineProps({
 const emit = defineEmits(["open", "start", "startSequential", "delete", "shareToggled"]);
 
 const deleting = ref(false);
-const sharing = ref(false); // 共享切换 loading 状态
-
-// ==================== 三点菜单状态 ====================
-const showMenu = ref(false);
-/** 菜单容器 DOM 引用（用于 onClickOutside 监听） */
-const menuRef = ref(null);
-
-// 点击菜单外部时关闭菜单
-onClickOutside(menuRef, () => {
-  showMenu.value = false;
-});
+const sharing = ref(false);
 
 // ==================== 生成中状态 ====================
-const isGenerating = computed(() => {
-  return !!props.textbook.generatingTaskId;
-});
+const isGenerating = computed(() => !!props.textbook.generatingTaskId);
 
 // ==================== 状态标签 ====================
 const STATUS_MAP = {
@@ -224,7 +188,6 @@ const progressData = computed(() => {
 const progressLabel = computed(() => {
   if (!progressData.value) return "";
   const phase = progressData.value.phase;
-
   const LABELS = {
     pending: "排队中...",
     loading_prompt: "加载提示词中...",
@@ -236,66 +199,60 @@ const progressLabel = computed(() => {
     completed: "已完成",
     failed: "失败",
   };
-
   let label = LABELS[phase] || "处理中...";
-
-  // 附加分块进度
   if (progressData.value.chunkProgress) {
     const c = progressData.value.chunkProgress;
     label += ` ${c.current}/${c.total} 块`;
   }
-
   return label;
 });
 
 const progressBarWidth = computed(() => {
   if (!progressData.value) return "50%";
   const phase = progressData.value.phase;
-
-  // 终端状态
   if (phase === "completed") return "100%";
-
-  // 分块进度
   if (progressData.value.chunkProgress) {
     const { current, total } = progressData.value.chunkProgress;
-    return Math.round((current / total) * 90) + "%"; // 最多 90%，留 10% 给导入
+    return Math.round((current / total) * 90) + "%";
   }
-
-  // 导入进度
   if (progressData.value.importProgress) {
     const { current, total } = progressData.value.importProgress;
     return Math.round(90 + (current / total) * 10) + "%";
   }
-
   return "10%";
 });
 
 const progressCountText = computed(() => {
   if (!progressData.value) return "";
-
   if (progressData.value.chunkProgress) {
     const { current, total } = progressData.value.chunkProgress;
     return `${current}/${total}`;
   }
-
   if (progressData.value.importProgress) {
     const { current, total } = progressData.value.importProgress;
     return `${current}/${total}`;
   }
-
   return "";
 });
 
 // ==================== 事件处理 ====================
+
 function onCardClick() {
   if (!isGenerating.value) {
-    // 非生成中时可点击进入查看详情
     emit("open", props.textbook.id);
   }
 }
 
+/** el-dropdown 菜单命令分发 */
+async function handleMenuCommand(command) {
+  if (command === "toggleShare") {
+    await handleToggleShare();
+  } else if (command === "delete") {
+    await handleDelete();
+  }
+}
+
 async function handleDelete() {
-  showMenu.value = false; // 关闭菜单
   try {
     await ElMessageBox.confirm(
       "确定要删除题库「" + props.textbook.name + "」吗？此操作不可撤销。",
@@ -309,11 +266,7 @@ async function handleDelete() {
   }
 }
 
-/**
- * 切换题库共享状态
- */
 async function handleToggleShare() {
-  showMenu.value = false; // 关闭菜单
   sharing.value = true;
   try {
     const res = await toggleShareTextbook(props.textbook.id);

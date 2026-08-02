@@ -229,7 +229,7 @@ async function uploadImageDir(mdLocalPath, normalizedMinioDir) {
  * 3. 上传源文件到 MinIO
  * 
  * 异步后台流程（不阻塞响应）：
- * 4. 格式归一化（4 分支：MD/压缩包/PDF/Word）
+ * 4. 格式归一化（3 分支：MD/压缩包/PDF）
  * 5. 更新 Course 路径信息
  * 6. 异步启动课程流水线
  * 
@@ -260,7 +260,7 @@ async function uploadBook(userId, file, name, description, elaborationEnabled) {
       console.log("[POSTbook] 不支持的文件格式: " + ext);
       return {
         code: 422,
-        message: "不支持的文件格式，仅支持 pdf/docx/doc/md/zip/rar/7z",
+        message: "不支持的文件格式，仅支持 pdf/md/zip/rar/7z",
         data: null,
       };
     }
@@ -391,7 +391,7 @@ async function runNormalization(courseId, userId, file, ext, baseMinioPath, sour
   let mdLocalPath = null; // 归一化后的 MD 本地路径（用于调试日志）
 
   try {
-    // ============ 步骤 4：格式归一化（4 分支） ============
+    // ============ 步骤 4：格式归一化（3 分支） ============
     console.log("[POSTbook][异步归一化] 步骤 1/3: 格式归一化（文件类型: " + ext + "）...");
 
     // 生成归一产物目录名
@@ -408,6 +408,7 @@ async function runNormalization(courseId, userId, file, ext, baseMinioPath, sour
         if (mdUploadResult.code !== 200) {
           throw new Error("MD 文件上传失败: " + mdUploadResult.message);
         }
+        mdLocalPath = file.path; // 记录 multer 临时文件路径，用于后续计算 maxline
         break;
 
       case ".zip":
@@ -472,6 +473,22 @@ async function runNormalization(courseId, userId, file, ext, baseMinioPath, sour
         // 上传 images 文件夹（兼容 image / images 两种目录名）
         await uploadImageDir(mdLocalPath, normalizedMinioDir);
         break;
+    }
+
+    // ============ 步骤 4.5：计算 MD 文件总行数并写入 maxline ============
+    // 此时 mdLocalPath 指向已上传的 MD 本地文件（所有分支均已设置）
+    // maxline 作为持久化的权威值，用于判断教材是否已全部生成完毕
+    if (mdLocalPath && fs.existsSync(mdLocalPath)) {
+      try {
+        const mdContent = fs.readFileSync(mdLocalPath, "utf8");
+        const maxline = mdContent.split("\n").length;
+        console.log("[POSTbook][异步归一化] MD 文件总行数(maxline): " + maxline);
+        await bookRepo.updateMaxline(courseId, maxline);
+      } catch (lineErr) {
+        console.warn("[POSTbook][异步归一化] 计算 maxline 失败: " + lineErr.message);
+      }
+    } else {
+      console.warn("[POSTbook][异步归一化] mdLocalPath 为空或不存在，跳过 maxline 计算");
     }
 
     // ============ 步骤 5：更新 Course 路径信息 ============

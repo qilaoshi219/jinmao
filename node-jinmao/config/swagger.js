@@ -22,8 +22,8 @@ const options = {
     // 服务器列表（Scalar UI 中可选择切换）
     servers: [
       {
-        url: "http://localhost:8888", // 本地开发服务器地址
-        description: "本地开发服务器",
+        url: "/", // 使用当前站点作为 API 根地址，避免线上文档仍请求 localhost
+        description: "当前站点",
       },
     ],
     // 认证方案定义（Scalar UI 中会显示 "Authorize" 按钮供输入 Token）

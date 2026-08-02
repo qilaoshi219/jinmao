@@ -16,7 +16,7 @@ const TAG = "[API_quiz_market]";
  *   get:
  *     tags: [题库市场]
  *     summary: 获取题库市场列表
- *     description: 分页查询所有共享的题库，排除自己创建的题库。返回题库基本信息及是否已借用状态。
+ *     description: 分页查询所有共享的题库（包含自己共享的题库，通过 isOwner 字段区分）。返回题库基本信息及是否已借用状态。
  *     security:
  *       - bearerAuth: []
  *     parameters:

@@ -348,3 +348,70 @@ export function completeSequentialSession(sessionId) {
     .post("/quiz/sequential-sessions/" + sessionId + "/complete")
     .then((res) => res.data);
 }
+
+// ==================== 文本粘贴导入 ====================
+
+/**
+ * AI 格式化题目文本（文本粘贴导入专用）
+ * 将原始题目+答案混合文本发送给 DeepSeek AI，返回格式化的题目 JSON 数组
+ * @param {Object} payload - { text: string, textbookName: string }
+ * @returns {Promise<{code: number, data: {questions: Array}}>}
+ */
+export function formatQuizText(payload) {
+  console.log("[quiz_api] AI 格式化题目文本，文本长度:", payload.text.length);
+  return apiClient
+    .post("/quiz/format-text", payload, {
+      timeout: 900000, // 15 分钟超时（与后端 DeepSeek 大模型超时一致）
+    })
+    .then((res) => res.data);
+}
+
+// ==================== 题库详情页 ====================
+
+/**
+ * 获取题库统计数据（正确率、已做题数、错题数等）
+ * @param {string} textbookId - 题库 ID
+ * @returns {Promise<{code: number, data: {totalQuestions, doneCount, correctCount, accuracy, wrongCount}}>}
+ */
+export function getTextbookStats(textbookId) {
+  console.log("[quiz_api] 获取题库统计，textbookId:", textbookId);
+  return apiClient
+    .get("/quiz/textbooks/" + textbookId + "/stats")
+    .then((res) => res.data);
+}
+
+/**
+ * 基于试卷开始顺序刷题
+ * @param {string} examId - 试卷 ID
+ * @returns {Promise<{code: number, data: {sessionId, examId, examName, totalCount, status, createdFrom}}>}
+ */
+export function startExamSequentialSession(examId) {
+  console.log("[quiz_api] 开始基于试卷的顺序刷题，examId:", examId);
+  return apiClient
+    .post("/quiz/exams/" + examId + "/sequential-session")
+    .then((res) => res.data);
+}
+
+/**
+ * 基于试卷开始随机刷题
+ * @param {string} examId - 试卷 ID
+ * @returns {Promise<{code: number, data: {sessionId, examId, examName, totalCount, status, createdFrom}}>}
+ */
+export function startExamRandomSession(examId) {
+  console.log("[quiz_api] 开始基于试卷的随机刷题，examId:", examId);
+  return apiClient
+    .post("/quiz/exams/" + examId + "/random-session")
+    .then((res) => res.data);
+}
+
+/**
+ * 删除单个试卷
+ * @param {string} examId - 试卷 ID
+ * @returns {Promise<{code: number, data: {deletedTextbook: boolean}}>}
+ */
+export function deleteExam(examId) {
+  console.log("[quiz_api] 删除试卷，examId:", examId);
+  return apiClient
+    .delete("/quiz/exams/" + examId)
+    .then((res) => res.data);
+}

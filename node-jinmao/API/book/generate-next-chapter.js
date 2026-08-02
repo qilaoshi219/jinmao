@@ -171,6 +171,18 @@ router.post("/courses/:courseId/generate-next-chapter", authenticateToken, async
       });
     }
 
+    // ===== 4.5 余额校验：检查用户是否被锁定 =====
+    const { checkCanUseAI } = require("../../utils/balance");
+    const balanceCheck = await checkCanUseAI(userId);
+    if (!balanceCheck.allowed) {
+      console.log(TAG + " 余额不足，拒绝生成: " + balanceCheck.reason);
+      return res.status(402).json({
+        code: 402,
+        message: balanceCheck.reason,
+        data: { balance: balanceCheck.balance, balanceLocked: balanceCheck.balanceLocked },
+      });
+    }
+
     // ===== 5. 确定下一章的序号 =====
     const lastSequence = chapters.length > 0
       ? Math.max(...chapters.map(c => c.sequence))

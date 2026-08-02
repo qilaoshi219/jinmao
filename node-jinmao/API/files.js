@@ -118,6 +118,66 @@ console.log(TAG + " MinIO 客户端已初始化: endpoint=" + (process.env.MINIO
  *                 code: { type: integer, example: 500 }
  *                 message: { type: string, example: "文件读取失败。" }
  */
+// ==================== URL 规范化正则（用于修复幻灯片 HTML 中的图片绝对 URL） ====================
+// AI 生成的幻灯片 HTML 可能包含绝对 URL（如 https://jinmao.ckstu.top:30080/api/v1/files/...），
+// 导致浏览器用 HTTPS 协议直连 30080 端口（该端口仅 HTTP），报 ERR_SSL_PROTOCOL_ERROR。
+// 此处将所有指向本服务的绝对 URL（/api/v1/files/）替换为相对路径，确保走同域代理。
+//
+// 策略：单一全局正则直接匹配 http(s)://任意域名/api/v1/files/ 并替换为 /api/v1/files/
+// 无论 URL 出现在什么上下文（HTML src/href 属性、CSS url()、有无引号），一律替换
+
+/** 全局替换：匹配任何位置的 http(s)://域名/api/v1/files/ → /api/v1/files/ */
+const ABSOLUTE_FILES_REGEX = /https?:\/\/[^\/"'\s>]+\/api\/v1\/files\//gi;
+
+/** 匹配 <base href="https://..."> 标签 —— DeepSeek 有时会在幻灯片 HTML 中添加 base 标签，
+ *  导致浏览器将相对路径 /api/v1/files/... 解析为 https://域名/api/v1/files/... */
+const BASE_TAG_REGEX = /<base\s+[^>]*href\s*=\s*["']https?:\/\/[^"']*["'][^>]*>/gi;
+
+/**
+ * 规范化 HTML 文件中的绝对图片 URL 为相对路径
+ * 将 AI 生成的绝对 URL（如 https://domain:30080/api/v1/files/...）
+ * 替换为相对路径（/api/v1/files/...），确保图片走同域代理
+ * 同时移除或修复 <base> 标签（DeepSeek 可能添加，导致相对路径被解析为绝对地址）
+ * @param {string} htmlContent - 原始 HTML 内容
+ * @returns {string} 规范化后的 HTML 内容
+ */
+function normalizeFileUrls(htmlContent) {
+  const originalLength = htmlContent.length;
+  let matchCount = 0;
+
+  // Step 0：检测并移除 <base> 标签 —— 这是最隐蔽的 bug 来源：
+  //   如果 HTML 中有 <base href="https://jinmao.ckstu.top:30080/">，
+  //   即使所有 <img src="/api/v1/files/..."> 都是相对路径，
+  //   浏览器也会将其解析为 https://jinmao.ckstu.top:30080/api/v1/files/... → ERR_SSL_PROTOCOL_ERROR
+  let result = htmlContent.replace(BASE_TAG_REGEX, (match) => {
+    console.log(TAG + " [诊断] ⚠️ 检测到 <base> 标签，已移除: " + match);
+    return ""; // 移除整个 <base> 标签
+  });
+
+  // Step 1：规范化所有 http(s)://域名/api/v1/files/ 为 /api/v1/files/
+  result = result.replace(ABSOLUTE_FILES_REGEX, (match) => {
+    matchCount++;
+    // 诊断日志：首次匹配时打印示例（仅前3条，避免刷屏）
+    if (matchCount <= 3) {
+      console.log(TAG + " [诊断] 规范化匹配 #" + matchCount + ": " + match.substring(0, 100));
+    }
+    return "/api/v1/files/";
+  });
+
+  if (matchCount > 0) {
+    console.log(TAG + " 已规范化 " + matchCount + " 处绝对 URL 为相对路径（原始 " + originalLength + " 字符 → " + result.length + " 字符）");
+    if (matchCount > 3) {
+      console.log(TAG + "   ...共 " + matchCount + " 处匹配（仅显示前 3 条）");
+    }
+    console.log(TAG + " [诊断] 规范化前（前200字符）: " + htmlContent.substring(0, 200));
+    console.log(TAG + " [诊断] 规范化后（前200字符）: " + result.substring(0, 200));
+  } else {
+    console.log(TAG + " [诊断] ⚠️ 未找到任何需规范化的绝对 URL！HTML 前200字符: " + htmlContent.substring(0, 200));
+  }
+
+  return result;
+}
+
 // 使用通配符 /* 匹配任意深度的文件路径
 router.get("/*", async (req, res) => {
   // req.params[0] 在 Express router.get("/*") 中可能带前导 /，统一 strip 掉
@@ -142,10 +202,35 @@ router.get("/*", async (req, res) => {
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
     res.setHeader("Content-Type", contentType);
 
-    // 设置浏览器缓存策略（图片等静态资源缓存 1 天）
-    res.setHeader("Cache-Control", "public, max-age=86400");
+    // 设置浏览器缓存策略（图片等静态资源缓存 1 天，HTML 不缓存以确保 URL 规范化生效）
+    const isHtml = (contentType === "text/html");
+    if (isHtml) {
+      res.setHeader("Cache-Control", "no-cache"); // HTML 不缓存，确保客户端始终获取最新版本
+    } else {
+      res.setHeader("Cache-Control", "public, max-age=86400"); // 图片/音频等静态资源缓存 1 天
+    }
 
-    // 文件流直接 pipe 到 HTTP 响应流，不占用服务器内存
+    // HTML 文件：读取完整内容并规范化 URL 后再发送（因为 AI 可能生成绝对 URL）
+    if (isHtml) {
+      // 读取文件流到内存（幻灯片 HTML 通常 < 500KB，内存开销可忽略）
+      const chunks = [];
+      fileStream.on("data", (chunk) => chunks.push(chunk));
+      fileStream.on("end", () => {
+        const rawContent = Buffer.concat(chunks).toString("utf-8");
+        const normalizedContent = normalizeFileUrls(rawContent);
+        res.send(normalizedContent);
+        console.log(TAG + " 文件代理成功（HTML 已规范化）: " + filePath + " (" + contentType + ")");
+      });
+      fileStream.on("error", (err) => {
+        console.error(TAG + " 文件流读取错误: " + err.message);
+        if (!res.headersSent) {
+          res.status(500).json({ code: 500, message: "文件读取失败。" });
+        }
+      });
+      return; // HTML 文件已手动处理，不再走 pipe
+    }
+
+    // 非 HTML 文件：流式 pipe 到 HTTP 响应流，不占用服务器内存
     fileStream.pipe(res);
 
     console.log(TAG + " 文件代理成功: " + filePath + " (" + contentType + ")");

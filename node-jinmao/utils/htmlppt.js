@@ -15,6 +15,10 @@ const fs = require("fs");
 const path = require("path");
 const { validateString } = require("./input_validator");
 const llmClient = require("./llm_client"); // 统一 LLM 客户端（替代直接调用 OpenAI）
+const { detectDesignGuideContamination } = require("./htmlppt_guard"); // 生成后污染检测：设计说明文字混入幻灯片正文
+
+// 自动重试时给 LLM 的纠正指令（多轮消息中的最后一轮）
+const CONTAMINATION_CORRECTION = "纠正：你上一次的输出把\"设计说明/设计意图\"类文字混入了幻灯片正文（如：视觉亮点与设计意图、色彩与氛围、叙事性布局、字体与可读性等）。幻灯片正文必须只包含真实的教材教学内容，不得出现任何设计说明、设计复盘、Markdown 标记（###、**、```）。请删除这些内容，仅保留教学内容，重新输出完整的 HTML 幻灯片。";
 
 /**
  * 调用 DeepSeek（通过 llm_client）生成互动式 HTML PPT（仅返回数据，不负责文件持久化）
@@ -152,13 +156,91 @@ async function main(userId, pptGuide, originalText, imageInfos) {
     let resultHtml = chatResult.message.content;
     console.log("[htmlppt] DeepSeek API 调用成功，返回内容长度：" + resultHtml.length + " 字符。");
 
-    // 检查返回内容是否为空
+    // 清理 + 校验（markdown 包裹剥离 / HTML 主体截取 / 标记校验 / URL 规范化）
+    let cleanResult = cleanAndValidateHtml(resultHtml);
+    if (cleanResult.code !== 200) {
+        return { code: cleanResult.code, message: cleanResult.message };
+    }
+    resultHtml = cleanResult.html;
+
+    // ========== 设计说明污染检测 + 自动重试（最多 1 次） ==========
+    // 背景：LLM 偶发会在正文末尾自创追加"设计说明/设计复盘"段落（如 ``` ### 视觉亮点与设计意图 ... ```），
+    //       前端 iframe 原样渲染导致用户看到设计说明文字。此处检测命中后，
+    //       携带纠正指令自动重新生成一次（会产生额外一次模型调用计费，日志明示）。
+    let contamination = detectDesignGuideContamination(resultHtml);
+    if (contamination.contaminated) {
+        console.warn("[htmlppt] 检测到设计说明污染，命中原因: " + JSON.stringify(contamination.reasons) +
+            "，触发自动重试（将额外产生一次模型调用计费）。");
+
+        // 多轮消息：系统提示词 + 原始任务 + 本次污染输出 + 纠正指令
+        const retryMessages = [
+            { role: "system", content: formattedPrompt },
+            { role: "user", content: "请根据 PPT 生成指引与教材原文，生成单页静态 HTML 幻灯片。" },
+            { role: "assistant", content: resultHtml },
+            { role: "user", content: CONTAMINATION_CORRECTION },
+        ];
+        const retryResult = await llmClient.chat(userId, "htmlppt", {
+            modelSize: "big",
+            messages: retryMessages,
+            stream: false,
+        });
+
+        if (retryResult.code === 200 && retryResult.message && retryResult.message.content) {
+            const retryClean = cleanAndValidateHtml(retryResult.message.content);
+            if (retryClean.code === 200) {
+                resultHtml = retryClean.html;
+                contamination = detectDesignGuideContamination(resultHtml);
+                console.log("[htmlppt] 自动重试完成：仍污染=" + contamination.contaminated +
+                    (contamination.contaminated ? "，命中原因: " + JSON.stringify(contamination.reasons) : ""));
+            } else {
+                // 重试输出无法通过清理校验（空内容/非 HTML），保留首次结果并告警
+                console.error("[htmlppt] 自动重试返回的内容清理失败（code=" + retryClean.code + "），保留首次结果");
+                contamination = { contaminated: true, reasons: ["自动重试输出无效（code=" + retryClean.code + "）"] };
+            }
+        } else {
+            console.error("[htmlppt] 自动重试调用失败：" + (retryResult.message || "未知错误") + "，保留首次结果");
+            contamination = { contaminated: true, reasons: ["自动重试调用失败"] };
+        }
+
+        // 重试后仍污染：保留结果返回 200（不中断流水线），附严重告警供排查
+        if (contamination.contaminated) {
+            console.error("[htmlppt] 严重告警：最终输出仍含设计说明污染（命中原因: " +
+                JSON.stringify(contamination.reasons) + "），该页将保留多余文字，建议后续重新生成该页");
+            return {
+                code: 200,
+                html: resultHtml,
+                message: "生成完成（警告：输出仍含设计说明污染，命中原因: " + JSON.stringify(contamination.reasons) + "）"
+            };
+        }
+    }
+
+    // ========== 成功：返回 HTML 代码 ==========
+    console.log("[htmlppt] HTML PPT 生成成功，HTML 长度：" + resultHtml.length + " 字符。");
+    return {
+        code: 200,
+        html: resultHtml
+    };
+}
+
+/**
+ * 清理并校验 LLM 返回的原始 HTML 内容
+ * 依次执行：markdown 代码块包裹剥离 → DOCTYPE/<html>/<body> 主体截取 → 首尾空白去除
+ *          → 有效 HTML 标记校验 → URL 规范化（绝对 URL 转相对路径、移除 <base> 标签）
+ * 说明：该函数在首次生成与自动重试两个路径中复用，保证清理行为一致。
+ *
+ * @param {string} rawHtml - LLM 返回的原始内容
+ * @returns {{ code: number, html?: string, message?: string }}
+ *   code 200 — 清理校验通过，html 为最终可用的 HTML
+ *   code 500 — 内容为空
+ *   code 502 — 内容不是有效 HTML（缺少必要标记）
+ */
+function cleanAndValidateHtml(rawHtml) {
+    let resultHtml = rawHtml;
+
+    // ========== 检查返回内容是否为空 ==========
     if (!resultHtml || resultHtml.trim() === "") {
         console.error("[htmlppt] API 返回的 HTML 内容为空。");
-        return {
-            code: 500,
-            message: "DeepSeek API 返回的 HTML 内容为空。"
-        };
+        return { code: 500, message: "DeepSeek API 返回的 HTML 内容为空。" };
     }
 
     // ========== 清理可能的 markdown 代码块包裹 ==========
@@ -176,7 +258,7 @@ async function main(userId, pptGuide, originalText, imageInfos) {
     // 需要自动截取真正的 HTML 内容部分
     const doctypeIndex = resultHtml.indexOf("<!DOCTYPE html>");
     const htmlTagIndex = resultHtml.indexOf("<html");
-    
+
     if (doctypeIndex !== -1) {
         // 找到 <!DOCTYPE html> 声明，从该位置截取
         if (doctypeIndex > 0) {
@@ -220,30 +302,29 @@ async function main(userId, pptGuide, originalText, imageInfos) {
     // ========== URL 规范化：将 AI 可能生成的绝对 URL 转为相对路径 ==========
     // AI 模型有时会"聪明地"把相对路径 /api/v1/files/... 补全为绝对 URL，
     // 如 https://jinmao.ckstu.top:30080/api/v1/files/...，导致浏览器用错误协议访问。
-    // 此处将 src/href 等属性中的绝对 URL（指向 /api/v1/files/）统一还原为相对路径
+    // 同时移除 DeepSeek 可能添加的 <base> 标签（导致相对路径被浏览器解析为绝对地址）
     const originalLength = resultHtml.length;
-    // 匹配 src="https?://任意域名/api/v1/files/..." 或 src='...' 或 url(...) 等引用
-    // 使用全局替换，将所有绝对路径 /api/v1/files/xxxx 还原为 /api/v1/files/xxxx
+
+    // Step 1：检测并移除 <base> 标签
+    //   如果 HTML 中有 <base href="https://jinmao.ckstu.top:30080/">，
+    //   即使所有 <img src="/api/v1/files/..."> 都是相对路径，
+    //   浏览器也会将其解析为 HTTPS 绝对地址 → ERR_SSL_PROTOCOL_ERROR
     resultHtml = resultHtml.replace(
-        // 匹配两种 URL 引用格式：
-        // 1. HTML 属性：src="https://..." 或 href='https://...'
-        // 2. CSS 函数：url("https://...") 或 url('https://...')
-        /((?:src|href)\s*=\s*["']|url\s*\(\s*["'])https?:\/\/[^\/]+\/api\/v1\/files\//gi,
-        (match) => {
-            // 保留属性名/函数名 + 路径部分，去掉协议和主机名
-            return match.replace(/https?:\/\/[^\/]+\/api\/v1\/files\//i, "/api/v1/files/");
-        }
+        /<base\s+[^>]*href\s*=\s*["']https?:\/\/[^"']*["'][^>]*>/gi,
+        ""
     );
+
+    // Step 2：全局替换所有 http(s)://域名/api/v1/files/ → /api/v1/files/
+    resultHtml = resultHtml.replace(
+        /https?:\/\/[^\/"'\s>]+\/api\/v1\/files\//gi,
+        "/api/v1/files/"
+    );
+
     if (resultHtml.length !== originalLength) {
         console.log("[htmlppt] 检测到绝对 URL 已规范化：原始 " + originalLength + " 字符 → " + resultHtml.length + " 字符");
     }
 
-    // ========== 成功：返回 HTML 代码 ==========
-    console.log("[htmlppt] HTML PPT 生成成功，HTML 长度：" + resultHtml.length + " 字符。");
-    return {
-        code: 200,
-        html: resultHtml
-    };
+    return { code: 200, html: resultHtml };
 }
 
 module.exports = { generateHtmlPpt: main };

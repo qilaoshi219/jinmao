@@ -3,7 +3,7 @@
 // 通过 setup() 导出给 index.vue 模板使用
 // 数据流：App.vue → HomePage → { HomeSidebar, HomeTopbar, CourseCard, UploadBookDialog }
 
-import { ref, reactive, onMounted, onUnmounted, computed, inject } from "vue";
+import { ref, reactive, onMounted, onUnmounted, computed, inject, nextTick } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "../../stores/auth";
 import { useTheme } from "../../composables/useTheme";
@@ -112,6 +112,11 @@ export default {
     const quizLoading = ref(false);
     /** 题库导入弹窗可见性 */
     const quizImportDialogVisible = ref(false);
+    /** 文本粘贴导入页面入口 */
+    function navigateToQuizImport() {
+      console.log(TAG + " 导航到文本粘贴导入题库页面");
+      navigate("quiz-import");
+    }
 
     // ==================== 题库生成进度轮询 ====================
     /** 题库生成进度映射表（key: generatingTaskId, value: 进度对象） */
@@ -428,11 +433,15 @@ export default {
         loadQuizTextbooks();
       }
       // 切换到题库市场时加载市场列表
+      // 需要用 nextTick 等待 MarketPage 组件渲染完成（v-if 条件渲染是异步的）
       if (menu === "market") {
-        // 通过 ref 调用市场页面的加载方法
-        if (marketPageRef.value) {
-          marketPageRef.value.loadMarketList();
-        }
+        nextTick(() => {
+          if (marketPageRef.value) {
+            marketPageRef.value.loadMarketList();
+          } else {
+            console.warn(TAG + " marketPageRef 仍然为空，请检查 MarketPage 是否正确渲染");
+          }
+        });
       }
       // 其他占位菜单提示即将上线
       if (menu !== "courses" && menu !== "quiz" && menu !== "market") {
@@ -447,6 +456,24 @@ export default {
     function navigateToBilling() {
       console.log(TAG + " 导航到账单页面");
       navigate("billing");
+    }
+
+    /**
+     * 导航到个人设置页面
+     * 由 HomeSidebar 底部用户区域点击触发
+     */
+    function navigateToProfile() {
+      console.log(TAG + " 导航到个人设置页面");
+      navigate("profile");
+    }
+
+    /**
+     * 导航到兑换码领取页面
+     * 由 HomeSidebar 新用户福利弹窗点击触发
+     */
+    function navigateToRedeem() {
+      console.log(TAG + " 导航到兑换码领取页面");
+      navigate("redeem");
     }
 
     /**
@@ -637,6 +664,15 @@ export default {
     }
 
     /**
+     * 打开题库详情页
+     * @param {string} textbookId - 题库ID
+     */
+    function onOpenQuizTextbook(textbookId) {
+      console.log(TAG + " 打开题库详情，textbookId:", textbookId);
+      navigate("quiz-detail", { textbookId });
+    }
+
+    /**
      * 格式化学习时长为可读字符串
      * 根据秒数自动选择"小时 分钟"或"分钟 秒"或"秒"格式
      * @param {number} totalSeconds - 总秒数
@@ -721,6 +757,7 @@ export default {
       onStartSequentialQuiz,
       onDeleteQuizTextbook,
       onShareToggled,
+      onOpenQuizTextbook,
       marketPageRef,
       // 方法
       toggleTheme,
@@ -732,6 +769,9 @@ export default {
       onDeleteCourse,
       setActiveMenu,
       navigateToBilling,
+      navigateToProfile,
+      navigateToRedeem,
+      navigateToQuizImport,
       handleLogout,
 
       // ===== 工具函数 =====

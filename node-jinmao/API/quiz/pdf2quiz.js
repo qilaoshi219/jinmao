@@ -163,9 +163,22 @@ router.post("/upload", authenticateToken, (req, res) => {
     });
 
     try {
+      // ===== 创建任务前：余额校验 =====
+      const { checkCanUseAI } = require("../../utils/balance");
+      const balanceCheck = await checkCanUseAI(req.userId);
+      if (!balanceCheck.allowed) {
+        console.log(TAG + " [POST /upload] 余额不足，拒绝创建任务: " + balanceCheck.reason);
+        cleanupFile(filePath);
+        return res.status(402).json({
+          code: 402,
+          message: balanceCheck.reason,
+          data: { balance: balanceCheck.balance, balanceLocked: balanceCheck.balanceLocked },
+        });
+      }
+
       // ===== PDF → MD 转换 =====
       console.log(TAG + " 开始 PDF → MD 转换...");
-      const { markdownContent, fileName } = await convertPdfToMd(filePath);
+      const { markdownContent, fileName } = await convertPdfToMd(filePath, req.userId);
 
       console.log(TAG + " PDF 转换完成，创建 MD→JSON 任务...");
       const task = await createMd2QuizTask(

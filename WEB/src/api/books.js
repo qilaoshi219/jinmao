@@ -10,7 +10,7 @@ const TAG = "[api_books]";
 /**
  * 上传教材文件（multipart/form-data）
  * POST /api/v1/book/upload
- * @param {File} file - 教材文件对象（pdf/docx/doc/md/zip/rar/7z）
+ * @param {File} file - 教材文件对象（pdf/md/zip/rar/7z）
  * @param {Object} options - 可选的额外字段 { name?, description?, elaboration? }
  * @returns {Promise} 后端返回 { code, message, data: { book_id, ... } }
  */
@@ -233,5 +233,35 @@ export async function getFixStatus(courseId, chapterId) {
   const response = await apiClient.get(
     "/courses/" + courseId + "/chapters/" + chapterId + "/fix-status"
   );
+  return response.data;
+}
+
+/**
+ * 检查 PDF 文件页数（上传前预检，纯本地读取，毫秒级）
+ * POST /api/v1/book/check-pdf-pages
+ * @param {File} file - PDF 文件对象
+ * @returns {Promise} 后端返回 { code, message, data: { pageCount, fileName } }
+ */
+export async function checkPdfPages(file) {
+  console.log(TAG + "[checkPdfPages] 请求检查 PDF 页数: " + file.name);
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await apiClient.post("/book/check-pdf-pages", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+    timeout: 30000, // 30 秒超时（小文件上传，不需要很长时间）
+  });
+
+  console.log(
+    TAG +
+      "[checkPdfPages] 响应: code=" +
+      response.data.code +
+      ", pageCount=" +
+      response.data?.data?.pageCount
+  );
+
   return response.data;
 }

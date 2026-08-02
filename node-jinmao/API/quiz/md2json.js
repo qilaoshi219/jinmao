@@ -129,6 +129,18 @@ router.post("/tasks", authenticateToken, async (req, res) => {
       });
     }
 
+    // ===== 创建任务前：余额校验 =====
+    const { checkCanUseAI } = require("../../utils/balance");
+    const balanceCheck = await checkCanUseAI(req.userId);
+    if (!balanceCheck.allowed) {
+      console.log(TAG + " [POST /tasks] 余额不足，拒绝创建任务: " + balanceCheck.reason);
+      return res.status(402).json({
+        code: 402,
+        message: balanceCheck.reason,
+        data: { balance: balanceCheck.balance, balanceLocked: balanceCheck.balanceLocked },
+      });
+    }
+
     // ===== 创建任务 =====
     const task = await createMd2QuizTask(
       {

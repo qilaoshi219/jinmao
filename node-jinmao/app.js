@@ -130,8 +130,35 @@ require("dotenv").config();
           console.log("[app]    原因：服务器上的 Prisma Client 是用旧版 schema 生成的（node_modules 未更新）。");
           regenerateReason = "Prisma Client 模型缺失（" + missingModels.join(", ") + "）";
         } else {
-          needRegenerate = false;
-          console.log("[app] ✅ schema 未变，Prisma Client 已是最新（模型完整性校验通过），跳过生成");
+          // 模型完整性校验通过，追加字段级完整性校验
+          // 场景：schema 哈希匹配且模型都存在，但 Prisma Client 是用旧 schema 生成的
+          //       新字段（如 balanceLocked）在 MySQL 中已存在但 Prisma Client 不认识
+          // 通过检查 Prisma DMMF（Data Model Meta Format）确认字段是否已生成
+          var fieldCheckFailed = false;
+          try {
+            var PrismaPkg = require("@prisma/client");
+            var dmmf = PrismaPkg.Prisma ? PrismaPkg.Prisma.dmmf : null;
+            if (dmmf && dmmf.datamodel && dmmf.datamodel.models) {
+              var userModel = dmmf.datamodel.models.find(function (m) { return m.name === "User"; });
+              if (userModel) {
+                var hasBalanceLocked = userModel.fields.some(function (f) { return f.name === "balanceLocked"; });
+                if (!hasBalanceLocked) {
+                  console.log("[app] ⚠ schema 哈希匹配，但 Prisma Client DMMF 中缺少 balanceLocked 字段。");
+                  console.log("[app]    原因：Prisma Client 是用旧版 schema 生成的，缺少新字段映射。");
+                  fieldCheckFailed = true;
+                }
+              }
+            }
+          } catch (dmmfErr) {
+            // DMMF 检查失败（如 @prisma/client 版本过旧），保守处理：不阻塞启动
+            console.log("[app] ⚠ 字段级 DMMF 检查失败: " + dmmfErr.message + "，将跳过字段校验");
+          }
+          if (fieldCheckFailed) {
+            regenerateReason = "Prisma Client 字段缺失（缺少 balanceLocked 等新字段）";
+          } else {
+            needRegenerate = false;
+            console.log("[app] ✅ schema 未变，Prisma Client 已是最新（模型+字段完整性校验通过），跳过生成");
+          }
         }
         // 断开临时连接，避免资源泄漏
         tempPrisma.$disconnect().catch(function () {});
@@ -313,6 +340,7 @@ const express = require("express"); // Express Web 框架
 const cors = require("cors"); // 跨域资源共享
 const helmet = require("helmet"); // HTTP 安全头
 const getSwaggerSpec = require("./config/swagger"); // 异步获取 OpenAPI 3.0 规范对象（swagger-jsdoc 是 ESM 包，需异步加载）
+const securityMiddleware = require("./middleware/security"); // 安全防护中间件（检测并阻断可疑攻击请求）
 
 // ==================== 导入路由模块 ====================
 // 认证路由：/api/v1/smtpcode、/api/v1/login
@@ -341,12 +369,22 @@ const quizReportRouter = require("./API/quiz/report");
 const quizWrongbookRouter = require("./API/quiz/wrongbook");
 // 题库市场路由：/api/v1/quiz/market*
 const quizMarketRouter = require("./API/quiz/market");
+// 题库详情路由：/api/v1/quiz/textbooks/:id/stats + exams 刷题
+const quizDetailRouter = require("./API/quiz/detail");
 // 账单查询路由：/api/v1/billing（需 Token）
 const billingRouter = require("./API/billing");
 // MD→JSON 生成任务路由：/api/v1/quiz/md2json/*
 const quizMd2jsonRouter = require("./API/quiz/md2json");
 // PDF→Quiz 上传路由：/api/v1/quiz/pdf2quiz/*
 const quizPdf2QuizRouter = require("./API/quiz/pdf2quiz");
+// AI 文本格式化路由：/api/v1/quiz/format-text（文本粘贴导入题库）
+const quizFormatTextRouter = require("./API/quiz/format-text");
+// 兑换码兑换路由：/api/v1/redeem（替换原有充值路由）
+const redeemRouter = require("./API/redeem");
+// 管理员 CMS 路由：/admin/:suffix/api/*（安全后缀 + JWT 管理员角色双重鉴权）
+const adminRouter = require("./API/admin");
+// 管理员配置（安全后缀）
+const adminConfig = require("./config/admin_config.json");
 
 // ==================== 创建 Express 应用 ====================
 const app = express();
@@ -363,21 +401,37 @@ app.use(express.json({ limit: "1mb" }));
 app.use(
   helmet({
     contentSecurityPolicy: {
+      // 保留 Helmet 的默认安全基线，但显式关闭会把 HTTP 页面强制升级到 HTTPS 的指令。
+      // 线上 30080 端口当前只提供 HTTP，若保留该指令会导致 Scalar 文档页里的资源被错误升级到 https://...:30080。
       directives: {
         defaultSrc: ["'self'"], // 默认只允许同源
         scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"], // 允许 Scalar CDN 脚本和内联脚本
+        // Helmet v7+ 默认将 script-src-attr 设为 'none'，阻止内联事件处理器（如 onclick）
+        // 显式设置 unsafe-inline + unsafe-hashes，允许幻灯片 HTML 中的内联事件处理器正常运行
+        scriptSrcAttr: ["'unsafe-inline'", "'unsafe-hashes'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"], // 允许 Scalar CDN 样式和内联样式
-        imgSrc: ["'self'", "data:", "https:"], // 允许 data: URI 和 HTTPS 图片
-        connectSrc: ["'self'"], // API 请求只允许同源
-        fontSrc: ["'self'", "https://cdn.jsdelivr.net"], // 允许 CDN 字体
+        imgSrc: ["'self'", "data:", "https:", "http:"], // 允许 HTTP/HTTPS 图片（含幻灯片内嵌的绝对 URL 兜底）
+        connectSrc: ["'self'", "https://cdn.jsdelivr.net"], // 允许同源 API 调试请求和 jsDelivr source map 拉取
+        fontSrc: ["'self'", "https:", "data:"], // 允许 Scalar 从 HTTPS CDN 加载字体资源
+        upgradeInsecureRequests: null, // 禁止浏览器把 http://...:30080 自动升级成 https://...:30080
       },
     },
+    crossOriginOpenerPolicy: false, // 关闭 COOP，避免 HTTP 文档页在非可信源上触发浏览器拦截
+    crossOriginResourcePolicy: false, // 文档页会加载 CDN 资源，关闭 CORP 避免资源策略冲突
+    originAgentCluster: false, // 关闭 OAC，避免浏览器报 origin-keyed / site-keyed cluster 冲突
+    strictTransportSecurity: false, // 当前服务仍通过 HTTP 端口访问，不能向浏览器宣告 HSTS
   })
 );
 
 // 跨域中间件
 // 开发阶段放通所有来源，生产环境需限制具体域名
 app.use(cors());
+
+// 安全防护中间件
+// 在路由之前检测并阻断可疑攻击请求（SQL注入/XSS/路径遍历/超长URL/扫描器探测等），
+// 命中的攻击会写入 SecurityEvent 表供管理员后台分析研究
+app.use(securityMiddleware);
+console.log("[app] ✅ 安全防护中间件已挂载");
 
 // 请求日志中间件
 // 记录每个请求的方法、路径和响应状态码，便于调试
@@ -452,12 +506,20 @@ app.use("/api/v1/quiz", quizSessionRouter);
 app.use("/api/v1/quiz", quizReportRouter);
 app.use("/api/v1/quiz", quizWrongbookRouter);
 app.use("/api/v1/quiz", quizMarketRouter);
+app.use("/api/v1/quiz", quizDetailRouter);
 app.use("/api/v1/quiz/md2json", quizMd2jsonRouter);
 app.use("/api/v1/quiz/pdf2quiz", quizPdf2QuizRouter);
+app.use("/api/v1/quiz", quizFormatTextRouter);
 console.log("[app] ✅ 题库刷题路由已注册: /api/v1/quiz/*");
 // 账单查询路由挂载到 /api/v1 前缀
 app.use("/api/v1", billingRouter);
 console.log("[app] ✅ 账单查询路由已注册: /api/v1/billing");
+// 兑换码兑换路由挂载到 /api/v1 前缀（替换原有充值路由）
+app.use("/api/v1", redeemRouter);
+console.log("[app] ✅ 兑换码兑换路由已注册: /api/v1/redeem");
+// 管理员 API 路由挂载（安全后缀 + JWT管理员角色双重鉴权）
+app.use("/admin", adminRouter);
+console.log("[app] ✅ 管理员 API 路由已注册: /admin/:suffix/api/*");
 
 // ==================== 启动 HTTP 服务器 ====================
 // 404 和全局错误处理中间件已移入 async IIFE 内部（在 Scalar 路由之后注册），
@@ -497,6 +559,32 @@ console.log("[app] ✅ 账单查询路由已注册: /api/v1/billing");
       },
     })
   );
+
+  // ==================== 管理员页面路由 ====================
+  // GET /admin/:suffix — 渲染管理员 CMS 页面
+  // 不匹配安全后缀时返回 404，伪装路径不存在
+  app.get("/admin/:suffix", (req, res) => {
+    const { suffix } = req.params;
+    // 从配置读取当前安全后缀
+    const currentSuffix = adminConfig.securitySuffix;
+    if (suffix !== currentSuffix) {
+      console.log("[app] 管理员页面请求后缀不匹配: " + suffix + "（期望: " + currentSuffix + "），返回404");
+      return res.status(404).send("Not Found");
+    }
+    console.log("[app] ✅ 管理员页面访问，后缀验证通过: " + suffix);
+    // 管理员页面需要更宽松的 CSP：Vue 模板编译器需要 'unsafe-eval'
+    // 同时允许 jsdelivr CDN 加载脚本和样式，以及 connect-src 允许 source map 请求
+    res.setHeader("Content-Security-Policy",
+      "default-src 'self'; " +
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; " +
+      "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+      "img-src 'self' data: https:; " +
+      "connect-src 'self' https://cdn.jsdelivr.net; " +
+      "font-src 'self' https://cdn.jsdelivr.net"
+    );
+    // 发送管理员 SPA 页面
+    res.sendFile(path.join(__dirname, "admin", "index.html"));
+  });
 
   // ==================== 404 处理中间件 ====================
   // 放在 async IIFE 内部，确保在 Scalar /api/v1/docs 路由注册之后才生效
@@ -566,6 +654,10 @@ console.log("[app] ✅ 账单查询路由已注册: /api/v1/billing");
     console.log("    GET  /api/v1/book/:book_id/status — 查询教材处理状态");
     console.log("    GET  /api/v1/book/:book_id/progress — 查询教材生成进度");
     console.log("    GET  /api/v1/books                — 教材列表（分页+搜索）");
+    console.log("    POST /api/v1/redeem               — 兑换码兑换余额");
+    console.log("  ---- 管理员入口 ----");
+    console.log("  🔐 安全后缀: " + adminConfig.securitySuffix);
+    console.log("    管理页面: http://localhost:" + port + "/admin/" + adminConfig.securitySuffix);
     console.log("========================================");
   });
 

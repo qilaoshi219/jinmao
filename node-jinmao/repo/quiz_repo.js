@@ -248,6 +248,137 @@ async function deleteTextbook(textbookId, userId) {
   }
 }
 
+/**
+ * 删除单个试卷（含级联删除关联数据）
+ * 若删除后题库试卷数为 0，则连题库一起删除
+ * @param {string} examId - 试卷ID
+ * @param {string} userId - 用户ID（用于鉴权）
+ * @returns {Promise<{code: number, data: {deletedTextbook: boolean}|null, message: string}>}
+ */
+async function deleteExam(examId, userId) {
+  console.log(TAG + " deleteExam — examId: " + examId + ", userId: " + userId);
+
+  try {
+    const bigExamId = BigInt(examId);
+    const bigUserId = BigInt(userId);
+
+    // 1. 查找试卷，联查 textbook 确认存在且用户有所有权
+    const exam = await prisma.quizExam.findFirst({
+      where: { id: bigExamId },
+      include: {
+        textbook: { select: { id: true, userId: true, isDeleted: false } },
+      },
+    });
+
+    if (!exam) {
+      return { code: 404, data: null, message: "试卷不存在" };
+    }
+
+    if (exam.textbook.userId !== bigUserId) {
+      return { code: 404, data: null, message: "试卷不存在或无权操作" };
+    }
+
+    if (exam.textbook.isDeleted) {
+      return { code: 404, data: null, message: "试卷关联的题库已被删除" };
+    }
+
+    const textbookId = exam.textbookId;
+    const questionCount = exam.questionCount;
+
+    console.log(TAG + " deleteExam — 试卷名: " + exam.name + ", 题数: " + questionCount + ", textbookId: " + textbookId);
+
+    // 2. 事务：级联删除试卷关联的所有数据
+    await prisma.$transaction([
+      // 删除与该试卷题目关联的报告题目明细
+      prisma.quizReportItem.deleteMany({
+        where: { question: { examId: bigExamId } },
+      }),
+      // 删除与该试卷关联的刷题报告（通过 session）
+      prisma.quizReport.deleteMany({
+        where: { session: { examId: bigExamId } },
+      }),
+      // 删除与该试卷题目关联的作答记录
+      prisma.quizUserAnswer.deleteMany({
+        where: { question: { examId: bigExamId } },
+      }),
+      // 删除与该试卷题目关联的错题记录
+      prisma.quizWrongQuestion.deleteMany({
+        where: { question: { examId: bigExamId } },
+      }),
+      // 删除与该试卷关联的刷题会话
+      prisma.quizSession.deleteMany({
+        where: { examId: bigExamId },
+      }),
+      // 删除该试卷的所有题目
+      prisma.quizQuestion.deleteMany({
+        where: { examId: bigExamId },
+      }),
+      // 删除试卷本身
+      prisma.quizExam.delete({
+        where: { id: bigExamId },
+      }),
+    ]);
+
+    console.log(TAG + " deleteExam — 试卷及关联数据已删除");
+
+    // 3. 统计该题库剩余试卷数
+    const remainingExamCount = await prisma.quizExam.count({
+      where: { textbookId },
+    });
+
+    console.log(TAG + " deleteExam — 剩余试卷数: " + remainingExamCount);
+
+    // 4. 若剩余试卷数 == 0，连题库一起删除
+    if (remainingExamCount === 0) {
+      console.log(TAG + " deleteExam — 题库试卷数为0，执行整库删除");
+      // 直接软删除题库：题库的试卷/题目已在上述事务中删除，剩余关联数据需额外清理
+      await prisma.$transaction([
+        // 删除题库级别的关联数据（可能未在试卷级联中覆盖）
+        prisma.quizReportItem.deleteMany({
+          where: { report: { textbookId } },
+        }),
+        prisma.quizReport.deleteMany({
+          where: { textbookId },
+        }),
+        prisma.quizUserAnswer.deleteMany({
+          where: { question: { textbookId } },
+        }),
+        prisma.quizWrongQuestion.deleteMany({
+          where: { textbookId },
+        }),
+        prisma.quizSession.deleteMany({
+          where: { textbookId },
+        }),
+        prisma.quizBookBorrow.deleteMany({
+          where: { textbookId },
+        }),
+        prisma.quizTextbook.update({
+          where: { id: textbookId },
+          data: { isDeleted: true },
+        }),
+      ]);
+
+      console.log(TAG + " deleteExam — 题库已一并删除");
+      return { code: 200, data: { deletedTextbook: true }, message: "试卷及题库已删除（题库下无剩余试卷）" };
+    }
+
+    // 5. 剩余试卷数 > 0：更新题库计数
+    await prisma.quizTextbook.update({
+      where: { id: textbookId },
+      data: {
+        totalExams: remainingExamCount,
+        totalQuestions: { decrement: questionCount },
+      },
+    });
+
+    console.log(TAG + " deleteExam — 题库计数已更新");
+    return { code: 200, data: { deletedTextbook: false }, message: "试卷已删除" };
+  } catch (error) {
+    console.error(TAG + " deleteExam — 删除失败: " + error.message);
+    return { code: 500, data: null, message: "删除试卷失败: " + error.message };
+  }
+}
+
 // ==================== 导入操作 ====================
 
 /**
@@ -262,27 +393,42 @@ async function deleteTextbook(textbookId, userId) {
 async function createTextbookAndExam(textbookName, examName, userId, description, generatingTaskId) {
   const bigUserId = BigInt(userId);
 
+  // 查找用户是否已有同名题库（isDeleted=false），有则复用实现试卷合并
+  const existingTextbook = await prisma.quizTextbook.findFirst({
+    where: { name: textbookName, userId: bigUserId, isDeleted: false },
+    select: { id: true },
+    orderBy: { createTime: "asc" },
+  });
+
   const result = await prisma.$transaction(async (tx) => {
-    const textbook = await tx.quizTextbook.create({
-      data: {
-        userId: bigUserId,
-        name: textbookName,
-        description: description || null,
-        totalQuestions: 0,
-        totalExams: 1,
-        generatingTaskId: generatingTaskId || null,
-      },
-    });
+    let textbookId;
 
+    if (existingTextbook) {
+      // 复用已有题库
+      textbookId = existingTextbook.id;
+      console.log(TAG + " createTextbookAndExam — 复用已有题库，textbookId: " + textbookId);
+    } else {
+      // 创建新题库
+      const textbook = await tx.quizTextbook.create({
+        data: {
+          userId: bigUserId,
+          name: textbookName,
+          description: description || null,
+          totalQuestions: 0,
+          totalExams: 0,
+          generatingTaskId: generatingTaskId || null,
+        },
+      });
+      textbookId = textbook.id;
+      console.log(TAG + " createTextbookAndExam — 创建新题库，textbookId: " + textbookId);
+    }
+
+    // 创建新试卷（始终新建）
     const exam = await tx.quizExam.create({
-      data: {
-        textbookId: textbook.id,
-        name: examName,
-        questionCount: 0,
-      },
+      data: { textbookId, name: examName, questionCount: 0 },
     });
 
-    return { textbookId: textbook.id, examId: exam.id };
+    return { textbookId, examId: exam.id };
   });
 
   console.log(TAG + " createTextbookAndExam — 创建成功，textbookId: " + result.textbookId + ", examId: " + result.examId);
@@ -330,6 +476,9 @@ async function batchCreateQuestions(textbookId, examId, questions) {
  * @param {number} count - 题目数量
  */
 async function updateQuestionCounts(textbookId, examId, count) {
+  // 统计该题库下实际的试卷总数
+  const totalExams = await prisma.quizExam.count({ where: { textbookId } });
+
   await prisma.$transaction([
     prisma.quizExam.update({
       where: { id: examId },
@@ -337,11 +486,14 @@ async function updateQuestionCounts(textbookId, examId, count) {
     }),
     prisma.quizTextbook.update({
       where: { id: textbookId },
-      data: { totalQuestions: count, totalExams: 1 },
+      data: {
+        totalQuestions: { increment: count },
+        totalExams,
+      },
     }),
   ]);
 
-  console.log(TAG + " updateQuestionCounts — 计数值已更新: " + count);
+  console.log(TAG + " updateQuestionCounts — 题目数: +" + count + ", 试卷数: " + totalExams);
 }
 
 /**
@@ -350,11 +502,9 @@ async function updateQuestionCounts(textbookId, examId, count) {
  * @param {bigint} examId
  */
 async function cleanupEmptyImport(textbookId, examId) {
-  await prisma.$transaction([
-    prisma.quizExam.delete({ where: { id: examId } }),
-    prisma.quizTextbook.delete({ where: { id: textbookId } }),
-  ]);
-  console.log(TAG + " cleanupEmptyImport — 已清理空导入数据");
+  // 只删除空试卷（题库可能已有其他试卷，不再整库删除）
+  await prisma.quizExam.delete({ where: { id: examId } });
+  console.log(TAG + " cleanupEmptyImport — 已清理空试卷，examId: " + examId);
 }
 
 // ==================== 会话操作 ====================
@@ -1063,10 +1213,9 @@ async function listMarketTextbooks(userId, page, pageSize, keyword) {
   try {
     const bigUserId = BigInt(userId);
 
-    // 构建查询条件：isShared=true, 不是自己的题库, 未删除
+    // 构建查询条件：isShared=true, 未删除（包含自己的共享题库，前端根据 isOwner 区分显示）
     const where = {
       isShared: true,
-      userId: { not: bigUserId },
       isDeleted: false,
     };
     if (keyword && keyword.trim()) {
@@ -1091,18 +1240,22 @@ async function listMarketTextbooks(userId, page, pageSize, keyword) {
     ]);
 
     // 格式化返回数据
-    const formattedItems = items.map((tb) => ({
-      id: tb.id,
-      name: tb.name,
-      description: tb.description,
-      totalQuestions: tb.totalQuestions,
-      totalExams: tb.totalExams,
-      createTime: tb.createTime,
-      updateTime: tb.updateTime,
-      isShared: tb.isShared,
-      creatorNickname: tb.user?.nickname || null,
-      isBorrowed: tb._count.borrows > 0,
-    }));
+    const formattedItems = items.map((tb) => {
+      const isOwner = tb.userId === bigUserId;
+      return {
+        id: tb.id,
+        name: tb.name,
+        description: tb.description,
+        totalQuestions: tb.totalQuestions,
+        totalExams: tb.totalExams,
+        createTime: tb.createTime,
+        updateTime: tb.updateTime,
+        isShared: tb.isShared,
+        creatorNickname: tb.user?.nickname || null,
+        isBorrowed: tb._count.borrows > 0,
+        isOwner, // 是否是当前用户自己的题库（前端据此显示"自己的"而非借用按钮）
+      };
+    });
 
     console.log(TAG + " listMarketTextbooks — 查询成功，共 " + total + " 条，当前页 " + formattedItems.length + " 条");
 
@@ -1236,11 +1389,96 @@ async function getUserBorrowedTextbookIds(userId) {
   return records.map((r) => r.textbookId.toString());
 }
 
+// ==================== 按试卷查询题目 ====================
+
+/**
+ * 按试卷ID获取所有题目ID列表（按 sortOrder 升序排列，用于顺序刷题）
+ * @param {string} examId - 试卷ID
+ * @returns {Promise<string[]>} 题目ID字符串数组
+ */
+async function getAllQuestionIdsByExamId(examId) {
+  console.log(TAG + " getAllQuestionIdsByExamId — examId: " + examId);
+
+  const bigExamId = BigInt(examId);
+  const rows = await prisma.quizQuestion.findMany({
+    where: { examId: bigExamId },
+    select: { id: true },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  const ids = rows.map((r) => r.id.toString());
+  console.log(TAG + " getAllQuestionIdsByExamId — 共 " + ids.length + " 题");
+  return ids;
+}
+
+/**
+ * 按试卷ID + 题型随机抽取题目（每种题型最多5题，用于随机刷题）
+ * @param {string} examId - 试卷ID
+ * @returns {Promise<string[]>} 随机抽取的题目ID字符串数组
+ */
+async function sampleQuestionIdsByExamId(examId) {
+  console.log(TAG + " sampleQuestionIdsByExamId — examId: " + examId);
+
+  const RANDOM_QUESTION_TYPES = ["SINGLE", "MULTIPLE", "JUDGE", "FILL", "ESSAY"];
+  const RANDOM_PER_TYPE = 5;
+  const bigExamId = BigInt(examId);
+  const sampledIds = [];
+
+  for (const questionType of RANDOM_QUESTION_TYPES) {
+    const rows = await prisma.quizQuestion.findMany({
+      where: { examId: bigExamId, type: questionType },
+      select: { id: true },
+    });
+
+    // Fisher-Yates 洗牌
+    const shuffled = [...rows].sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, RANDOM_PER_TYPE);
+    for (const row of selected) {
+      sampledIds.push(row.id.toString());
+    }
+  }
+
+  console.log(TAG + " sampleQuestionIdsByExamId — 抽取完成，共 " + sampledIds.length + " 题");
+  return sampledIds;
+}
+
+/**
+ * 查找进行中的基于试卷的刷题会话（按模式查询）
+ * @param {string} userId - 用户ID
+ * @param {string} examId - 试卷ID
+ * @param {string} mode - 刷题模式（"SEQUENTIAL" / "RANDOM"）
+ * @returns {Promise<Object|null>} 进行中的会话 或 null
+ */
+async function findActiveExamSession(userId, examId, mode) {
+  console.log(TAG + " findActiveExamSession — userId: " + userId + ", examId: " + examId + ", mode: " + mode);
+
+  const bigUserId = BigInt(userId);
+  const bigExamId = BigInt(examId);
+
+  const session = await prisma.quizSession.findFirst({
+    where: {
+      userId: bigUserId,
+      examId: bigExamId,
+      mode: mode,
+      status: "IN_PROGRESS",
+    },
+    orderBy: { updateTime: "desc" },
+  });
+
+  if (session) {
+    console.log(TAG + " findActiveExamSession — 命中进行中会话: " + session.id);
+    return session;
+  }
+
+  return null;
+}
+
 module.exports = {
   // 题库
   listTextbooks,
   getTextbookDetail,
   deleteTextbook,
+  deleteExam,
   // 导入
   createTextbookAndExam,
   batchCreateQuestions,
@@ -1280,4 +1518,8 @@ module.exports = {
   borrowTextbook,
   unborrowTextbook,
   getUserBorrowedTextbookIds,
+  // 按试卷查询
+  getAllQuestionIdsByExamId,
+  sampleQuestionIdsByExamId,
+  findActiveExamSession,
 };

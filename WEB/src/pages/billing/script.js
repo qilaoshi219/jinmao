@@ -3,7 +3,7 @@
 // 遵循项目现有页面模式：export default { setup() { ... } }
 
 import { ref, computed, onMounted, inject } from "vue";
-import { getBilling } from "../../api/billing"; // 账单 API
+import { getBilling } from "../../api/billing"; // 账单 API（充值已迁移到兑换码系统）
 
 // 日志前缀
 const TAG = "[billing_page]";
@@ -21,7 +21,10 @@ export default {
     const vipLevel = ref("free");       // VIP 等级
     const plan = ref(null);             // 开通计划
     const balance = ref("0");           // 余额（字符串）
+    const balanceLocked = ref(false);   // 余额锁定状态
     const totalUsed = ref("0");         // 已使用金额（字符串）
+
+
 
     // 扣费记录与分页
     const records = ref([]);            // 当前页扣费记录列表
@@ -90,6 +93,7 @@ export default {
         vipLevel.value = data.vipLevel;
         plan.value = data.plan;
         balance.value = data.balance;
+        balanceLocked.value = data.balanceLocked || false;
         totalUsed.value = data.totalUsed;
 
         // 更新扣费记录和分页
@@ -119,6 +123,15 @@ export default {
     function goBack() {
       console.log(TAG + " 返回首页");
       navigate("home");
+    }
+
+    /**
+     * 跳转到兑换码输入页面
+     * 充值功能已迁移到兑换码系统，用户通过点击"去兑换码"按钮进入兑换码领取页面
+     */
+    function goRedeem() {
+      console.log(TAG + " 点击去兑换码，跳转兑换码页面");
+      navigate("redeem");
     }
 
     /**
@@ -159,10 +172,12 @@ export default {
       // 状态
       loading,
       error,
+      // 充值功能已迁移到兑换码系统，recharging 状态保留用于兼容
       // 账务摘要
       vipLevel,
       plan,
       balance,
+      balanceLocked,
       totalUsed,
       // 扣费记录
       records,
@@ -176,6 +191,7 @@ export default {
       // 方法
       loadData,
       handlePageChange,
+      goRedeem,
       goBack,
       formatDate,
       formatCost,

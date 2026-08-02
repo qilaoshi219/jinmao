@@ -31,6 +31,9 @@ const CALL_TAG_LABELS = {
     create_image: "文生图",
     tts: "文本转语音",
     doc2x: "PDF解析",
+    md2quiz_split: "题库分段(AI)",
+    md2quiz_format: "题库格式化(AI)",
+    md2quiz_generate: "题库生成(AI)",
 };
 
 // ==================== 金额向上取整工具函数 ====================
@@ -175,12 +178,18 @@ function getPriceFromPeriod(period, provider, model) {
 
 /**
  * 将计费记录写入 billing_record 表
- * @param {Object} record - 计费记录数据
+ * @param {Object} record - 计费记录数据（必须包含 error_message 和 retry_count 字段）
  * @returns {Promise<boolean>} 写入成功返回 true
  */
 async function saveBillingRecord(record) {
     try {
-        await prisma.billing_record.create({ data: record });
+        // 确保 error_message 和 retry_count 有默认值（兼容旧调用方）
+        const safeRecord = {
+            ...record,
+            error_message: record.error_message || null,
+            retry_count: record.retry_count || 0,
+        };
+        await prisma.billing_record.create({ data: safeRecord });
         return true;
     } catch (err) {
         console.error("[billing][saveBillingRecord] 写入数据库失败：" + err.message);
@@ -204,13 +213,16 @@ async function saveBillingRecord(record) {
  * @param {number} data.cacheMissTokens - 缓存未命中 token 数
  * @param {number} data.completionTokens - 输出 token 数
  * @param {number} data.totalTokens - 总 token 数
+ * @param {string} [data.errorMessage] - 失败原因（仅 status=failed 时有效，可选）
+ * @param {number} [data.retryCount] - 重试次数（0 表示首次调用，可选，默认 0）
  * @returns {Promise<{ totalCost: number }>} 总费用（元）
  */
 async function recordTokenUsage(data) {
     const TAG = "[billing][recordTokenUsage]";
     const {
         userId, provider, model, callTag, status,
-        promptTokens, cacheHitTokens, cacheMissTokens, completionTokens
+        promptTokens, cacheHitTokens, cacheMissTokens, completionTokens,
+        errorMessage, retryCount
     } = data;
 
     // 获取当前时段
@@ -256,10 +268,21 @@ async function recordTokenUsage(data) {
         input_cost: inputCost,
         output_cost: outputCost,
         total_cost: totalCost,
+        error_message: errorMessage || null,  // 失败原因（仅 status=failed 时记录）
+        retry_count: retryCount || 0,          // 重试次数
     };
 
     // 写入数据库
     const saved = await saveBillingRecord(record);
+
+    // 写入成功后，自动扣减用户余额
+    if (saved && totalCost > 0) {
+        // 延迟引入避免循环依赖（balance.js 不引用 billing.js，这里单向引用是安全的）
+        const { deductBalance } = require("./balance");
+        await deductBalance(userId, totalCost).catch(err => {
+            console.error(TAG + " 扣减余额失败（账单已记录）: " + err.message);
+        });
+    }
 
     // 控制台日志输出
     console.log(TAG + " ======== LLM 调用计费 ========");
@@ -292,13 +315,16 @@ async function recordTokenUsage(data) {
  * @param {number} [data.textLength] - 文本长度（TTS 专用）
  * @param {number} [data.audioDuration] - 音频时长（TTS 专用，可选）
  * @param {number} [data.pageCount] - 页数（doc2x PDF解析专用）
+ * @param {string} [data.errorMessage] - 失败原因（仅 status=failed 时有效，可选）
+ * @param {number} [data.retryCount] - 重试次数（0 表示首次调用，可选，默认 0）
  * @returns {Promise<{ totalCost: number }>} 总费用（元）
  */
 async function recordExternalCost(data) {
     const TAG = "[billing][recordExternalCost]";
     const {
         userId, provider, model, callTag, status,
-        imageCount, imageResolution, textLength, audioDuration, pageCount
+        imageCount, imageResolution, textLength, audioDuration, pageCount,
+        errorMessage, retryCount
     } = data;
 
     // 获取当前时段
@@ -360,10 +386,20 @@ async function recordExternalCost(data) {
         tts_unit_price: callTag === "tts" ? unitPrice : null,
         page_unit_price: callTag === "doc2x" ? unitPrice : null,
         total_cost: totalCost,
+        error_message: errorMessage || null,  // 失败原因（仅 status=failed 时记录）
+        retry_count: retryCount || 0,          // 重试次数
     };
 
     // 写入数据库
     const saved = await saveBillingRecord(record);
+
+    // 写入成功后，自动扣减用户余额
+    if (saved && totalCost > 0) {
+        const { deductBalance } = require("./balance");
+        await deductBalance(userId, totalCost).catch(err => {
+            console.error(TAG + " 扣减余额失败（账单已记录）: " + err.message);
+        });
+    }
 
     // 控制台日志输出
     console.log(TAG + " ======== 外部 API 调用计费 ========");

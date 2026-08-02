@@ -20,10 +20,225 @@ const { recordExternalCost } = require("./billing");
 const GENERATE_PATH = "/v1/api/generate";   // 提交文生图任务
 const RESULT_PATH = "/v1/api/result";       // 查询异步任务结果
 
-// ==================== 核心函数 ====================
+// 整体重试配置：整个 createImage 流程最多重试 3 次
+const MAX_RETRIES = 3;
+// 重试基础延迟（毫秒）
+const RETRY_BASE_DELAY_MS = 2000;
+// 最大重试延迟（毫秒）
+const RETRY_MAX_DELAY_MS = 10000;
+
+// ==================== 工具函数 ====================
+
+/**
+ * 延时等待（Promise 版 setTimeout）
+ * @param {number} ms - 等待毫秒数
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 指数退避延迟计算（带随机抖动，避免多个并发重试同时发起）
+ * @param {number} retryIndex - 当前重试次数（0-based，0=第1次重试）
+ * @returns {number} 延迟毫秒数
+ */
+function getRetryDelay(retryIndex) {
+    const baseDelay = RETRY_BASE_DELAY_MS * Math.pow(2, retryIndex);
+    const jitter = baseDelay * 0.25 * (Math.random() * 2 - 1);
+    const delay = Math.min(baseDelay + jitter, RETRY_MAX_DELAY_MS);
+    return Math.round(delay);
+}
+
+/**
+ * 判断错误是否值得重试（网络错误、服务端错误等瞬时问题）
+ * @param {string} errorMessage - 错误消息
+ * @returns {boolean} 是否应该重试
+ */
+function isRetryableError(errorMessage) {
+    if (!errorMessage) return true; // 未知错误，保守重试
+    const msg = errorMessage.toLowerCase();
+    // 网络层面错误 → 可重试
+    if (msg.includes("fetch") && (msg.includes("failed") || msg.includes("error"))) return true;
+    if (msg.includes("network")) return true;
+    if (msg.includes("timeout") || msg.includes("timed out")) return true;
+    if (msg.includes("econnreset") || msg.includes("econnrefused")) return true;
+    if (msg.includes("5") && msg.includes("http")) return true; // HTTP 5xx 服务端错误
+    if (msg.includes("无法解析 json")) return true; // 临时解析失败
+    // 内容违规、参数错误等不可重试
+    if (msg.includes("违规") || msg.includes("violation")) return false;
+    if (msg.includes("参数") || msg.includes("400")) return false;
+    // 默认：保守重试
+    return true;
+}
+
+// ==================== 内部函数：单次图片生成尝试 ====================
+
+/**
+ * 执行一次完整的文生图流程（提交任务 + 轮询结果）
+ * 不包含重试逻辑，仅执行单次尝试
+ * 
+ * @param {string} prompt - 图片描述文本
+ * @param {Object} requestBody - 已构建好的请求体
+ * @returns {Promise<{ code: number, imageUrl?: string, taskId?: string, message?: string, errorMessage?: string }>}
+ */
+async function attemptImageGeneration(prompt, requestBody) {
+    const TAG = "[create_image][attempt]";
+
+    const generateUrl = config.GRSAI_API_BASE + GENERATE_PATH;
+    console.log(TAG + " 准备提交文生图任务，目标接口：" + generateUrl);
+    console.log(TAG + " 请求参数 — 模型：" + requestBody.model + "，比例：" + requestBody.aspectRatio + "，prompt长度：" + prompt.length);
+
+    // ========== 步骤1：提交异步任务 ==========
+    let generateResponse;
+    try {
+        generateResponse = await fetch(generateUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + config.GRSAI_API_KEY
+            },
+            body: JSON.stringify(requestBody)
+        });
+    } catch (fetchError) {
+        const errMsg = "文生图接口网络请求失败：" + fetchError.message;
+        console.error(TAG + " " + errMsg);
+        return { code: 500, message: errMsg, errorMessage: fetchError.message };
+    }
+
+    // 检查 HTTP 状态码
+    if (!generateResponse.ok) {
+        const errorText = await generateResponse.text().catch(() => "无法读取响应体");
+        const errMsg = "文生图接口返回错误（HTTP " + generateResponse.status + "）：" + errorText;
+        console.error(TAG + " " + errMsg);
+        return { code: 500, message: errMsg, errorMessage: "HTTP " + generateResponse.status + ": " + errorText };
+    }
+
+    // 解析响应 JSON
+    let generateData;
+    try {
+        generateData = await generateResponse.json();
+    } catch (parseError) {
+        const errMsg = "文生图接口响应 JSON 解析失败：" + parseError.message;
+        console.error(TAG + " " + errMsg);
+        return { code: 500, message: errMsg, errorMessage: parseError.message };
+    }
+
+    console.log(TAG + " 生成接口响应：" + JSON.stringify({ id: generateData.id, status: generateData.status }));
+
+    // 检查是否返回了任务 ID
+    if (!generateData.id) {
+        const errMsg = "文生图接口未返回任务 ID，响应内容：" + JSON.stringify(generateData);
+        console.error(TAG + " " + errMsg);
+        return { code: 500, message: errMsg, errorMessage: "接口未返回任务ID" };
+    }
+
+    const taskId = generateData.id;
+    console.log(TAG + " 任务已提交，任务 ID：" + taskId + "，开始轮询结果...");
+
+    // ========== 步骤2：轮询查询异步任务结果 ==========
+    const pollInterval = config.GRSAI_POLL_INTERVAL_MS || 3000;
+    const maxRetries = config.GRSAI_POLL_MAX_RETRIES || 60;
+
+    for (let pollAttempt = 1; pollAttempt <= maxRetries; pollAttempt++) {
+        await sleep(pollInterval);
+
+        const resultUrl = config.GRSAI_API_BASE + RESULT_PATH + "?id=" + encodeURIComponent(taskId);
+        console.log(TAG + " 轮询第 " + pollAttempt + "/" + maxRetries + " 次，查询任务状态...");
+
+        // 发起查询请求
+        let resultResponse;
+        try {
+            resultResponse = await fetch(resultUrl, {
+                method: "GET",
+                headers: {
+                    "Authorization": "Bearer " + config.GRSAI_API_KEY
+                }
+            });
+        } catch (pollError) {
+            console.error(TAG + " 轮询请求失败（第 " + pollAttempt + " 次）：" + pollError.message);
+            continue; // 网络错误不立即返回，继续重试
+        }
+
+        // 检查 HTTP 状态码
+        if (!resultResponse.ok) {
+            const errorText = await resultResponse.text().catch(() => "无法读取响应体");
+            console.error(TAG + " 轮询接口返回 HTTP " + resultResponse.status + "（第 " + pollAttempt + " 次）：" + errorText);
+            continue; // 继续重试
+        }
+
+        // 解析响应 JSON
+        let resultData;
+        try {
+            resultData = await resultResponse.json();
+        } catch (parseError) {
+            console.error(TAG + " 轮询接口响应 JSON 解析失败（第 " + pollAttempt + " 次）：" + parseError.message);
+            continue; // 继续重试
+        }
+
+        const status = resultData.status;
+        const progress = resultData.progress !== undefined ? resultData.progress : "未知";
+        console.log(TAG + " 任务状态：" + status + "，进度：" + progress + "%");
+
+        // ---- 状态判断 ----
+
+        // 生成成功
+        if (status === "succeeded") {
+            if (resultData.results && resultData.results.length > 0 && resultData.results[0].url) {
+                const imageUrl = resultData.results[0].url;
+                console.log(TAG + " 图片生成成功！URL：" + imageUrl);
+                return {
+                    code: 200,
+                    imageUrl: imageUrl,
+                    taskId: taskId,
+                    message: "图片生成成功"
+                };
+            } else {
+                const errMsg = "图片生成成功但未返回图片 URL";
+                console.error(TAG + " " + errMsg + "：" + JSON.stringify(resultData));
+                return { code: 500, taskId: taskId, message: errMsg, errorMessage: "results中无图片URL" };
+            }
+        }
+
+        // 任务失败
+        if (status === "failed") {
+            const errorMsg = resultData.error || "未知错误";
+            console.error(TAG + " 任务失败：" + errorMsg);
+            return { code: 502, taskId: taskId, message: "文生图任务失败：" + errorMsg, errorMessage: errorMsg };
+        }
+
+        // 内容违规
+        if (status === "violation") {
+            const errMsg = "文生图内容违规，已被系统拦截";
+            console.error(TAG + " " + errMsg);
+            return { code: 502, taskId: taskId, message: errMsg, errorMessage: "内容违规" };
+        }
+
+        // running 状态：继续轮询
+        if (status === "running") {
+            continue;
+        }
+
+        // 未知状态：记录日志并继续轮询
+        console.warn(TAG + " 遇到未知任务状态：" + status + "，继续轮询...");
+    }
+
+    // 轮询次数用尽，超时
+    const timeoutMsg = "文生图轮询超时（" + (maxRetries * pollInterval / 1000) + " 秒）";
+    console.error(TAG + " " + timeoutMsg + "，任务 ID：" + taskId);
+    return {
+        code: 504,
+        taskId: taskId,
+        message: timeoutMsg + "，图片未能在限定时间内生成完成。",
+        errorMessage: "轮询超时（" + maxRetries + "次/" + (maxRetries * pollInterval / 1000) + "秒）"
+    };
+}
+
+// ==================== 核心函数：带重试的文生图 ====================
 
 /**
  * 调用 Grsai gpt-image-2 API 生成图片（异步模式 + 轮询获取结果）
+ * 内置最多 3 次整体重试，遇到网络错误等服务端问题自动重试
  *
  * @param {string} userId - 用户 ID（用于计费关联）
  * @param {string} prompt - 图片描述文本，如 "一只金色柴犬在樱花树下奔跑"
@@ -36,7 +251,6 @@ async function createImage(userId, prompt, options = {}) {
     const TAG = "[create_image]";
 
     // ========== 1. 输入验证 ==========
-    // 验证 prompt 字符串：非空、非注入、长度限制
     const promptResult = validateString(prompt, "图片描述(prompt)", {
         maxLength: 5000,
         required: true,
@@ -75,176 +289,82 @@ async function createImage(userId, prompt, options = {}) {
 
     // ========== 3. 构建请求体 ==========
     const requestBody = {
-        model: config.GRSAI_MODEL,          // 模型名称，如 "gpt-image-2"
-        prompt: prompt,                      // 图片描述文本
-        images: images,                      // 参考图数组（可为空）
-        aspectRatio: aspectRatio,            // 图片比例/分辨率
-        replyType: "async"                   // 使用异步模式，提交后轮询获取结果
+        model: config.GRSAI_MODEL,
+        prompt: prompt,
+        images: images,
+        aspectRatio: aspectRatio,
+        replyType: "async"
     };
 
-    const generateUrl = config.GRSAI_API_BASE + GENERATE_PATH;
-    console.log(TAG + " 准备提交文生图任务，目标接口：" + generateUrl);
-    console.log(TAG + " 请求参数 — 模型：" + requestBody.model + "，比例：" + requestBody.aspectRatio + "，prompt长度：" + prompt.length);
+    // ========== 4. 调用 API（带重试逻辑） ==========
+    let lastResult = null;
+    let finalRetryCount = 0;
 
-    // ========== 4. 调用生成接口（提交异步任务） ==========
-    let generateResponse;
-    try {
-        generateResponse = await fetch(generateUrl, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": "Bearer " + config.GRSAI_API_KEY
-            },
-            body: JSON.stringify(requestBody)
-        });
-    } catch (fetchError) {
-        console.error(TAG + " 生成接口网络请求失败：" + fetchError.message);
-        return { code: 500, message: "文生图接口网络请求失败：" + fetchError.message };
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        // 非首次尝试时：等待退避延迟
+        if (attempt > 0) {
+            finalRetryCount = attempt;
+            const delay = getRetryDelay(attempt - 1);
+            console.log(TAG + " 第 " + attempt + " 次整体重试（共允许 " + MAX_RETRIES + " 次），等待 " + delay + "ms...");
+            await sleep(delay);
+        }
+
+        console.log(TAG + " ======== 第 " + (attempt + 1) + " 次尝试 ========");
+        const result = await attemptImageGeneration(prompt, requestBody);
+        lastResult = result;
+
+        // 成功：直接返回
+        if (result.code === 200) {
+            // ========== 计费记录：文生图成功 ==========
+            recordExternalCost({
+                userId: userId,
+                provider: "grsai",
+                model: config.GRSAI_MODEL,
+                callTag: "create_image",
+                status: "success",
+                imageCount: 1,
+                imageResolution: aspectRatio,
+                retryCount: finalRetryCount,
+            }).catch(err => console.error(TAG + " 计费记录写入失败：" + err.message));
+            return result;
+        }
+
+        // 失败：判断是否应该重试
+        const errorMsg = result.errorMessage || result.message || "";
+        if (attempt < MAX_RETRIES && isRetryableError(errorMsg)) {
+            console.log(TAG + " 第 " + (attempt + 1) + " 次尝试失败（可重试），准备重试... 错误: " + errorMsg);
+            continue; // 进入下一次重试
+        }
+
+        // 不可重试 或 已达最大重试次数
+        if (attempt >= MAX_RETRIES) {
+            console.error(TAG + " 已达到最大重试次数（" + MAX_RETRIES + " 次），放弃重试。");
+        } else {
+            console.error(TAG + " 错误不可重试，放弃重试。");
+        }
+        break;
     }
 
-    // 检查 HTTP 状态码
-    if (!generateResponse.ok) {
-        const errorText = await generateResponse.text().catch(() => "无法读取响应体");
-        console.error(TAG + " 生成接口返回 HTTP " + generateResponse.status + "：" + errorText);
-        return { code: 500, message: "文生图接口返回错误（HTTP " + generateResponse.status + "）：" + errorText };
-    }
+    // ========== 5. 所有尝试失败：记录失败计费 ==========
+    // 无论什么原因失败，都记录到账单数据库中，方便后续排查问题
+    const failureResult = lastResult || { code: 500, message: "文生图失败（未知原因）", errorMessage: "未知错误" };
+    const billingErrorMessage = failureResult.errorMessage || failureResult.message || "未知错误";
 
-    // 解析响应 JSON
-    let generateData;
-    try {
-        generateData = await generateResponse.json();
-    } catch (parseError) {
-        console.error(TAG + " 生成接口响应 JSON 解析失败：" + parseError.message);
-        return { code: 500, message: "文生图接口响应格式异常，无法解析 JSON。" };
-    }
+    recordExternalCost({
+        userId: userId,
+        provider: "grsai",
+        model: config.GRSAI_MODEL,
+        callTag: "create_image",
+        status: "failed",
+        imageCount: 0,                      // 失败时图片数量为 0（不计费但记录调用事实）
+        imageResolution: aspectRatio,
+        errorMessage: billingErrorMessage,  // 记录失败原因
+        retryCount: finalRetryCount,        // 记录尝试了多少次
+    }).catch(err => console.error(TAG + " 计费记录写入失败：" + err.message));
 
-    console.log(TAG + " 生成接口响应：" + JSON.stringify({ id: generateData.id, status: generateData.status }));
-
-    // 检查是否返回了任务 ID
-    if (!generateData.id) {
-        console.error(TAG + " 生成接口未返回任务 ID，响应内容：" + JSON.stringify(generateData));
-        return { code: 500, message: "文生图接口未返回任务 ID，请检查请求参数或 API 配置。" };
-    }
-
-    const taskId = generateData.id;
-    console.log(TAG + " 任务已提交，任务 ID：" + taskId + "，开始轮询结果...");
-
-    // ========== 5. 轮询查询异步任务结果 ==========
-    const pollInterval = config.GRSAI_POLL_INTERVAL_MS || 3000;  // 轮询间隔（毫秒）
-    const maxRetries = config.GRSAI_POLL_MAX_RETRIES || 60;       // 最大轮询次数
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        // 等待指定间隔后再查询（第一次也需要等待，给服务端处理时间）
-        await sleep(pollInterval);
-
-        const resultUrl = config.GRSAI_API_BASE + RESULT_PATH + "?id=" + encodeURIComponent(taskId);
-        console.log(TAG + " 轮询第 " + attempt + "/" + maxRetries + " 次，查询任务状态...");
-
-        // 发起查询请求
-        let resultResponse;
-        try {
-            resultResponse = await fetch(resultUrl, {
-                method: "GET",
-                headers: {
-                    "Authorization": "Bearer " + config.GRSAI_API_KEY
-                }
-            });
-        } catch (pollError) {
-            console.error(TAG + " 轮询请求失败（第 " + attempt + " 次）：" + pollError.message);
-            // 网络错误不立即返回，继续重试
-            continue;
-        }
-
-        // 检查 HTTP 状态码
-        if (!resultResponse.ok) {
-            const errorText = await resultResponse.text().catch(() => "无法读取响应体");
-            console.error(TAG + " 轮询接口返回 HTTP " + resultResponse.status + "（第 " + attempt + " 次）：" + errorText);
-            continue;  // 继续重试
-        }
-
-        // 解析响应 JSON
-        let resultData;
-        try {
-            resultData = await resultResponse.json();
-        } catch (parseError) {
-            console.error(TAG + " 轮询接口响应 JSON 解析失败（第 " + attempt + " 次）：" + parseError.message);
-            continue;  // 继续重试
-        }
-
-        const status = resultData.status;
-        const progress = resultData.progress !== undefined ? resultData.progress : "未知";
-        console.log(TAG + " 任务状态：" + status + "，进度：" + progress + "%");
-
-        // ---- 状态判断 ----
-
-        // 生成成功：提取图片 URL 并返回
-        if (status === "succeeded") {
-            if (resultData.results && resultData.results.length > 0 && resultData.results[0].url) {
-                const imageUrl = resultData.results[0].url;
-                console.log(TAG + " 图片生成成功！URL：" + imageUrl);
-                // ========== 计费记录：文生图成功，记为 1 张 ==========
-                recordExternalCost({
-                    userId: userId,
-                    provider: "grsai",
-                    model: config.GRSAI_MODEL,
-                    callTag: "create_image",
-                    status: "success",
-                    imageCount: 1,
-                    imageResolution: aspectRatio,
-                }).catch(err => console.error(TAG + " 计费记录写入失败：" + err.message));
-                return {
-                    code: 200,
-                    imageUrl: imageUrl,
-                    taskId: taskId,
-                    message: "图片生成成功"
-                };
-            } else {
-                console.error(TAG + " 状态为 succeeded 但 results 中无图片 URL：" + JSON.stringify(resultData));
-                return { code: 500, taskId: taskId, message: "图片生成成功但未返回图片 URL。" };
-            }
-        }
-
-        // 任务失败
-        if (status === "failed") {
-            const errorMsg = resultData.error || "未知错误";
-            console.error(TAG + " 任务失败：" + errorMsg);
-            return { code: 502, taskId: taskId, message: "文生图任务失败：" + errorMsg };
-        }
-
-        // 内容违规
-        if (status === "violation") {
-            console.error(TAG + " 任务违规，内容被拦截。");
-            return { code: 502, taskId: taskId, message: "文生图内容违规，已被系统拦截。" };
-        }
-
-        // running 状态：继续轮询
-        if (status === "running") {
-            // 继续下一轮
-            continue;
-        }
-
-        // 未知状态：记录日志并继续轮询
-        console.warn(TAG + " 遇到未知任务状态：" + status + "，继续轮询...");
-    }
-
-    // 轮询次数用尽，超时
-    console.error(TAG + " 轮询超时，已尝试 " + maxRetries + " 次（共约 " + (maxRetries * pollInterval / 1000) + " 秒）。任务 ID：" + taskId);
-    return {
-        code: 504,
-        taskId: taskId,
-        message: "文生图轮询超时（" + (maxRetries * pollInterval / 1000) + " 秒），图片未能在限定时间内生成完成。"
-    };
+    console.error(TAG + " 文生图最终失败: " + failureResult.message);
+    return failureResult;
 }
 
-// ==================== 工具函数 ====================
-
-/**
- * 延时等待（Promise 版 setTimeout）
- * @param {number} ms - 等待毫秒数
- * @returns {Promise<void>}
- */
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
+// ==================== 模块导出 ====================
 module.exports = { createImage };

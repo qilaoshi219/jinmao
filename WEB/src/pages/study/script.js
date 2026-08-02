@@ -239,6 +239,8 @@ export default {
     const chapterElapsedTime = ref(0);
     /** 本章节所有已知幻灯片时长的总和（秒） */
     const chapterTotalTime = ref(0);
+    /** 当前章节总时长预计算 Promise（供恢复进度时 await，确保各页 _duration 已填充后再计算已播累计时长） */
+    let currentPrefetchPromise = null;
 
     // ---- 控件显示 ----
     let hideTimer = null;
@@ -327,14 +329,26 @@ export default {
     /** 已完成或部分完成的有效章节状态集合 */
     const VALID_COMPLETED_STATUSES = ["completed", "partial_completed"];
 
-    /** 是否可以生成下一章（读取后端统一计算值，仅保留 UI 层守卫） */
-    const canGenerateNext = computed(() => {
-      // UI 层守卫：还在加载中，不显示按钮
-      if (courseLoading.value) return false;
-      // UI 层守卫：正在创建中，防止重复点击（即时反馈优先于轮询）
-      if (isGeneratingChapter.value) return false;
-      // 后端权威值：由 computeCanGenerateNext 统一计算，前后端判断逻辑一致
-      return courseInfo.value?.canGenerateNext ?? false;
+    /** 生成下一章按钮：是否禁用 */
+    const generateBtnDisabled = computed(() => {
+      // 加载中 → 禁用
+      if (courseLoading.value) return true;
+      // 正在生成中 → 禁用（el-button 的 :loading 已覆盖，此处做双重保护）
+      if (isGeneratingChapter.value) return true;
+      // 后端判断不可生成 → 禁用
+      return !(courseInfo.value?.canGenerateNext ?? false);
+    });
+
+    /** 生成下一章按钮：提示文本 */
+    const generateBtnText = computed(() => {
+      // 加载中
+      if (courseLoading.value) return "加载中...";
+      // 正在生成中
+      if (isGeneratingChapter.value) return "正在生成中...";
+      // 后端判断可以生成
+      if (courseInfo.value?.canGenerateNext) return "生成下一章";
+      // 不可生成（全部内容已完毕 / 尚无章节）
+      return "已经是最后一章了";
     });
 
     /** 当前章节标题 */
@@ -433,6 +447,8 @@ export default {
             subtitle: data.subtitle || "",
             pipelineStatus: data.pipelineStatus || "",
             pipelineProgress: data.pipelineProgress || null, // 流水线进度（含 isLastChapter 标记）
+            maxline: data.maxline || 0,  // 【新增】MD 文件总行数
+            canGenerateNext: data.canGenerateNext ?? false,  // 【新增】后端权威值：是否可以生成下一章
           };
 
           // 将章节数据映射为 UI 所需格式
@@ -485,7 +501,31 @@ export default {
 
             // 如果是从进度恢复的，加载完成后跳转到保存的页码
             if (restoredPage > 1 && restoredPage <= totalPages.value) {
+              // 等待章节总时长预计算完成，确保各页 _duration 已填充，才能准确计算已播累计时长
+              if (currentPrefetchPromise) {
+                try {
+                  await currentPrefetchPromise;
+                } catch (e) {
+                  console.warn(TAG + " 等待章节总时长预计算失败（不影响恢复页码）: " + (e?.message || e));
+                }
+              }
+
               currentPage.value = restoredPage;
+
+              // 累加前 restoredPage-1 页的时长到已播累计时长（修复恢复进度后进度条显示 00:00）
+              let elapsedSum = 0;
+              for (let i = 0; i < restoredPage - 1; i++) {
+                elapsedSum += (slides.value[i]?._duration || 0);
+              }
+              chapterElapsedTime.value = elapsedSum;
+
+              // 同步更新进度条百分比
+              if (chapterTotalTime.value > 0) {
+                progressPercent.value = Math.round((elapsedSum / chapterTotalTime.value) * 100);
+              }
+
+              console.log(TAG + " 已恢复到第 " + restoredPage + " 页，已播累计: " + elapsedSum.toFixed(1) + "s，章节总时长: " + chapterTotalTime.value.toFixed(1) + "s");
+
               // 页码变更后重新加载字幕
               await nextTick();
               await loadCurrentSrt();
@@ -541,10 +581,19 @@ export default {
           await loadCurrentSrt();
 
           // 异步预计算章节总时长：并行 fetch 所有 SRT 文件，从最后一帧时间推算各页时长
-          prefetchChapterTotalTime();
+          // 将 Promise 保存起来，供恢复学习进度时 await，确保各页 _duration 已填充
+          currentPrefetchPromise = prefetchChapterTotalTime();
 
           // 重置 PPT iframe 加载状态
-          pptLoading.value = true;
+          // 注意：如果 PPT URL 未变化（如补全完成后重新加载同一章节），iframe 不会重新渲染，
+          // onPptLoad 不会被触发，因此不能重置 pptLoading 为 true
+          const pptUrlChanged = (() => {
+            const current = currentPptUrl.value;
+            return !current || current !== (slidesData[0]?.pptUrl || "");
+          })();
+          if (pptUrlChanged) {
+            pptLoading.value = true;
+          }
 
           // 如果后端已触发补全（chapter.isFixingMissing === true），立即显示横幅并启动轮询
           // 跳过前端采样检测，避免重复触发 fixMissingFiles API
@@ -1642,7 +1691,8 @@ export default {
       seekProgress,
 
       // 下一章生成
-      canGenerateNext,
+      generateBtnDisabled,
+      generateBtnText,
       isGeneratingChapter,
       autoGenerateEnabled,
       chapterProgressMap,
