@@ -10,6 +10,7 @@
 // 导出：
 //   extractVisibleText(html) -> string
 //   detectDesignGuideContamination(html) -> { contaminated: boolean, reasons: string[] }
+//   detectOverflowViolation(html) -> { violated: boolean, reasons: string[] }
 //
 // 上次修改：2026-08-02
 
@@ -136,8 +137,54 @@ function detectDesignGuideContamination(html) {
     };
 }
 
+/**
+ * 检测 HTML 是否违反"16:9 画布 + 无滚动条"规范
+ * 判定规则（满足任一即判为违规，reasons 记录全部命中原因）：
+ *   1. `<style>` 中不存在选中 html 或 body 且声明 `overflow: hidden` 的规则，
+ *      且 `<body>` 标签内联 style 中也没有 `overflow: hidden`
+ *   2. 样式（CSS 或内联 style）中出现 `overflow(-x|-y)?: auto|scroll`（会产生滚动条）
+ * @param {string} html - 待分析的 HTML 字符串
+ * @returns {{ violated: boolean, reasons: string[] }}
+ *   violated — 是否判定为违规；reasons — 命中的原因描述数组（无违规时为空数组）
+ */
+function detectOverflowViolation(html) {
+    const reasons = [];
+
+    // 空内容/非字符串：视为无违规（交由上层其他校验处理）
+    if (typeof html !== "string" || html.trim() === "") {
+        return { violated: false, reasons };
+    }
+
+    // 收集全部 <style> 块内容 + 全部内联 style 属性内容，统一进行样式检查
+    const styleBlocks = html.match(/<style[\s>][\s\S]*?<\/style>/gi) || [];
+    const styleText = styleBlocks.join("\n");
+    const inlineStyleAttrs = html.match(/style\s*=\s*["'][^"']*["']/gi) || [];
+    const allStyles = styleText + "\n" + inlineStyleAttrs.join("\n");
+
+    // 规则 1：html/body 必须声明 overflow: hidden
+    // 匹配选中 html 或 body 的 CSS 规则块（如 "html, body { ... overflow: hidden ... }"）
+    const htmlBodyRuleHasHidden = /(?:^|[,}\s])(?:html|body)[^{}]*\{[^}]*overflow\s*:\s*hidden/i.test(styleText);
+    // 兼容 <body style="...overflow: hidden..."> 的内联写法
+    const bodyInlineHasHidden = /<body\b[^>]*style\s*=\s*["'][^"']*overflow\s*:\s*hidden/i.test(html);
+    if (!htmlBodyRuleHasHidden && !bodyInlineHasHidden) {
+        reasons.push("html/body 未设置 overflow: hidden（内容可能超出画布或出现滚动条）");
+    }
+
+    // 规则 2：任何样式（CSS 或内联）中出现 overflow: auto/scroll 即违规
+    const autoScrollPattern = /\boverflow(-[xy])?\s*:\s*[^;}]*\b(auto|scroll)\b/gi;
+    if (autoScrollPattern.test(allStyles)) {
+        reasons.push("样式中存在 overflow: auto/scroll（会产生滚动条）");
+    }
+
+    return {
+        violated: reasons.length > 0,
+        reasons: reasons,
+    };
+}
+
 // ==================== 导出 ====================
 module.exports = {
     extractVisibleText,
     detectDesignGuideContamination,
+    detectOverflowViolation,
 };

@@ -402,7 +402,7 @@ export default {
     // ========================================================================
     onMounted(() => {
       const btn = document.getElementById("theme-toggle");
-      if (btn) { btn.addEventListener("click", toggleTheme); }
+      if (btn) { btn.addEventListener("click", () => toggleTheme()); }
     });
 
     return {

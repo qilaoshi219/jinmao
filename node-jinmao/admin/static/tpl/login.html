@@ -1,0 +1,28 @@
+<!-- ===== 未登录：显示登录表单 ===== -->
+<div class="login-card">
+  <h2>🔐 管理后台登录</h2>
+  <p style="text-align:center;color:#6b7280;font-size:13px;margin-bottom:20px;transition:color 500ms;">
+    请使用管理员邮箱登录
+  </p>
+  <!-- 邮箱输入 -->
+  <div style="margin-bottom:16px;">
+    <label style="display:block;margin-bottom:6px;font-size:13px;font-weight:600;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">邮箱</label>
+    <el-input v-model="loginEmail" placeholder="请输入邮箱" size="large" />
+  </div>
+  <!-- 验证码输入 + 发送按钮 -->
+  <div style="margin-bottom:20px;">
+    <label style="display:block;margin-bottom:6px;font-size:13px;font-weight:600;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">验证码</label>
+    <div style="display:flex;gap:8px;">
+      <el-input v-model="loginCode" placeholder="6位验证码" size="large" maxlength="6" style="flex:1;" />
+      <el-button :disabled="sendCodeCooldown > 0" @click="sendLoginCode" size="large" type="primary">
+        {{ sendCodeCooldown > 0 ? sendCodeCooldown + 's' : '发送验证码' }}
+      </el-button>
+    </div>
+  </div>
+  <!-- 错误提示 -->
+  <el-alert v-if="loginError" :title="loginError" type="error" show-icon :closable="false" style="margin-bottom:16px;" />
+  <!-- 登录按钮 -->
+  <el-button @click="doLogin" :loading="loginLoading" type="primary" size="large" style="width:100%;">
+    {{ loginLoading ? '登录中...' : '登录' }}
+  </el-button>
+</div>

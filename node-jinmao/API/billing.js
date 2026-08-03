@@ -22,7 +22,7 @@ const TAG = "[billing_api]";
  * /api/v1/billing:
  *   get:
  *     summary: 获取当前用户的账单信息
- *     description: 返回用户 VIP 等级、开通计划、余额、已使用金额和扣费记录分页列表
+ *     description: 返回用户 VIP 等级、开通计划、余额、已使用金额、扣费记录分页列表和充值记录分页列表（含兑换码充值）
  *     security:
  *       - bearerAuth: []
  *     tags:
@@ -41,6 +41,19 @@ const TAG = "[billing_api]";
  *           default: 20
  *           maximum: 100
  *         description: 每页记录数（最大 100）
+ *       - in: query
+ *         name: rechargePage
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 充值记录页码（从 1 开始）
+ *       - in: query
+ *         name: rechargePageSize
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *           maximum: 100
+ *         description: 充值记录每页条数（最大 100）
  *     responses:
  *       200:
  *         description: 成功返回账单信息
@@ -109,6 +122,44 @@ const TAG = "[billing_api]";
  *                           type: integer
  *                         total:
  *                           type: integer
+ *                     rechargeRecords:
+ *                       type: array
+ *                       description: 充值记录列表（目前为兑换码充值，按使用时间倒序）
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             description: 充值记录 ID（兑换码 ID）
+ *                           code:
+ *                             type: string
+ *                             description: 兑换码（已使用）
+ *                           amount:
+ *                             type: string
+ *                             example: "10.0000000"
+ *                             description: 充值金额（元）
+ *                           source:
+ *                             type: string
+ *                             example: "redeem"
+ *                             description: 充值来源（redeem=兑换码充值）
+ *                           sourceLabel:
+ *                             type: string
+ *                             example: "兑换码充值"
+ *                             description: 充值来源中文标签
+ *                           usedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *                             description: 充值使用时间
+ *                     rechargePagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         pageSize:
+ *                           type: integer
+ *                         total:
+ *                           type: integer
  *       401:
  *         description: 未登录或 Token 无效
  *         content:
@@ -149,7 +200,15 @@ router.get("/billing", authenticateToken, async (req, res) => {
     if (pageSize < 1) pageSize = 1;
     if (pageSize > 100) pageSize = 100;
 
-    console.log(TAG + " 分页参数: page=" + page + ", pageSize=" + pageSize);
+    // 充值记录分页参数（独立于扣费记录分页）
+    let rechargePage = parseInt(req.query.rechargePage) || 1;
+    let rechargePageSize = parseInt(req.query.rechargePageSize) || 20;
+    if (rechargePage < 1) rechargePage = 1;
+    if (rechargePageSize < 1) rechargePageSize = 1;
+    if (rechargePageSize > 100) rechargePageSize = 100;
+
+    console.log(TAG + " 分页参数: page=" + page + ", pageSize=" + pageSize +
+        ", rechargePage=" + rechargePage + ", rechargePageSize=" + rechargePageSize);
 
     // ========== 2. 查询用户基础信息 ==========
     const userResult = await userRepo.findById(req.userId);
@@ -166,9 +225,10 @@ router.get("/billing", authenticateToken, async (req, res) => {
 
     // ========== 3. 查询扣费记录（分页） ==========
     const skip = (page - 1) * pageSize;
+    const rechargeSkip = (rechargePage - 1) * rechargePageSize;
 
-    // 并行查询：记录列表 + 总记录数 + 总费用聚合
-    const [records, totalCount, totalUsedResult] = await Promise.all([
+    // 并行查询：扣费记录列表 + 总数 + 总费用聚合 + 充值记录列表 + 充值总数
+    const [records, totalCount, totalUsedResult, rechargeRecords, rechargeTotal] = await Promise.all([
       // 扣费记录列表（按创建时间倒序）
       prisma.billing_record.findMany({
         where: { user_id: String(req.userId) },
@@ -196,9 +256,26 @@ router.get("/billing", authenticateToken, async (req, res) => {
         where: { user_id: String(req.userId) },
         _sum: { total_cost: true },
       }),
+      // 充值记录列表（已使用的兑换码，按使用时间倒序）
+      prisma.redeem_code.findMany({
+        where: { usedBy: BigInt(req.userId), isUsed: true },
+        orderBy: { usedAt: "desc" },
+        skip: rechargeSkip,
+        take: rechargePageSize,
+        select: {
+          id: true,
+          code: true,
+          amount: true,
+          usedAt: true,
+        },
+      }),
+      // 充值记录总数
+      prisma.redeem_code.count({
+        where: { usedBy: BigInt(req.userId), isUsed: true },
+      }),
     ]);
 
-    console.log(TAG + " 扣费记录: 当前页 " + records.length + " 条，总计 " + totalCount + " 条");
+    console.log(TAG + " 扣费记录: 当前页 " + records.length + " 条，总计 " + totalCount + " 条；充值记录: 当前页 " + rechargeRecords.length + " 条，总计 " + rechargeTotal + " 条");
 
     // ========== 4. 格式化返回数据 ==========
     // 金额字段转为字符串（Decimal → String），避免 JSON 浮点数精度丢失
@@ -218,6 +295,16 @@ router.get("/billing", authenticateToken, async (req, res) => {
       createdAt: r.created_at.toISOString(),        // DateTime → ISO 字符串
     }));
 
+    // 格式化充值记录列表
+    const formattedRechargeRecords = rechargeRecords.map((r) => ({
+      id: r.id.toString(),                          // BigInt → 字符串
+      code: r.code,
+      amount: String(r.amount),                     // Decimal → 字符串
+      source: "redeem",                             // 充值来源：兑换码充值
+      sourceLabel: "兑换码充值",
+      usedAt: r.usedAt ? r.usedAt.toISOString() : null,
+    }));
+
     // 响应数据
     const responseData = {
       vipLevel: user.vipLevel,
@@ -231,9 +318,15 @@ router.get("/billing", authenticateToken, async (req, res) => {
         pageSize: pageSize,
         total: totalCount,
       },
+      rechargeRecords: formattedRechargeRecords,
+      rechargePagination: {
+        page: rechargePage,
+        pageSize: rechargePageSize,
+        total: rechargeTotal,
+      },
     };
 
-    console.log(TAG + " 账单查询成功: totalUsed=" + String(totalUsed) + ", records=" + formattedRecords.length);
+    console.log(TAG + " 账单查询成功: totalUsed=" + String(totalUsed) + ", records=" + formattedRecords.length + ", rechargeRecords=" + formattedRechargeRecords.length);
     console.log(TAG + " ================================");
 
     return res.json({

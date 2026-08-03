@@ -779,6 +779,13 @@ module.exports = {
   // 基于试卷的刷题
   startExamSequentialSession,
   startExamRandomSession,
+  // 工具函数（公开考试服务复用）
   evaluateAnswer,
+  serializeAnswer,
+  deserializeAnswer,
+  buildQuestionView,
+  mapToFrontendType,
+  parseOptions,
+  shuffleArray,
   RANDOM_QUESTIONS_PER_TYPE,
 };

@@ -12,6 +12,8 @@ export default {
   setup() {
     // ========== 依赖注入：获取导航函数 ==========
     const navigate = inject("navigate"); // App.vue 提供的页面跳转函数
+    // 返回上一页函数（从 App.vue 注入，无应用内历史时兜底回首页）
+    const navigateBack = inject("goBack", () => navigate("home"));
 
     // ========== 响应式数据 ==========
     const loading = ref(true);          // 加载中状态
@@ -34,6 +36,15 @@ export default {
       total: 0,
     });
     const currentPage = ref(1);         // el-pagination 绑定的当前页
+
+    // 充值记录与分页（独立于扣费记录分页）
+    const rechargeRecords = ref([]);    // 当前页充值记录列表
+    const rechargePagination = ref({    // 充值记录分页信息
+      page: 1,
+      pageSize: 20,
+      total: 0,
+    });
+    const rechargePage = ref(1);        // 充值记录 el-pagination 绑定的当前页
 
     // ========== 计算属性 ==========
 
@@ -72,15 +83,16 @@ export default {
 
     /**
      * 加载账单数据
-     * @param {number} page - 页码
+     * @param {number} page - 扣费记录页码
+     * @param {number} rpage - 充值记录页码
      */
-    async function loadData(page = 1) {
+    async function loadData(page = 1, rpage = 1) {
       loading.value = true;
       error.value = null;
-      console.log(TAG + " 开始加载账单数据，page=" + page);
+      console.log(TAG + " 开始加载账单数据，page=" + page + ", rechargePage=" + rpage);
 
       try {
-        const res = await getBilling(page, pagination.value.pageSize);
+        const res = await getBilling(page, pagination.value.pageSize, rpage, rechargePagination.value.pageSize);
 
         if (res.code !== 0) {
           error.value = res.message || "获取账单信息失败";
@@ -101,7 +113,13 @@ export default {
         pagination.value = data.pagination;
         currentPage.value = data.pagination.page;
 
-        console.log(TAG + " 账单数据加载完成，共 " + pagination.value.total + " 条记录");
+        // 更新充值记录和分页
+        rechargeRecords.value = data.rechargeRecords || [];
+        rechargePagination.value = data.rechargePagination || { page: 1, pageSize: 20, total: 0 };
+        rechargePage.value = (data.rechargePagination || {}).page || 1;
+
+        console.log(TAG + " 账单数据加载完成：扣费记录共 " + pagination.value.total +
+          " 条，充值记录共 " + rechargePagination.value.total + " 条");
       } catch (err) {
         console.error(TAG + " 账单数据加载异常: " + err.message);
         error.value = "网络请求失败，请检查网络连接后重试。";
@@ -116,13 +134,22 @@ export default {
      */
     function handlePageChange(newPage) {
       console.log(TAG + " 分页切换: page=" + newPage);
-      loadData(newPage);
+      loadData(newPage, rechargePage.value);
     }
 
-    /** 返回首页 */
+    /**
+     * 充值记录分页切换回调
+     * @param {number} newPage - 新页码
+     */
+    function handleRechargePageChange(newPage) {
+      console.log(TAG + " 充值记录分页切换: rechargePage=" + newPage);
+      loadData(currentPage.value, newPage);
+    }
+
+    /** 返回上一页 */
     function goBack() {
-      console.log(TAG + " 返回首页");
-      navigate("home");
+      console.log(TAG + " 返回上一页");
+      navigateBack();
     }
 
     /**
@@ -183,6 +210,10 @@ export default {
       records,
       pagination,
       currentPage,
+      // 充值记录
+      rechargeRecords,
+      rechargePagination,
+      rechargePage,
       // 计算属性
       vipLevelLabel,
       planLabel,
@@ -191,6 +222,7 @@ export default {
       // 方法
       loadData,
       handlePageChange,
+      handleRechargePageChange,
       goRedeem,
       goBack,
       formatDate,

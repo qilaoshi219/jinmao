@@ -43,6 +43,9 @@ model User {
   quizUserAnswers  QuizUserAnswer[]     // 作答记录
   quizWrongQuestions QuizWrongQuestion[] // 错题本
   quizBookBorrows    QuizBookBorrow[]    // 借用的题库
+  publicExams        PublicExam[]        // 公开考试（二维码考试）
+  aiConversations    AiConversation[]    // AI 助教对话
+  redeemCodesUsed    redeem_code[]       // 使用过的兑换码（后台展示使用者信息）
 
   @@map("User") // 映射数据库表名
 }
@@ -71,6 +74,7 @@ model Course {
   chapters           Chapter[]                                                    // 章节列表（Prisma 虚拟关系）
   user               User     @relation(fields: [userId], references: [id])       // 所属用户
   studyRecords       UserStudyRecord[]                                            // 该课程的学习记录（Prisma 虚拟关系）
+  aiConversations    AiConversation[]                                              // AI 助教对话（Prisma 虚拟关系）
 
   @@map("Course")
 }
@@ -97,8 +101,57 @@ model Chapter {
   course        Course    @relation(fields: [courseId], references: [id])  // 所属课程
 
   studyRecords  UserStudyRecord[]                                             // 该章节的学习记录（Prisma 虚拟关系）
+  aiConversations AiConversation[]                                            // AI 助教对话（Prisma 虚拟关系）
 
   @@map("Chapter")
+}
+
+// ==================== AI 助教对话表 AiConversation ====================
+// 记录用户在课程-章节维度发起的 AI 助教对话
+// 一个章节可以有多条对话（懒创建：用户发送首条消息时才创建）
+// model 记录该对话使用的模型（flash / pro），供恢复历史时同步选择器
+model AiConversation {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt // 对话ID，主键自增
+  userId     BigInt   @map("user_id") @db.UnsignedBigInt               // 用户ID，外键引用 User 表
+  courseId   BigInt   @map("course_id") @db.UnsignedBigInt             // 课程ID，外键引用 Course 表
+  chapterId  BigInt   @map("chapter_id") @db.UnsignedBigInt            // 章节ID，外键引用 Chapter 表
+  title      String   @default("") @db.VarChar(100)                    // 对话标题（首条问题截断 30 字）
+  model      String   @default("flash") @db.VarChar(20)                // 对话使用的模型：flash / pro
+  pageNumber Int      @default(1) @map("page_number")                  // 上下文素材快照页码（首条消息时确定，翻页不更新）
+  createTime DateTime @default(now()) @map("create_time")              // 创建时间
+  updateTime DateTime @updatedAt @map("update_time")                   // 更新时间（最后一次消息时间）
+  isDeleted  Boolean  @default(false) @map("is_deleted")               // 软删除标记
+
+  user     User         @relation(fields: [userId], references: [id])       // 所属用户
+  course   Course       @relation(fields: [courseId], references: [id])     // 所属课程
+  chapter  Chapter      @relation(fields: [chapterId], references: [id])    // 所属章节
+  messages AiMessage[]                                                      // 对话消息（Prisma 虚拟关系）
+
+  @@index([userId, courseId])
+  @@index([userId, courseId, chapterId])
+  @@map("AiConversation")
+}
+
+// ==================== AI 助教消息表 AiMessage ====================
+// 追加式消息历史：每条消息独立记录 token 用量与费用，供上下文进度条与历史恢复展示
+model AiMessage {
+  id               BigInt   @id @default(autoincrement()) @db.UnsignedBigInt // 消息ID，主键自增
+  conversationId   BigInt   @map("conversation_id") @db.UnsignedBigInt       // 对话ID，外键引用 AiConversation 表
+  role             String   @db.VarChar(10)                                  // 角色：user / assistant
+  content          String   @db.Text                                         // 消息内容
+  promptTokens     Int?     @map("prompt_tokens")                            // 本次请求输入 tokens（assistant 消息记录）
+  completionTokens Int?     @map("completion_tokens")                        // 本次输出 tokens（assistant 消息记录）
+  totalTokens      Int?     @map("total_tokens")                             // 本次总 tokens（assistant 消息记录）
+  cost             Decimal? @db.Decimal(18, 7)                               // 本次费用（元，assistant 消息记录）
+  thinking         String?  @db.Text                                         // 思考过程（assistant 消息，thinking 模式，可折叠展示）
+  suggestions      Json?                                                     // 推荐追问（assistant 消息：["...","..."]）
+  createTime       DateTime @default(now()) @map("create_time")              // 创建时间
+  isDeleted        Boolean  @default(false) @map("is_deleted")               // 软删除标记
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id]) // 所属对话
+
+  @@index([conversationId])
+  @@map("AiMessage")
 }
 
 // ==================== 用户学习记录表 UserStudyRecord ====================
@@ -168,6 +221,15 @@ model billing_record {
   input_cost           Decimal?  @db.Decimal(18, 7)                        // 输入费用（元）
   output_cost          Decimal?  @db.Decimal(18, 7)                        // 输出费用（元）
   total_cost           Decimal   @db.Decimal(18, 7)                        // 总费用（元）
+  cost_input_unit_price Decimal? @db.Decimal(18, 7)                        // 成本-输入单价（元/百万tokens，缓存未命中）
+  cost_input_cache_hit_price Decimal? @db.Decimal(18, 7)                   // 成本-输入单价（元/百万tokens，缓存命中，LLM 专用）
+  cost_output_unit_price Decimal? @db.Decimal(18, 7)                       // 成本-输出单价（元/百万tokens，LLM 专用）
+  cost_image_unit_price Decimal?  @db.Decimal(18, 7)                       // 成本-图片单价（元/张，文生图专用）
+  cost_tts_unit_price   Decimal?  @db.Decimal(18, 7)                       // 成本-TTS 单价（元/字符，TTS 专用）
+  cost_page_unit_price  Decimal?  @db.Decimal(18, 7)                       // 成本-每页单价（元/页，doc2x 专用）
+  cost_input_cost       Decimal?  @db.Decimal(18, 7)                       // 成本-输入费用（元）
+  cost_output_cost      Decimal?  @db.Decimal(18, 7)                       // 成本-输出费用（元）
+  cost_total            Decimal   @default(0) @db.Decimal(18, 7)           // 成本-总费用（元，利润 = total_cost - cost_total）
   error_message        String?   @db.Text                                   // 失败原因（仅 status=failed 时记录，方便排查问题）
   retry_count          Int       @default(0)                                // 重试次数（0 表示首次调用，最多重试 3 次）
   created_at           DateTime  @default(now())                           // 创建时间
@@ -216,6 +278,7 @@ model QuizExam {
   textbook      QuizTextbook   @relation(fields: [textbookId], references: [id]) // 所属题库
   questions     QuizQuestion[]                                                   // 题目列表
   quizSessions  QuizSession[]                                                    // 刷题会话
+  publicExams   PublicExam[]                                                     // 公开考试发布记录
 
   @@map("QuizExam")
 }
@@ -258,7 +321,8 @@ enum QuizQuestionType {
 // 记录用户每次作答的详细信息
 model QuizUserAnswer {
   id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 记录ID，主键自增
-  userId      BigInt    @map("user_id") @db.UnsignedBigInt               // 用户ID
+  userId      BigInt?   @map("user_id") @db.UnsignedBigInt               // 用户ID（公开考试游客作答时为 NULL）
+  anonymousKey String?  @map("anonymous_key") @db.VarChar(64)            // 游客身份标识（公开考试匿名作答时使用）
   questionId  BigInt    @map("question_id") @db.UnsignedBigInt           // 题目ID
   sessionId   BigInt?   @map("session_id") @db.UnsignedBigInt            // 会话ID（可选，用于关联刷题会话）
   userAnswer  String    @map("user_answer") @db.Text                     // 用户答案
@@ -266,7 +330,7 @@ model QuizUserAnswer {
   timeSpent   Int       @default(0) @map("time_spent")                   // 答题耗时（秒），预留字段
   createTime  DateTime  @default(now()) @map("create_time")              // 创建时间
 
-  user      User          @relation(fields: [userId], references: [id])       // 所属用户
+  user      User?         @relation(fields: [userId], references: [id])       // 所属用户（游客作答时为 NULL）
   question  QuizQuestion  @relation(fields: [questionId], references: [id])   // 关联题目
   session   QuizSession?  @relation(fields: [sessionId], references: [id])    // 关联会话
 
@@ -296,22 +360,28 @@ model QuizWrongQuestion {
 // 记录用户每次刷题会话的状态和进度
 model QuizSession {
   id                   BigInt        @id @default(autoincrement()) @db.UnsignedBigInt // 会话ID，主键自增
-  userId               BigInt        @map("user_id") @db.UnsignedBigInt               // 用户ID
+  userId               BigInt?       @map("user_id") @db.UnsignedBigInt               // 用户ID（公开考试游客会话时为 NULL）
+  anonymousKey         String?       @map("anonymous_key") @db.VarChar(64)            // 游客身份标识（公开考试匿名会话时使用）
   textbookId           BigInt?       @map("textbook_id") @db.UnsignedBigInt           // 题库ID（随机刷题时有值）
   examId               BigInt?       @map("exam_id") @db.UnsignedBigInt               // 试卷ID（预留，暂不使用）
+  publicExamId         BigInt?       @map("public_exam_id") @db.UnsignedBigInt        // 公开考试ID（二维码考试会话时使用）
   mode                 QuizMode                                                       // 刷题模式枚举
   questionIds          Json          @map("question_ids")                             // 题目ID数组 [id1, id2, ...]
   totalCount           Int           @default(0) @map("total_count")                  // 题目总数
   correctCount         Int           @default(0) @map("correct_count")                // 正确题目数
   currentQuestionIndex Int           @default(1) @map("current_question_index")       // 当前题目序号 (1-based)
   lastAnsweredAt       DateTime?     @map("last_answered_at")                         // 最后作答时间
+  deadlineAt           DateTime?     @map("deadline_at")                              // 交卷截止时间（单场限时，开考时间+限时时长）
+  scoreTotal           Float?        @map("score_total")                              // 交卷总分（100分制，公开考试专用）
+  resultJson           Json?         @map("result_json")                              // 交卷结果快照（每题得分/解析，结果页重看用）
   status               QuizSessionStatus @default(IN_PROGRESS)                        // 会话状态
   createTime           DateTime      @default(now()) @map("create_time")              // 创建时间
   updateTime           DateTime      @updatedAt @map("update_time")                   // 更新时间
 
-  user        User              @relation(fields: [userId], references: [id])       // 所属用户
+  user        User?             @relation(fields: [userId], references: [id])       // 所属用户（游客会话时为 NULL）
   textbook    QuizTextbook?     @relation(fields: [textbookId], references: [id])   // 关联题库
   exam        QuizExam?         @relation(fields: [examId], references: [id])       // 关联试卷
+  publicExam  PublicExam?       @relation(fields: [publicExamId], references: [id]) // 关联公开考试
   userAnswers QuizUserAnswer[]                                                       // 作答记录
   report      QuizReport?                                                            // 刷题报告（一对一）
 
@@ -415,20 +485,48 @@ model QuizBookBorrow {
   @@map("QuizBookBorrow")
 }
 
+// ==================== 公开考试表 PublicExam ====================
+// 记录试卷的公开考试发布配置（二维码考试）
+// 发布时锁定题目快照 questionIds，之后修改原试卷不影响已公开考试
+model PublicExam {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt // 公开考试ID，主键自增
+  userId          BigInt    @map("user_id") @db.UnsignedBigInt               // 发布者用户ID（所有者）
+  examId          BigInt    @map("exam_id") @db.UnsignedBigInt               // 试卷ID，外键引用 QuizExam 表
+  token           String    @unique @db.VarChar(32)                          // 公开链接标识（随机串，URL 使用）
+  title           String    @db.VarChar(100)                                 // 考试标题（复制试卷名称）
+  questionIds     Json      @map("question_ids")                             // 发布时题目ID快照 [id1, id2, ...]
+  shuffle         Boolean   @default(false)                                  // 是否题目乱序（每人顺序不同）
+  durationMinutes Int       @default(60) @map("duration_minutes")            // 单场限时时长（分钟）
+  essayMode       String    @default("full") @map("essay_mode") @db.VarChar(10) // 简答题判题模式：ai / strict / full
+  essayKeywords   Json?     @map("essay_keywords")                           // 严格模式关键词 {questionId: [关键词]}
+  status          String    @default("published") @db.VarChar(10)            // 状态：published / closed
+  createTime      DateTime  @default(now()) @map("create_time")              // 创建时间
+  updateTime      DateTime  @updatedAt @map("update_time")                   // 更新时间
+  isDeleted       Boolean   @default(false) @map("is_deleted")               // 软删除标记
+
+  user     User            @relation(fields: [userId], references: [id])     // 发布者（所有者）
+  exam     QuizExam        @relation(fields: [examId], references: [id])     // 关联试卷
+  sessions QuizSession[]                                                      // 该考试的作答会话
+
+  @@map("PublicExam")
+}
+
 // ==================== 兑换码表 redeem_code ====================
-// 存储管理员生成的兑换码，用户可输入兑换码领取余额（一次性使用，不记名）
+// 存储管理员生成的兑换码，用户可输入兑换码领取余额（一次性使用）
 model redeem_code {
-  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt  // 兑换码ID，主键自增
-  code       String    @unique @db.VarChar(32)                           // 兑换码（随机生成，唯一索引）
-  amount     Decimal   @default(10) @db.Decimal(18, 7)                  // 兑换金额（元），默认10元
-  isUsed     Boolean   @default(false) @map("is_used")                   // 是否已使用
-  usedBy     BigInt?   @map("used_by") @db.UnsignedBigInt               // 使用者ID（外键引用User表，NULL表示未使用）
-  usedAt     DateTime? @map("used_at")                                   // 使用时间（NULL表示未使用）
-  createdBy  BigInt?   @map("created_by") @db.UnsignedBigInt            // 创建者ID（管理员）
-  createdAt  DateTime  @default(now()) @map("created_at")               // 创建时间
+  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt  // 兑换码ID，主键自增
+  code          String    @unique @db.VarChar(32)                           // 兑换码（随机生成，唯一索引）
+  amount        Decimal   @default(10) @db.Decimal(18, 7)                   // 兑换金额（元），默认10元
+  isUsed        Boolean   @default(false) @map("is_used")                    // 是否已使用
+  usedBy        BigInt?   @map("used_by") @db.UnsignedBigInt                // 使用者ID（NULL表示未使用）
+  usedAt        DateTime? @map("used_at")                                   // 使用时间（NULL表示未使用）
+  distributedAt DateTime? @map("distributed_at")                            // 分发时间（管理员复制时自动标记，NULL=未分发）
+  createdBy     BigInt?   @map("created_by") @db.UnsignedBigInt             // 创建者ID（管理员）
+  createdAt     DateTime  @default(now()) @map("created_at")                // 创建时间
 
   @@index([code])
   @@index([isUsed])
+  usedByUser User? @relation(fields: [usedBy], references: [id])            // 使用者（关联 User 表，后台展示用户信息）
   @@map("redeem_code")
 }
 

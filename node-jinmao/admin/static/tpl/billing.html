@@ -1,0 +1,116 @@
+<!-- ===== 账单统计卡片 ===== -->
+<div class="stat-cards">
+  <div class="stat-card">
+    <div class="stat-value">¥{{ formatMoney(billingSummary.totalRevenue) }}</div>
+    <div class="stat-label">累计消费(售价)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">¥{{ formatMoney(billingSummary.totalCost) }}</div>
+    <div class="stat-label">累计成本</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" :style="{ color: Number(billingSummary.totalProfit) < 0 ? '#ef4444' : '#10b981' }">¥{{ formatMoney(billingSummary.totalProfit) }}</div>
+    <div class="stat-label">累计利润</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ billingSummary.totalCount || 0 }}</div>
+    <div class="stat-label">总记录数</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ billingSummary.successCount || 0 }}</div>
+    <div class="stat-label">成功笔数</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ billingSummary.failedCount || 0 }}</div>
+    <div class="stat-label">失败笔数</div>
+  </div>
+</div>
+
+<!-- ===== 账单筛选区 ===== -->
+<el-card shadow="never" style="margin-bottom:20px;">
+  <template #header>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">账单查询</span>
+      <span style="font-size:12px;color:#9ca3af;">全局扣费记录，支持多条件组合筛选</span>
+    </div>
+  </template>
+  <div class="filter-row">
+    <el-select v-model="billStatusFilter" style="width:130px;" clearable @change="searchBilling">
+      <el-option label="全部状态" value="all" />
+      <el-option label="成功" value="success" />
+      <el-option label="失败" value="failed" />
+    </el-select>
+    <el-select v-model="billCallTagFilter" style="width:150px;" clearable @change="searchBilling">
+      <el-option v-for="t in callTagOptions" :key="t.value" :label="t.label" :value="t.value" />
+    </el-select>
+    <el-input v-model="billUserId" placeholder="用户ID" clearable style="width:140px;" @keyup.enter="searchBilling" @clear="searchBilling" />
+    <el-date-picker v-model="billDateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width:260px;" @change="searchBilling" />
+    <el-button type="primary" @click="searchBilling">🔍 查询</el-button>
+    <el-button @click="resetFilters">重置</el-button>
+  </div>
+</el-card>
+
+<!-- ===== 账单列表 ===== -->
+<el-card shadow="never">
+  <template #header>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">扣费记录列表</span>
+    </div>
+  </template>
+  <el-table :data="billingList" stripe v-loading="loadingBilling" empty-text="暂无账单记录">
+    <el-table-column label="ID" width="80" align="center">
+      <template #default="{ row }"><span style="font-family:monospace;">#{{ row.id }}</span></template>
+    </el-table-column>
+    <el-table-column label="用户" min-width="180">
+      <template #default="{ row }">
+        <div>{{ row.email || '-' }}</div>
+        <div style="font-size:12px;color:#9ca3af;">ID: {{ row.userId }}</div>
+      </template>
+    </el-table-column>
+    <el-table-column prop="provider" label="提供商" width="100" align="center" />
+    <el-table-column prop="model" label="模型" min-width="130" />
+    <el-table-column label="调用类型" width="130" align="center">
+      <template #default="{ row }">
+        <el-tag size="small" type="info">{{ callTagLabel(row.callTag) }}</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column label="状态" width="90" align="center">
+      <template #default="{ row }">
+        <el-tag size="small" :type="row.status === 'success' ? 'success' : 'danger'">{{ row.status === 'success' ? '成功' : '失败' }}</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column label="费用" width="110" align="center">
+      <template #default="{ row }">¥{{ parseFloat(row.totalCost).toFixed(4) }}</template>
+    </el-table-column>
+    <el-table-column label="成本" width="110" align="center">
+      <template #default="{ row }">¥{{ parseFloat(row.costTotal).toFixed(4) }}</template>
+    </el-table-column>
+    <el-table-column label="利润" width="110" align="center">
+      <template #default="{ row }">
+        <span :style="{ color: parseFloat(row.profit) < 0 ? '#ef4444' : '#10b981' }">¥{{ parseFloat(row.profit).toFixed(4) }}</span>
+      </template>
+    </el-table-column>
+    <el-table-column prop="retryCount" label="重试" width="70" align="center" />
+    <el-table-column label="错误信息" min-width="160">
+      <template #default="{ row }">
+        <span :title="row.errorMessage || ''" style="cursor:pointer;">{{ row.errorMessage ? truncateStr(row.errorMessage, 20) : '-' }}</span>
+      </template>
+    </el-table-column>
+    <el-table-column label="时间" width="170" align="center">
+      <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+    </el-table-column>
+  </el-table>
+  <!-- 分页 -->
+  <div style="margin-top:16px;display:flex;justify-content:flex-end;">
+    <el-pagination
+      v-model:current-page="billPage"
+      v-model:page-size="billPageSize"
+      :total="billTotal"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      @size-change="loadBilling"
+      @current-change="loadBilling"
+      small
+    />
+  </div>
+</el-card>

@@ -163,6 +163,20 @@
           {{ fileError }}
         </p>
 
+        <!-- PDF 超过 100 页额外提示（含小工具-PDF拆分跳转链接） -->
+        <p v-if="pdfOverLimit"
+           class="text-red-500 dark:text-red-400 text-xs leading-relaxed
+                  transition-colors duration-500">
+          暂时不接受超过100页的pdf文件，请前往
+          <a
+            href="/tools/pdf-splitter"
+            class="text-blue-500 dark:text-blue-400 font-bold underline cursor-pointer
+                   hover:opacity-80 transition-opacity duration-500"
+            @click.prevent="goToPdfSplitter"
+          >小工具-pdf拆分</a>
+          ，拆分后再试。
+        </p>
+
         <!-- 表单区（参考老项目 .upload-form） -->
         <div class="rounded-[10px] border border-gray-200 dark:border-gray-700
                     bg-white dark:bg-gray-800
@@ -288,7 +302,7 @@
 // 职责：管理文件选择、参数校验、调用 uploadBook API、成功/失败处理
 // 布局参考老项目 UploadCourseModal：左右两栏（268px 模式选择 + 上传区）
 
-import { ref, reactive, computed, onMounted, watch } from "vue";
+import { ref, reactive, computed, inject, onMounted, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { uploadBook } from "../api/books";
 import { getBilling } from "../api/billing"; // 账单 API（获取余额锁定状态，欠费时禁用上传）
@@ -303,6 +317,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 // 日志前缀
 const TAG = "[UploadBookDialog]";
+
+// 页面跳转方法（App.vue 通过 provide 注入，与首页脚本一致）
+const navigate = inject("navigate", (page) => {
+  console.warn(TAG + " navigate 未从父组件注入，当前页: " + page);
+});
 
 // ==================== PDF 页数统计（pdfjs-dist 官方库，100% 准确） ====================
 
@@ -356,6 +375,9 @@ const selectedFile = ref(null);
 /** 文件选择错误提示 */
 const fileError = ref("");
 
+/** PDF 超过 100 页标识（控制额外提示与跳转链接显示） */
+const pdfOverLimit = ref(false);
+
 /** 上传中标识（防重复点击） */
 const isUploading = ref(false);
 
@@ -391,6 +413,7 @@ const uploadRef = ref(null);
  */
 async function handleFileChange(uploadFile) {
   fileError.value = "";
+  pdfOverLimit.value = false;
 
   // 检查是否有文件
   if (!uploadFile || !uploadFile.raw) {
@@ -433,6 +456,7 @@ async function handleFileChange(uploadFile) {
       if (pageCount > 100) {
         // 超过 100 页，拒绝上传
         fileError.value = "PDF 页数超过限制（当前 " + pageCount + " 页，最多允许 100 页）";
+        pdfOverLimit.value = true;
         selectedFile.value = null;
         uploadStatus.value = "";
         if (uploadRef.value) {
@@ -469,8 +493,19 @@ async function handleFileChange(uploadFile) {
 function handleFileRemove() {
   selectedFile.value = null;
   fileError.value = "";
+  pdfOverLimit.value = false;
   uploadStatus.value = "";
   console.log(TAG + " 文件已移除");
+}
+
+/**
+ * 跳转到小工具-PDF拆分页面（超 100 页提示中的超链接）
+ */
+function goToPdfSplitter() {
+  console.log(TAG + " 前往小工具-PDF拆分页面");
+  resetForm();
+  emit("update:visible", false);
+  navigate("tools-pdf-splitter");
 }
 
 /**
@@ -572,6 +607,7 @@ function handleCancel() {
 function resetForm() {
   selectedFile.value = null;
   fileError.value = "";
+  pdfOverLimit.value = false;
   uploadStatus.value = "";
   isUploading.value = false;
   form.name = "";

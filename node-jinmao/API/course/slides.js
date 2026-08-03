@@ -276,10 +276,11 @@ router.get("/courses/:courseId/chapters/:chapterId/slides", authenticateToken, a
     const cleanRoot = chapterRoot.replace(/^\/+/, ""); // "usercourse/1/2/chapter_01/"
 
     // ========== 4.1 从 MinIO 读取大纲 JSON，提取 script 和 zjts ==========
-    // 大纲 JSON 路径：{chapterRoot}chapter_01.json（章节序号从目录名提取）
+    // 大纲 JSON 路径：{chapterRoot}{目录名}.json（如 chapter_02/chapter_02.json）
     // 目录名格式：chapter_01、chapter_02 等
-    const chapterDirName = cleanRoot.split("/").pop() || "chapter_01"; // "chapter_01"
-    const outlinePath = cleanRoot + chapterDirName + ".json"; // "usercourse/1/2/chapter_01/chapter_01.json"
+    // 注意：chapterRoot 末尾带斜杠，split("/").pop() 会得到空字符串，需过滤空段
+    const chapterDirName = cleanRoot.split("/").filter(Boolean).pop() || "chapter_01"; // "chapter_02"
+    const outlinePath = cleanRoot + chapterDirName + ".json"; // "usercourse/1/2/chapter_02/chapter_02.json"
     const outlineData = await loadOutlineJson(outlinePath);
 
     // ========== 4.2 遍历每一页，构造幻灯片数据 ==========

@@ -1,0 +1,91 @@
+<!-- ===== 生成兑换码区域 ===== -->
+<el-card shadow="never" style="margin-bottom:20px;">
+  <template #header>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">生成兑换码</span>
+    </div>
+  </template>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span style="font-size:13px;color:#6b7280;">每次生成 10 个兑换码，每个面额 10 元</span>
+    <el-button type="primary" @click="generateCodes" :loading="generatingCodes">
+      {{ generatingCodes ? '生成中...' : '🎫 生成 10 个兑换码' }}
+    </el-button>
+  </div>
+  <!-- 新生成的兑换码展示 -->
+  <div v-if="newCodes.length > 0" class="code-cards">
+    <div v-for="c in newCodes" :key="c.id" class="code-card">
+      <span class="code-text">{{ c.code }}</span>
+      <button class="copy-btn" @click="copyCode(c)">📋 复制</button>
+    </div>
+  </div>
+</el-card>
+
+<!-- ===== 兑换码列表 ===== -->
+<el-card shadow="never">
+  <template #header>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">兑换码列表</span>
+      <el-select v-model="statusFilter" @change="loadCodeList" size="small" style="width:120px;">
+        <el-option label="全部" value="all" />
+        <el-option label="未使用" value="unused" />
+        <el-option label="已使用" value="used" />
+      </el-select>
+    </div>
+  </template>
+  <el-table :data="codeList" stripe v-loading="loadingCodeList" empty-text="暂无兑换码">
+    <el-table-column prop="code" label="兑换码" min-width="240">
+      <template #default="{ row }">
+        <span style="font-family:monospace;font-weight:600;">{{ row.code }}</span>
+        <el-button link type="primary" size="small" @click="copyCode(row)" style="margin-left:8px;">复制</el-button>
+      </template>
+    </el-table-column>
+    <el-table-column prop="amount" label="金额" width="80" align="center">
+      <template #default="{ row }">¥{{ parseFloat(row.amount).toFixed(2) }}</template>
+    </el-table-column>
+    <el-table-column prop="distributedAt" label="分发状态" width="150" align="center">
+      <template #default="{ row }">
+        <el-tag v-if="row.distributedAt" type="success" size="small">已分发</el-tag>
+        <el-tag v-else type="info" size="small">未分发</el-tag>
+        <div v-if="row.distributedAt" style="font-size:12px;color:#909399;margin-top:2px;">{{ formatTime(row.distributedAt) }}</div>
+      </template>
+    </el-table-column>
+    <el-table-column prop="isUsed" label="状态" width="90" align="center">
+      <template #default="{ row }">
+        <el-tag :type="row.isUsed ? 'success' : 'warning'" size="small">
+          {{ row.isUsed ? '已使用' : '未使用' }}
+        </el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column prop="usedByUser" label="使用者" min-width="160" align="center">
+      <template #default="{ row }">
+        <template v-if="row.usedByUser">
+          <div>{{ row.usedByUser.nickname || row.usedByUser.username || row.usedByUser.email }}</div>
+          <div
+            v-if="row.usedByUser.email && (row.usedByUser.nickname || row.usedByUser.username)"
+            style="font-size:12px;color:#909399;"
+          >{{ row.usedByUser.email }}</div>
+        </template>
+        <span v-else>-</span>
+      </template>
+    </el-table-column>
+    <el-table-column prop="usedAt" label="使用时间" width="170" align="center">
+      <template #default="{ row }">{{ row.usedAt ? formatTime(row.usedAt) : '-' }}</template>
+    </el-table-column>
+    <el-table-column prop="createdAt" label="创建时间" width="170" align="center">
+      <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+    </el-table-column>
+  </el-table>
+  <!-- 分页 -->
+  <div style="margin-top:16px;display:flex;justify-content:flex-end;">
+    <el-pagination
+      v-model:current-page="codePage"
+      v-model:page-size="codePageSize"
+      :total="codeTotal"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      @size-change="loadCodeList"
+      @current-change="loadCodeList"
+      small
+    />
+  </div>
+</el-card>

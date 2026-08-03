@@ -1,22 +1,26 @@
 // ==================== 计费模块 ====================
-// 职责：价格计算、时段匹配、写入数据库账单
+// 职责：售价计算、成本计算、写入数据库账单
+// 售价从 config/billing_pricing.json 实时读取（共享工具在 utils/billing_config.js）
+// 成本从 config/model_cost_config.json 实时读取（计算逻辑在 utils/billing_cost.js）
+// 利润 = 售价(total_cost) - 成本(cost_total)
 // 支持三种计费方式：LLM Token 计费、文生图计费、TTS 字符计费、doc2x 按页计费
-// 价格从 config/billing_pricing.json 实时读取，修改后无需重启服务
 //
 // 导出函数：
 //   recordTokenUsage(data)    — LLM Token 计费（由 llm_client.js 自动调用）
 //   recordExternalCost(data)  — 文生图 / TTS / doc2x 等非 LLM 计费
-//   getActivePeriod()         — 获取当前时段配置（供 llm_client.js 计算价格用）
+//   getActivePeriod()         — 获取当前售价时段配置
+//   ceilTo7Decimals(value)    — 金额向上取整到 7 位小数
 
-const fs = require("fs");
 const path = require("path");
 const { PrismaClient } = require("@prisma/client");
+const { loadConfig, getActivePeriodFromConfig, getPriceFromPeriod, ceilTo7Decimals } = require("./billing_config");
+const { computeTokenCost, computeExternalCost } = require("./billing_cost");
 
 // ==================== Prisma 客户端初始化 ====================
 const prisma = new PrismaClient();
 console.log("[billing] Prisma 客户端已初始化。");
 
-// ==================== 定价配置路径 ====================
+// ==================== 售价配置路径 ====================
 const PRICING_CONFIG_PATH = path.join(__dirname, "..", "config", "billing_pricing.json");
 
 // ==================== 计费标签映射 ====================
@@ -34,144 +38,18 @@ const CALL_TAG_LABELS = {
     md2quiz_split: "题库分段(AI)",
     md2quiz_format: "题库格式化(AI)",
     md2quiz_generate: "题库生成(AI)",
+    course_ai_chat: "AI助教问答",
+    course_ai_suggest: "AI追问推荐",
 };
 
-// ==================== 金额向上取整工具函数 ====================
+// ==================== 获取当前售价时段 ====================
 
 /**
- * 将金额向上取整到 7 位小数（Decimal(18,7)精度）
- * 策略：如果计算值超过 7 位小数，将第 8 位及之后进位到第 7 位
- * 例如：0.00001234 → 0.0000124（第 8 位是 4，进 1 到第 7 位）
- *      0.05000000 → 0.0500000（正好 7 位，不变）
- * 目的：确保平台不会因四舍五入而少收费用
- *
- * @param {number} value - 原始计算金额
- * @returns {number} 向上取整到 7 位小数的金额
- */
-function ceilTo7Decimals(value) {
-    if (typeof value !== "number" || value === 0) return value;
-    // 将数值放大 10^7 倍，向上取整后再缩回
-    const multiplier = 10000000; // 10^7
-    return Math.ceil(value * multiplier) / multiplier;
-}
-
-// ==================== 核心函数：读取定价配置 ====================
-
-/**
- * 实时读取 billing_pricing.json 配置文件
- * 每次调用都重新读取，确保修改配置后无需重启服务即可生效
- * @returns {Object} 定价配置对象，若读取失败返回 null
- */
-function loadPricingConfig() {
-    try {
-        const raw = fs.readFileSync(PRICING_CONFIG_PATH, "utf-8");
-        const config = JSON.parse(raw);
-        return config;
-    } catch (err) {
-        console.error("[billing][loadPricingConfig] 读取定价配置文件失败：" + err.message);
-        return null;
-    }
-}
-
-// ==================== 核心函数：时段匹配 ====================
-
-/**
- * 根据当前时间匹配计费时段
- * 若 timeBasedPricing.enabled = false，始终返回 "default" 段
- * 若 enabled = true，按 periods 顺序匹配第一个命中的时段
- *
- * 跨天时段（start > end，如 15:00 → 08:00）特殊处理：
- *   当前时间 >= start 或 当前时间 < end → 命中
- *
+ * 获取当前售价时段（时段匹配逻辑在 billing_config.js 中，与成本配置共用）
  * @returns {{ name: string, start: string, end: string, providers: Object } | null}
  */
 function getActivePeriod() {
-    const TAG = "[billing][getActivePeriod]";
-    const config = loadPricingConfig();
-    if (!config) {
-        console.error(TAG + " 定价配置不可用，无法确定计费时段。");
-        return null;
-    }
-
-    const timeConfig = config.timeBasedPricing;
-    if (!timeConfig || !timeConfig.periods || timeConfig.periods.length === 0) {
-        console.error(TAG + " 定价配置中 timeBasedPricing.periods 为空。");
-        return null;
-    }
-
-    // 未启用时段分价时，直接返回 default 段
-    if (!timeConfig.enabled) {
-        const defaultPeriod = timeConfig.periods.find(p => p.name === "default");
-        if (!defaultPeriod) {
-            console.error(TAG + " 未启用时段分价但配置中无 default 段。");
-            return null;
-        }
-        console.log(TAG + " 时段分价未启用，使用 default 段 (00:00-24:00)。");
-        return defaultPeriod;
-    }
-
-    // 启用时段分价：获取当前时间，匹配时段
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-    // 将 "HH:MM" 转换为分钟数
-    function timeToMinutes(timeStr) {
-        const [h, m] = timeStr.split(":").map(Number);
-        return h * 60 + m;
-    }
-
-    for (const period of timeConfig.periods) {
-        if (period.name === "default") continue; // 跳过 default 段（最后兜底用）
-
-        const startMin = timeToMinutes(period.start);
-        const endMin = timeToMinutes(period.end);
-
-        let matched = false;
-        if (startMin <= endMin) {
-            // 普通时段：08:00-15:00
-            matched = currentMinutes >= startMin && currentMinutes < endMin;
-        } else {
-            // 跨天时段：15:00-08:00（start > end）
-            matched = currentMinutes >= startMin || currentMinutes < endMin;
-        }
-
-        if (matched) {
-            console.log(TAG + " 命中时段: " + period.name + " (" + period.start + "-" + period.end + ")");
-            return period;
-        }
-    }
-
-    // 未命中任何特殊时段，兜底使用 default 段
-    const defaultPeriod = timeConfig.periods.find(p => p.name === "default");
-    console.log(TAG + " 未命中任何特殊时段，兜底使用 default 段。");
-    return defaultPeriod || null;
-}
-
-// ==================== 核心函数：获取指定 provider+model 的时段价格 ====================
-
-/**
- * 从时段配置中提取指定 provider 和 model 的价格信息
- * @param {Object} period - 时段配置对象
- * @param {string} provider - 提供商名称（deepseek / grsai / volcengine）
- * @param {string} model - 模型名称
- * @returns {Object|null} 价格对象，如 { input_cache_miss, input_cache_hit, output } 或 { per_image } 或 { per_char }
- */
-function getPriceFromPeriod(period, provider, model) {
-    if (!period || !period.providers) return null;
-
-    const providerConfig = period.providers[provider];
-    if (!providerConfig) {
-        console.warn("[billing][getPriceFromPeriod] 提供商 " + provider + " 在时段 " + period.name + " 中无配置。");
-        return null;
-    }
-
-    const modelPrice = providerConfig[model];
-    if (!modelPrice) {
-        console.warn("[billing][getPriceFromPeriod] 模型 " + model + " 在时段 " + period.name + " 中无配置。");
-        return null;
-    }
-
-    return modelPrice;
+  return getActivePeriodFromConfig(loadConfig(PRICING_CONFIG_PATH));
 }
 
 // ==================== 核心函数：写入数据库账单 ====================
@@ -249,6 +127,13 @@ async function recordTokenUsage(data) {
     const outputCost = ceilTo7Decimals((outTokens / 1000000) * (price.output || 0));
     const totalCost = ceilTo7Decimals(inputCost + outputCost);
 
+    // 计算成本（成本配置缺失某模型时回退为按售价计算并告警）
+    const cost = computeTokenCost(provider, model, hitTokens, missTokens, outTokens);
+    if (!cost) {
+        console.warn(TAG + " 成本配置缺失（provider=" + provider + ", model=" + model + "），成本按售价回退计算。");
+    }
+    const costTotal = cost ? cost.totalCost : totalCost;
+
     // 构建数据库记录
     const record = {
         user_id: String(userId),
@@ -268,6 +153,12 @@ async function recordTokenUsage(data) {
         input_cost: inputCost,
         output_cost: outputCost,
         total_cost: totalCost,
+        cost_input_unit_price: cost ? cost.inputUnitPrice : (price.input_cache_miss || null),
+        cost_input_cache_hit_price: cost ? cost.cacheHitUnitPrice : (price.input_cache_hit || null),
+        cost_output_unit_price: cost ? cost.outputUnitPrice : (price.output || null),
+        cost_input_cost: cost ? cost.inputCost : inputCost,
+        cost_output_cost: cost ? cost.outputCost : outputCost,
+        cost_total: costTotal,
         error_message: errorMessage || null,  // 失败原因（仅 status=failed 时记录）
         retry_count: retryCount || 0,          // 重试次数
     };
@@ -294,6 +185,7 @@ async function recordTokenUsage(data) {
     console.log(TAG + " 单价: 输入¥" + (price.input_cache_miss || 0) + "/¥" + (price.input_cache_hit || 0) + "(命中) | 输出¥" + (price.output || 0) + " (元/百万tokens)");
     console.log(TAG + " 输入费用: ¥" + inputCost.toFixed(6) + " | 输出费用: ¥" + outputCost.toFixed(6));
     console.log(TAG + " 总费用: ¥" + totalCost.toFixed(6) + (saved ? "" : " (数据库写入失败!)"));
+    console.log(TAG + " 成本: ¥" + costTotal.toFixed(6) + " | 利润: ¥" + (totalCost - costTotal).toFixed(6));
     console.log(TAG + " ================================");
 
     return { totalCost };
@@ -369,6 +261,13 @@ async function recordExternalCost(data) {
         return { totalCost: 0 };
     }
 
+    // 计算成本（成本配置缺失某模型时回退为按售价计算并告警）
+    const cost = computeExternalCost(provider, model, callTag, { imageCount, textLength, pageCount });
+    if (!cost) {
+        console.warn(TAG + " 成本配置缺失（provider=" + provider + ", model=" + model + ", callTag=" + callTag + "），成本按售价回退计算。");
+    }
+    const costTotal = cost ? cost.totalCost : totalCost;
+
     // 构建数据库记录
     const record = {
         user_id: String(userId),
@@ -386,6 +285,10 @@ async function recordExternalCost(data) {
         tts_unit_price: callTag === "tts" ? unitPrice : null,
         page_unit_price: callTag === "doc2x" ? unitPrice : null,
         total_cost: totalCost,
+        cost_image_unit_price: callTag === "create_image" ? (cost ? cost.unitPrice : unitPrice) : null,
+        cost_tts_unit_price: callTag === "tts" ? (cost ? cost.unitPrice : unitPrice) : null,
+        cost_page_unit_price: callTag === "doc2x" ? (cost ? cost.unitPrice : unitPrice) : null,
+        cost_total: costTotal,
         error_message: errorMessage || null,  // 失败原因（仅 status=failed 时记录）
         retry_count: retryCount || 0,          // 重试次数
     };
@@ -416,6 +319,7 @@ async function recordExternalCost(data) {
     console.log(TAG + " 时段: " + period.name + " (" + period.start + "-" + period.end + ")");
     console.log(TAG + " 单价: ¥" + unitPrice + " " + unitLabel);
     console.log(TAG + " 总费用: ¥" + totalCost.toFixed(6) + (saved ? "" : " (数据库写入失败!)"));
+    console.log(TAG + " 成本: ¥" + costTotal.toFixed(6) + " | 利润: ¥" + (totalCost - costTotal).toFixed(6));
     console.log(TAG + " ================================");
 
     return { totalCost };

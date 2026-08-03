@@ -52,7 +52,35 @@ function authenticateToken(req, res, next) {
   next();
 }
 
+/**
+ * 可选 JWT 鉴权中间件（公开考试接口专用）
+ * 有合法 Token 时解析出 userId 注入 req；无 Token / Token 无效时放行（匿名访问）
+ * 用途：公开考试页，已登录考生自动绑定账号，未登录考生以游客身份作答
+ * @param {import('express').Request} req - Express 请求对象
+ * @param {import('express').Response} res - Express 响应对象
+ * @param {Function} next - 下一个中间件/路由处理函数
+ */
+function authenticateOptional(req, res, next) {
+  // 1. 尝试提取 Bearer Token（缺失或格式错误 → 匿名放行）
+  const extractResult = jwtUtil.extractBearer(req);
+  if (extractResult.code !== 200) {
+    return next();
+  }
+
+  // 2. 验证 Token 有效性（无效/过期 → 匿名放行，不返回 401）
+  const verifyResult = jwtUtil.verifyToken(extractResult.token);
+  if (verifyResult.code !== 200) {
+    return next();
+  }
+
+  // 3. 有效 Token → 注入 userId
+  req.userId = verifyResult.userId;
+  console.log(TAG + "[authenticateOptional] Token 验证通过，userId: " + verifyResult.userId);
+  next();
+}
+
 // 导出中间件
 module.exports = {
   authenticateToken,
+  authenticateOptional,
 };

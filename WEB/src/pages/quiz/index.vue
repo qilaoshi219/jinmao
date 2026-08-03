@@ -7,8 +7,11 @@
 -->
 
 <template>
+  <!-- 刷题报告子视图（quizParams.mode === "report" 时渲染） -->
+  <QuizReport v-if="isReportMode" />
+
   <!-- 刷题页面全屏布局 -->
-  <div class="min-h-screen flex flex-col transition-colors duration-500"
+  <div v-else class="min-h-screen flex flex-col transition-colors duration-500"
        :style="{ backgroundColor: 'var(--color-bg-primary)' }">
 
     <!-- 顶部信息栏 -->

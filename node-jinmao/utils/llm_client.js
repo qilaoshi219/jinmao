@@ -305,12 +305,14 @@ async function chat(userId, callTag, options = {}) {
  * @param {string} options.modelSize - 模型大小："big"（pro）| "small"（flash）
  * @param {Array<{role: string, content: string}>} options.messages - 消息数组
  * @param {(deltaText: string) => void} [options.onDelta] - per-delta 回调，每收到一个 delta 文本片段时触发
+ * @param {Object} [options.thinking] - 思考模式配置，如 { type: "enabled" }（pro 模型）
+ * @param {(thinkingText: string) => void} [options.onThinkingDelta] - 思考内容 delta 回调（thinking 模式下触发）
  * @param {Object} [options.response_format] - 响应格式，如 { type: "json_object" }
  * @param {number} [options.temperature=0.6] - 生成温度（0-2），越低越确定性
- * @returns {Promise<{model: string, content: string, usage: object|null}>} 聚合后的完整响应
+ * @returns {Promise<{model: string, content: string, usage: object|null, cost: number, thinkingContent: string}>} 聚合后的完整响应（cost 为本次费用元，thinkingContent 为思考过程）
  */
 async function chatStream(userId, callTag, options = {}) {
-    const { modelSize, messages, onDelta, response_format, temperature = 0.6 } = options;
+    const { modelSize, messages, onDelta, response_format, temperature = 0.6, thinking, onThinkingDelta } = options;
     // 根据 modelSize 选择大/小模型配置
     const apiConfig = modelSize === "big" ? config.DEEPSEEK_API_BIG : config.DEEPSEEK_API_SMALL;
     const modelName = apiConfig.DEEPSEEK_API_MODEL;
@@ -329,6 +331,7 @@ async function chatStream(userId, callTag, options = {}) {
     // 获取对应大小的 OpenAI 客户端
     const openai = await getClient(modelSize);
     let aggregatedContent = ""; // 聚合所有 delta 的完整内容
+    let thinkingContent = "";   // 聚合 thinking 模式的推理内容（reasoning_content）
     let latestModel = modelName; // 跟踪实际使用的模型名
     let latestUsage = null;      // 最终的 token 用量信息
 
@@ -340,7 +343,9 @@ async function chatStream(userId, callTag, options = {}) {
             stream: true,
             temperature,
             response_format,
+            stream_options: { include_usage: true }, // 让流式响应末 chunk 携带 usage，用于准确计费与上下文用量展示
             timeout,
+            ...(thinking ? { thinking } : {}),
         });
 
         // 逐 chunk 读取流式响应
@@ -356,6 +361,15 @@ async function chatStream(userId, callTag, options = {}) {
                 // 触发 per-delta 回调（用于进度更新）
                 if (onDelta) {
                     onDelta(deltaContent);
+                }
+            }
+
+            // 提取思考内容（DeepSeek reasoning_content，thinking 模式）
+            const deltaThinking = chunk.choices?.[0]?.delta?.reasoning_content;
+            if (deltaThinking) {
+                thinkingContent += deltaThinking;
+                if (onThinkingDelta) {
+                    onThinkingDelta(deltaThinking);
                 }
             }
         }
@@ -384,9 +398,10 @@ async function chatStream(userId, callTag, options = {}) {
 
     console.log("[llm_client:stream] 调用成功 — " + callTag + ", tokens: " + (latestUsage?.total_tokens || "?") + ", 内容长度: " + aggregatedContent.length);
 
-    // ---- 成功计费（异步，不阻塞返回） ----
+    // ---- 成功计费（await 计费结果，返回本次费用供前端展示） ----
+    let cost = 0;
     if (latestUsage) {
-        recordTokenUsage({
+        const billed = await recordTokenUsage({
             userId,
             provider: "deepseek",
             model: latestModel,
@@ -397,13 +412,19 @@ async function chatStream(userId, callTag, options = {}) {
             cacheMissTokens: latestUsage.prompt_cache_miss_tokens || 0,
             completionTokens: latestUsage.completion_tokens || 0,
             totalTokens: latestUsage.total_tokens || 0,
-        }).catch((err) => console.error("[llm_client:stream] 计费记录失败: " + err.message));
+        }).catch((err) => {
+            console.error("[llm_client:stream] 计费记录失败: " + err.message);
+            return null;
+        });
+        cost = billed?.totalCost || 0;
     }
 
     return {
         model: latestModel,
         content: aggregatedContent,
         usage: latestUsage,
+        cost: cost,
+        thinkingContent: thinkingContent,
     };
 }
 

@@ -41,8 +41,10 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted, inject, nextTic
 import { ElMessage } from "element-plus";
 import { useTheme } from "../../composables/useTheme";
 import { useResize } from "../../composables/useResize";
-import { getBookDetail, getChapterSlides, generateNextChapter, getChapterGenerationProgress, fixMissingFiles, getFixStatus } from "../../api/books";
+import { getBookDetail, getChapterSlides, generateNextChapter, getChapterGenerationProgress, getGenerateNextStatus, fixMissingFiles, getFixStatus } from "../../api/books";
 import { getProgress, saveProgress } from "../../api/progress"; // 学习进度保存/恢复 API
+import { getAiConversations, getAiConversation, streamAiChat } from "../../api/ai"; // AI 助教问答 API
+import { renderMarkdown } from "../../utils/markdown"; // AI 回答 Markdown 渲染
 
 // ============================================================================
 // 一、常量定义
@@ -179,6 +181,9 @@ export default {
       console.warn(TAG + " navigate 未从父组件注入，当前页: " + page);
     });
 
+    /** 返回上一页函数（从 App.vue 注入，无应用内历史时兜底回首页） */
+    const navigateBack = inject("goBack", () => navigate("home"));
+
     /** 学习页参数（从 App.vue 注入，含 courseId） */
     const studyParams = inject("studyParams", null);
 
@@ -253,14 +258,105 @@ export default {
     /** 当前缩放比例，由 updatePptScale() 根据容器实际宽度动态计算 */
     const pptScale = ref(1);
 
-    // ---- AI 对话（后续对接） ----
-    const aiMessages = ref([
-      { role: "user", text: "这页的导数定义不太理解" },
-      { role: "ai", text: "导数描述的是函数在某一点处的瞬时变化率。你可以想象一辆汽车的行驶——速度表上的读数就是位移对时间的导数。" },
-      { role: "user", text: "Δx 趋近于 0 是什么意思？" },
-      { role: "ai", text: "Δx 趋近于 0 是指自变量的变化量无限缩小，但永远不等于 0。这正是微积分的核心思想——用无限逼近的方式来研究变化。" },
-    ]);
+    // ---- AI 助教（真实流式问答） ----
+    /** 对话消息列表：{ role: 'user'|'assistant', text, suggestions?, streaming?, failed?, thinking?, thinkingOpen?, thinkingMode?, greeting? } */
+    const aiMessages = ref([]);
     const aiInput = ref("");
+    /** 当前对话 ID（null = 尚未发送首条消息的新对话） */
+    const activeConversationId = ref(null);
+    /** 是否正在流式回答 */
+    const aiStreaming = ref(false);
+    /** 历史对话列表 */
+    const aiHistory = ref([]);
+    /** 历史对话弹层是否可见 */
+    const aiHistoryVisible = ref(false);
+    /** 消息区 DOM（自动滚动用） */
+    const aiMessagesRef = ref(null);
+    /** 上下文 token 上限（与后端常量保持一致） */
+    const AI_CONTEXT_LIMIT = 128000;
+    /** 可选模型列表（默认值，后端返回配置时覆盖） */
+    const aiModels = ref([
+      { key: "flash", label: "经济版 flash", inputCacheMiss: 1, inputCacheHit: 0.02, output: 2 },
+      { key: "pro", label: "专业版 pro", inputCacheMiss: 3, inputCacheHit: 0.025, output: 6 },
+    ]);
+    /** 当前选择模型（localStorage 持久化） */
+    const selectedModel = ref(localStorage.getItem("ai_chat_model") === "pro" ? "pro" : "flash");
+    /** 上下文用量统计（本次轮次 + 累计） */
+    const aiUsage = ref({
+      promptTokens: 0,
+      cacheHitTokens: 0,
+      cacheMissTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cost: 0,
+      cumulative: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, assistantMessageCount: 0 },
+    });
+
+    // 模型选择持久化
+    watch(selectedModel, (m) => {
+      localStorage.setItem("ai_chat_model", m);
+    });
+
+    /** 上下文进度条百分比（本次输入 tokens / 上限） */
+    const aiUsagePercent = computed(() => {
+      const used = aiUsage.value.promptTokens || 0;
+      return Math.min(100, Math.round((used / AI_CONTEXT_LIMIT) * 10000) / 100);
+    });
+    const aiUsagePercentText = computed(() => aiUsagePercent.value.toFixed(1) + "%");
+
+    /** 上下文进度圆环：直径 16px，绘制用（周长/偏移） */
+    const AI_RING_RADIUS = 15.5;
+    const AI_RING_CIRCUMFERENCE = 2 * Math.PI * AI_RING_RADIUS;
+    const aiRingDash = computed(() => {
+      const offset = AI_RING_CIRCUMFERENCE * (1 - aiUsagePercent.value / 100);
+      return { circumference: AI_RING_CIRCUMFERENCE, offset: offset };
+    });
+
+    /** 格式化 token 数（千分位） */
+    function formatAiTokens(n) {
+      return (n || 0).toLocaleString("zh-CN");
+    }
+
+    /** 格式化费用（元，小额显示 6 位小数） */
+    function formatAiCost(c) {
+      const v = parseFloat(c || 0);
+      if (!isFinite(v) || v <= 0) return "¥0";
+      return "¥" + (v < 0.0001 ? v.toFixed(6) : v.toFixed(4));
+    }
+
+    /** 消息区自动滚动到底部 */
+    function scrollAiToBottom() {
+      nextTick(() => {
+        const el = aiMessagesRef.value;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    }
+    watch([aiMessages, aiStreaming], () => scrollAiToBottom(), { deep: true });
+
+    /**
+     * 助教提示以"问候消息"发送给用户（本地展示，不落库）：
+     * 页面加载/翻页后，将当前页 zjts 作为一条 AI 消息追加到对话末尾，增强互动感
+     */
+    function ensurePageGreeting() {
+      if (aiStreaming.value) return;
+      const zjts = (currentZjts.value || "").trim();
+      // 先移除全部旧问候消息，再按当前页重建（避免追问后问候残留对话中间）
+      const msgs = aiMessages.value.filter((m) => !m.greeting);
+      if (zjts) {
+        msgs.push({
+          role: "assistant",
+          text: zjts,
+          greeting: true,
+          streaming: false,
+          failed: false,
+          suggestions: null,
+          thinking: "",
+          thinkingOpen: false,
+          thinkingMode: false,
+        });
+      }
+      aiMessages.value = msgs;
+    }
 
     // ---- Tab ----
     const activeTab = ref("ai");
@@ -276,6 +372,12 @@ export default {
     let chapterProgressTimer = null;
     /** 轮询间隔（毫秒），与首页保持一致 */
     const CHAPTER_POLL_INTERVAL = 3000;
+    /** "生成下一章"按钮状态（来自 GET generate-next-chapter/status 轮询） */
+    const generateStatus = ref({ isGenerating: false, canGenerateNext: null, reason: "" });
+    /** "生成下一章"按钮状态轮询定时器引用 */
+    let generateStatusTimer = null;
+    /** "生成下一章"状态轮询间隔（毫秒），仅在有章节生成期间轮询 */
+    const GENERATE_STATUS_POLL_INTERVAL = 5000;
 
     // ---- 文件补全相关 ----
     /** 是否正在补全缺失文件 */
@@ -326,6 +428,9 @@ export default {
       return currentSlide.value?.zjts || "";
     });
 
+    // 翻页/章节切换时，把新一页的助教提示"发送"给用户（本地问候消息）
+    watch(currentZjts, () => ensurePageGreeting());
+
     /** 已完成或部分完成的有效章节状态集合 */
     const VALID_COMPLETED_STATUSES = ["completed", "partial_completed"];
 
@@ -333,20 +438,22 @@ export default {
     const generateBtnDisabled = computed(() => {
       // 加载中 → 禁用
       if (courseLoading.value) return true;
-      // 正在生成中 → 禁用（el-button 的 :loading 已覆盖，此处做双重保护）
-      if (isGeneratingChapter.value) return true;
+      // 正在生成中（请求中或后台生成中）→ 禁用（el-button 的 :loading 已覆盖，此处做双重保护）
+      if (isGeneratingChapter.value || generateStatus.value.isGenerating) return true;
       // 后端判断不可生成 → 禁用
-      return !(courseInfo.value?.canGenerateNext ?? false);
+      const canGenerateNext = generateStatus.value.canGenerateNext ?? courseInfo.value?.canGenerateNext ?? false;
+      return !canGenerateNext;
     });
 
     /** 生成下一章按钮：提示文本 */
     const generateBtnText = computed(() => {
       // 加载中
       if (courseLoading.value) return "加载中...";
-      // 正在生成中
-      if (isGeneratingChapter.value) return "正在生成中...";
+      // 正在生成中（请求中或后台生成中）
+      if (isGeneratingChapter.value || generateStatus.value.isGenerating) return "生成中";
       // 后端判断可以生成
-      if (courseInfo.value?.canGenerateNext) return "生成下一章";
+      const canGenerateNext = generateStatus.value.canGenerateNext ?? courseInfo.value?.canGenerateNext ?? false;
+      if (canGenerateNext) return "生成下一章";
       // 不可生成（全部内容已完毕 / 尚无章节）
       return "已经是最后一章了";
     });
@@ -827,10 +934,10 @@ export default {
     // 3.7 导航
     // ========================================================================
 
-    /** 返回首页 */
+    /** 返回上一页 */
     function goBack() {
-      console.log(TAG + " 返回首页");
-      navigate("home");
+      console.log(TAG + " 返回上一页");
+      navigateBack();
     }
 
     // ========================================================================
@@ -865,6 +972,12 @@ export default {
         ElMessage.warning("正在修复文件，请稍候再切换章节");
         return;
       }
+      // 守卫：AI 回答进行中，禁止切换章节，防止对话上下文错乱
+      if (aiStreaming.value) {
+        console.log(TAG + " AI 回答进行中，禁止切换章节");
+        ElMessage.warning("AI 正在回答，请稍候再切换章节");
+        return;
+      }
       // 守卫：查找目标章节状态，非 completed 或 partial_completed 阻止切换
       const targetChapter = chapters.value.find(c => String(c.id) === String(chapterId));
       if (!targetChapter) {
@@ -882,6 +995,11 @@ export default {
       await loadChapterSlides(chapterId);
       // 切换章节后保存学习进度（防抖）
       saveProgressDebounced();
+
+      // AI 助教：切换章节后自动切换到该章节的对话（有历史则恢复最近一次，无则空对话）
+      startNewAiConversation();
+      await refreshAiHistory();
+      await loadAiForChapter(chapterId);
 
       // 自动生成检查：如果开启了自动生成，检查是否需要生成下一章
       if (autoGenerateEnabled.value) {
@@ -952,6 +1070,10 @@ export default {
           // 按 sequence 排序
           chapters.value.sort((a, b) => a.sequence - b.sequence);
 
+          // 标记后台生成中：立即禁用按钮并显示"生成中"，同时启动状态轮询
+          generateStatus.value.isGenerating = true;
+          startGenerateStatusPolling();
+
           // 启动进度轮询
           startChapterProgressPolling();
 
@@ -963,6 +1085,8 @@ export default {
             ElMessage.warning(result.message || "生成下一章失败");
           }
           console.warn(TAG + " [生成下一章] 失败: " + (result.message || "未知错误"));
+          // 后端拒绝（如已是最后一章）→ 立即刷新按钮状态，同步为禁用态
+          refreshGenerateNextStatus();
         }
       } catch (error) {
         console.error(TAG + " [生成下一章] 异常: " + (error?.message || error));
@@ -1056,6 +1180,61 @@ export default {
         clearInterval(chapterProgressTimer);
         chapterProgressTimer = null;
         console.log(TAG + " 章节进度轮询已停止");
+      }
+    }
+
+    // ===== "生成下一章"按钮状态轮询函数 =====
+
+    /**
+     * 刷新"生成下一章"按钮状态（轮询单次请求）
+     * 成功后同步 canGenerateNext / isGenerating 到 generateStatus，
+     * 生成结束后自动停止轮询（此时按钮已更新为最终状态）。
+     */
+    async function refreshGenerateNextStatus() {
+      const courseId = studyParams?.value?.courseId;
+      if (!courseId) return;
+
+      try {
+        const result = await getGenerateNextStatus(courseId);
+        if (result.code === 0 && result.data) {
+          const prevGenerating = generateStatus.value.isGenerating;
+          generateStatus.value = {
+            isGenerating: result.data.isGenerating === true,
+            canGenerateNext: result.data.canGenerateNext === true,
+            reason: result.data.reason || "",
+          };
+          console.log(TAG + " [生成下一章状态] canGenerateNext=" + generateStatus.value.canGenerateNext +
+            "，isGenerating=" + generateStatus.value.isGenerating +
+            "，reason=" + (generateStatus.value.reason || "无"));
+
+          // 生成已结束 → 状态已是最新最终值，停止轮询
+          if (prevGenerating && !generateStatus.value.isGenerating) {
+            stopGenerateStatusPolling();
+          }
+        }
+      } catch (error) {
+        // 轮询失败静默处理，下个周期重试
+        console.warn(TAG + " [生成下一章状态] 查询失败: " + (error?.message || error));
+      }
+    }
+
+    /**
+     * 启动"生成下一章"状态轮询（幂等）
+     * 有章节正在生成时调用；立即刷新一次，之后按固定间隔轮询。
+     */
+    function startGenerateStatusPolling() {
+      if (generateStatusTimer) return; // 已在轮询
+      console.log(TAG + " 启动生成下一章状态轮询（间隔 " + GENERATE_STATUS_POLL_INTERVAL + "ms）");
+      refreshGenerateNextStatus(); // 立即刷新一次，保证状态及时
+      generateStatusTimer = setInterval(refreshGenerateNextStatus, GENERATE_STATUS_POLL_INTERVAL);
+    }
+
+    /** 停止"生成下一章"状态轮询 */
+    function stopGenerateStatusPolling() {
+      if (generateStatusTimer) {
+        clearInterval(generateStatusTimer);
+        generateStatusTimer = null;
+        console.log(TAG + " 生成下一章状态轮询已停止");
       }
     }
 
@@ -1351,17 +1530,6 @@ export default {
       }
     });
 
-    // 监听当前幻灯片变化，自动更新助教提示消息
-    watch(currentZjts, (zjts) => {
-      if (zjts && zjts.trim()) {
-        // 有助教提示时，清空旧消息并添加当前页的助教提示
-        aiMessages.value = [{ role: "ai", text: zjts }];
-      } else {
-        // 无助教提示时，清空消息列表
-        aiMessages.value = [];
-      }
-    }, { immediate: true });
-
     // ---- PPT 加载完成 ----
     function onPptLoad() {
       pptLoading.value = false;
@@ -1476,19 +1644,256 @@ export default {
     // 3.13 AI 对话
     // ========================================================================
 
-    function sendAiMessage() {
-      const msg = aiInput.value.trim();
-      if (!msg) { return; }
-      aiMessages.value.push({ role: "user", text: msg });
+    /**
+     * 刷新历史对话列表（全课程，历史弹层使用）
+     */
+    async function refreshAiHistory() {
+      const courseId = studyParams?.value?.courseId;
+      if (!courseId) return;
+      try {
+        const result = await getAiConversations(courseId);
+        if (result.code === 0 && result.data) {
+          aiHistory.value = result.data.conversations || [];
+          if (Array.isArray(result.data.models) && result.data.models.length > 0) {
+            aiModels.value = result.data.models;
+          }
+        }
+      } catch (e) {
+        console.warn(TAG + " AI 历史列表加载失败: " + (e?.message || e));
+      }
+    }
+
+    /**
+     * 加载指定章节的最近对话（无历史则保持空对话状态）
+     * @param {string|number} chapterId - 章节 ID
+     */
+    async function loadAiForChapter(chapterId) {
+      const courseId = studyParams?.value?.courseId;
+      if (!courseId || !chapterId) return;
+      try {
+        const result = await getAiConversations(courseId, chapterId);
+        if (result.code === 0 && result.data) {
+          if (Array.isArray(result.data.models) && result.data.models.length > 0) {
+            aiModels.value = result.data.models;
+          }
+          const latest = (result.data.conversations || [])[0];
+          if (latest) {
+            await loadAiConversation(latest.id);
+          } else {
+            ensurePageGreeting(); // 无历史：空对话状态下发送当前页助教提示
+          }
+        }
+      } catch (e) {
+        console.warn(TAG + " 章节对话加载失败: " + (e?.message || e));
+        ensurePageGreeting(); // 加载失败也补发当前页助教提示，保证互动消息可见
+      }
+    }
+
+    /**
+     * 加载历史对话详情并恢复消息列表
+     * @param {string|number} conversationId - 对话 ID
+     */
+    async function loadAiConversation(conversationId) {
+      const courseId = studyParams?.value?.courseId;
+      if (!courseId || !conversationId) return;
+      try {
+        const result = await getAiConversation(courseId, conversationId);
+        if (result.code === 0 && result.data) {
+          const conv = result.data.conversation;
+          aiMessages.value = (conv.messages || []).map((m) => ({
+            role: m.role,
+            text: m.content || "",
+            suggestions: m.suggestions || null,
+            streaming: false,
+            failed: false,
+            thinking: m.thinking || "",
+            thinkingOpen: false,
+            thinkingMode: false,
+            greeting: false,
+          }));
+          activeConversationId.value = String(conversationId);
+          if (conv.model) selectedModel.value = conv.model;
+          aiUsage.value.cumulative = conv.cumulative || { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, assistantMessageCount: 0 };
+
+          // 进度条显示最近一轮的用量
+          const lastAssistant = [...(conv.messages || [])].reverse().find((m) => m.role === "assistant");
+          aiUsage.value.promptTokens = lastAssistant?.promptTokens || 0;
+          aiUsage.value.cacheHitTokens = 0;
+          aiUsage.value.cacheMissTokens = 0;
+          aiUsage.value.completionTokens = lastAssistant?.completionTokens || 0;
+          aiUsage.value.totalTokens = lastAssistant?.totalTokens || 0;
+          aiUsage.value.cost = lastAssistant?.cost || 0;
+          ensurePageGreeting(); // 恢复后补发当前页助教提示
+          scrollAiToBottom();
+        }
+      } catch (e) {
+        console.warn(TAG + " 对话详情加载失败: " + (e?.message || e));
+        ensurePageGreeting();
+      }
+    }
+
+    /**
+     * 开始新对话（仅清空当前视图，不删除历史记录）
+     */
+    function startNewAiConversation() {
+      activeConversationId.value = null;
+      aiMessages.value = [];
+      aiUsage.value = {
+        promptTokens: 0,
+        cacheHitTokens: 0,
+        cacheMissTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cost: 0,
+        cumulative: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, assistantMessageCount: 0 },
+      };
+      aiHistoryVisible.value = false;
+      ensurePageGreeting(); // 新对话空状态：发送当前页助教提示
+    }
+
+    /**
+     * 从历史列表打开一个旧对话
+     * @param {string|number} conversationId - 对话 ID
+     */
+    async function openAiConversation(conversationId) {
+      aiHistoryVisible.value = false;
+      await loadAiConversation(conversationId);
+    }
+
+    /**
+     * 点击推荐追问：填入输入框并立即发送
+     * @param {string} text - 推荐问题
+     */
+    function useSuggestion(text) {
+      if (aiStreaming.value) return;
+      aiInput.value = text;
+      sendAiMessage();
+    }
+
+    /**
+     * 微型模型切换下拉：选择后对下一条消息生效
+     * @param {string} model - flash / pro
+     */
+    function onModelSelect(model) {
+      if (aiStreaming.value) return;
+      if (model === "pro" || model === "flash") {
+        selectedModel.value = model;
+      }
+    }
+
+    /**
+     * 发送问题并开始流式问答
+     * 首条消息触发对话懒创建（后端），并自动注入本章内容 + 当前页口播稿 + 助教提示
+     */
+    async function sendAiMessage() {
+      const question = aiInput.value.trim();
+      if (!question) return;
+      if (aiStreaming.value) return;
+
+      const courseId = studyParams?.value?.courseId;
+      const chapterId = activeChapter.value;
+      if (!courseId || !chapterId) {
+        ElMessage.warning("课程数据尚未加载完成");
+        return;
+      }
+
       aiInput.value = "";
-      // 模拟 AI 回复（后续对接真实 API）
-      setTimeout(() => {
-        aiMessages.value.push({
-          role: "ai",
-          text: "这是一个很好的问题！让我来为你详细解释。（模拟 AI 回复，后续对接真实 API）",
-        });
-      }, 1000);
-      console.log(TAG + " AI 消息发送: " + msg);
+      aiStreaming.value = true;
+      aiMessages.value.push({ role: "user", text: question, suggestions: null, streaming: false, failed: false, greeting: false });
+      aiMessages.value.push({
+        role: "assistant", text: "", suggestions: null, streaming: true, failed: false,
+        greeting: false, thinking: "", thinkingOpen: false,
+        thinkingMode: true, // 两个模型均返回思考内容，统一展示"思考中"动效
+      });
+      scrollAiToBottom();
+      console.log(TAG + " AI 消息发送: " + question + "（第 " + currentPage.value + " 页，模型 " + selectedModel.value + "）");
+
+      streamAiChat(courseId, {
+        chapterId: String(chapterId),
+        conversationId: activeConversationId.value ? String(activeConversationId.value) : null,
+        question: question,
+        pageNumber: currentPage.value,
+        model: selectedModel.value,
+      }, {
+        onMeta: (meta) => {
+          if (meta?.conversationId) activeConversationId.value = String(meta.conversationId);
+          if (Array.isArray(meta?.models) && meta.models.length > 0) {
+            aiModels.value = meta.models;
+          }
+          const last = aiMessages.value[aiMessages.value.length - 1];
+          if (last && last.role === "assistant" && !last.greeting && typeof meta?.thinking === "boolean") {
+            last.thinkingMode = meta.thinking;
+          }
+        },
+        onThinkDelta: (data) => {
+          const last = aiMessages.value[aiMessages.value.length - 1];
+          if (last && last.role === "assistant" && !last.greeting) {
+            last.thinking += data.text || "";
+          }
+          scrollAiToBottom();
+        },
+        onDelta: (delta) => {
+          const last = aiMessages.value[aiMessages.value.length - 1];
+          if (last && last.role === "assistant") {
+            last.text += delta.text || "";
+          }
+          scrollAiToBottom();
+        },
+        onDone: (done) => {
+          if (done?.usage) {
+            aiUsage.value.promptTokens = done.usage.promptTokens || 0;
+            aiUsage.value.cacheHitTokens = done.usage.cacheHitTokens || 0;
+            aiUsage.value.cacheMissTokens = done.usage.cacheMissTokens || 0;
+            aiUsage.value.completionTokens = done.usage.completionTokens || 0;
+            aiUsage.value.totalTokens = done.usage.totalTokens || 0;
+            aiUsage.value.cost = done.cost || 0;
+          }
+          if (done?.cumulative) {
+            aiUsage.value.cumulative = done.cumulative;
+          }
+        },
+        onSuggestions: (data) => {
+          const last = aiMessages.value[aiMessages.value.length - 1];
+          if (last && last.role === "assistant") {
+            last.suggestions = (data?.suggestions || []).slice(0, 3);
+          }
+          scrollAiToBottom();
+        },
+        onError: (data) => {
+          const last = aiMessages.value[aiMessages.value.length - 1];
+          if (last && last.role === "assistant") {
+            last.text = data?.message || "AI 回答失败，请稍后重试";
+            last.failed = true;
+            last.streaming = false;
+          }
+        },
+        onEnd: () => {
+          const last = aiMessages.value[aiMessages.value.length - 1];
+          if (last && last.role === "assistant") {
+            last.streaming = false;
+          }
+          aiStreaming.value = false;
+          ensurePageGreeting(); // 回答结束后把当前页助教提示补发到末尾
+          refreshAiHistory();
+          scrollAiToBottom();
+        },
+        onNetworkError: (err) => {
+          // 402 余额不足：与全局拦截器一致的提示
+          if (err?.status === 402) {
+            ElMessage.warning(err.message || "余额不足，请充值后再试。");
+          } else if (err?.status === 401) {
+            localStorage.removeItem("token");
+            window.location.href = "/login";
+          }
+          const last = aiMessages.value[aiMessages.value.length - 1];
+          if (last && last.role === "assistant") {
+            if (!last.text) last.text = "请求失败：" + (err?.message || "请稍后重试");
+            last.failed = true;
+            last.streaming = false;
+          }
+          aiStreaming.value = false;
+        },
+      });
     }
 
     // ========================================================================
@@ -1550,7 +1955,15 @@ export default {
         if (hasGenerating) {
           console.log(TAG + " 检测到生成中章节，启动进度轮询");
           startChapterProgressPolling();
+          // 同步"生成下一章"按钮为生成中状态并启动状态轮询
+          generateStatus.value.isGenerating = true;
+          startGenerateStatusPolling();
         }
+
+        // AI 助教：加载历史列表 + 自动恢复当前章节最近对话
+        await refreshAiHistory();
+        await loadAiForChapter(activeChapter.value);
+        ensurePageGreeting(); // 兜底：无论加载结果如何，都把当前页助教提示发送出来
       } else {
         courseLoading.value = false;
         console.warn(TAG + " 未接收到课程参数，页面为空状态");
@@ -1572,6 +1985,9 @@ export default {
 
       // 停止章节进度轮询
       stopChapterProgressPolling();
+
+      // 停止"生成下一章"状态轮询
+      stopGenerateStatusPolling();
 
       // 停止文件补全状态轮询
       stopFixStatusPolling();
@@ -1679,7 +2095,25 @@ export default {
       aiMessages,
       aiInput,
       activeTab,
+      activeConversationId,
+      aiStreaming,
+      aiHistory,
+      aiHistoryVisible,
+      aiMessagesRef,
+      aiUsage,
+      aiUsagePercent,
+      aiUsagePercentText,
+      aiRingDash,
+      aiModels,
+      selectedModel,
       sendAiMessage,
+      startNewAiConversation,
+      openAiConversation,
+      useSuggestion,
+      onModelSelect,
+      formatAiTokens,
+      formatAiCost,
+      renderMarkdown,
 
       // 方法
       goBack,

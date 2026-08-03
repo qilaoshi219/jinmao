@@ -1,13 +1,13 @@
 # FILE.md - WEB 前端项目文件索引
 
-> 最后更新：2026-07-31
+> 最后更新：2026-08-02
 
 ## 项目目录结构
 
 ```
 WEB/
 ├── public/                          # 静态资源（不经过构建）
-│   └── favicon.ico                  # 网站图标
+│   └── favicon.svg                  # 网站图标（金色书本，index.html 引用 /favicon.svg）（2026-08-02 新建）
 ├── src/
 │   ├── api/                         # API 请求层
 │   │   ├── client.js                # Axios 实例（baseURL、拦截器、Token 注入、401 处理）
@@ -76,7 +76,7 @@ WEB/
 | `src/App.vue` | 根组件：`v-if` 条件渲染切换 LoginPage 和 HomePage | `pages/login/`, `pages/home/` | 2026-07-06 |
 | `src/api/client.js` | Axios 统一实例：baseURL `/api/v1`、Token 自动注入、401 处理 | - | 2026-07-06 |
 | `src/api/auth.js` | 认证 API：sendCode、login、getProfile、updateProfile | `client.js` | 2026-07-06 |
-| `src/api/books.js` | 教材 API：uploadBook、listBooks、getBookDetail、getBookStatus | `client.js` | 2026-07-06 |
+| `src/api/books.js` | 教材 API：uploadBook、listBooks、getBookDetail、getBookStatus、getGenerateNextStatus | `client.js` | **2026-08-03 修改** |
 | `src/composables/useTheme.js` | 主题切换 Composable：封装 VueUse useDark | `@vueuse/core` | 2026-07-06 |
 | `src/stores/auth.js` | Pinia 认证 Store：token/user/isLoggedIn/login/logout/fetchProfile | `api/auth.js`, `utils/storage.js` | 2026-07-06 |
 | `src/utils/storage.js` | localStorage 封装：getToken/setToken/removeToken | - | 2026-07-06 |

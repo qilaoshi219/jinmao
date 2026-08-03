@@ -371,6 +371,8 @@ const quizWrongbookRouter = require("./API/quiz/wrongbook");
 const quizMarketRouter = require("./API/quiz/market");
 // 题库详情路由：/api/v1/quiz/textbooks/:id/stats + exams 刷题
 const quizDetailRouter = require("./API/quiz/detail");
+// 公开考试路由：/api/v1/quiz/public-exams/*（二维码考试）
+const quizPublicExamRouter = require("./API/quiz/public-exams");
 // 账单查询路由：/api/v1/billing（需 Token）
 const billingRouter = require("./API/billing");
 // MD→JSON 生成任务路由：/api/v1/quiz/md2json/*
@@ -507,6 +509,7 @@ app.use("/api/v1/quiz", quizReportRouter);
 app.use("/api/v1/quiz", quizWrongbookRouter);
 app.use("/api/v1/quiz", quizMarketRouter);
 app.use("/api/v1/quiz", quizDetailRouter);
+app.use("/api/v1/quiz", quizPublicExamRouter);
 app.use("/api/v1/quiz/md2json", quizMd2jsonRouter);
 app.use("/api/v1/quiz/pdf2quiz", quizPdf2QuizRouter);
 app.use("/api/v1/quiz", quizFormatTextRouter);
@@ -520,6 +523,9 @@ console.log("[app] ✅ 兑换码兑换路由已注册: /api/v1/redeem");
 // 管理员 API 路由挂载（安全后缀 + JWT管理员角色双重鉴权）
 app.use("/admin", adminRouter);
 console.log("[app] ✅ 管理员 API 路由已注册: /admin/:suffix/api/*");
+// 管理员 CMS 静态资源挂载（css/js/tpl 文件，供管理页面按需加载）
+app.use("/admin/static", express.static(path.join(__dirname, "admin", "static")));
+console.log("[app] ✅ 管理员静态资源已挂载: /admin/static/*");
 
 // ==================== 启动 HTTP 服务器 ====================
 // 404 和全局错误处理中间件已移入 async IIFE 内部（在 Scalar 路由之后注册），

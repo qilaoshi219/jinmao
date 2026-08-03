@@ -41,7 +41,11 @@ export function useTheme() {
 
   // ========== 使用 VueUse useToggle 创建切换函数 ==========
   // useToggle 接收一个 Ref<boolean>，返回切换函数，调用后反转值
-  const toggleTheme = useToggle(isDark);
+  // 注意：useToggle 返回的函数会把“任何实参”当作显式目标值（arguments.length 分支），
+  // 而 DOM 监听器（addEventListener）与 Vue 模板事件都会把事件对象作为第一参传入，
+  // 导致点击被误判为“设置为 truthy 值”而不是“反转”。因此包一层无参调用，忽略外部实参。
+  const toggle = useToggle(isDark);
+  const toggleTheme = () => toggle();
 
   console.log(
     "[useTheme] 主题系统已初始化，当前模式:",

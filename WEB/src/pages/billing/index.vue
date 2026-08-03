@@ -220,6 +220,93 @@
             />
           </div>
         </div>
+
+        <!-- ===== 充值记录表格 ===== -->
+        <div class="rounded-[10px] border transition-colors duration-500 overflow-hidden mt-4"
+             :style="{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border)' }">
+          <!-- 表格标题 -->
+          <div class="px-4 py-3 border-b transition-colors duration-500"
+               :style="{ borderColor: 'var(--color-border)' }">
+            <h2 class="text-sm font-semibold text-black dark:text-white
+                       transition-colors duration-500">
+              充值记录
+            </h2>
+          </div>
+
+          <!-- el-table 表格 -->
+          <el-table
+            :data="rechargeRecords"
+            stripe
+            style="width: 100%"
+            :header-cell-style="{
+              backgroundColor: 'var(--color-bg-secondary)',
+              color: 'var(--color-text-primary)',
+              borderColor: 'var(--color-border)',
+            }"
+            :cell-style="{
+              backgroundColor: 'var(--color-bg-secondary)',
+              color: 'var(--color-text-primary)',
+              borderColor: 'var(--color-border)',
+            }">
+            <!-- 日期列 -->
+            <el-table-column label="日期" width="180">
+              <template #default="{ row }">
+                <span class="text-[13px]">{{ formatDate(row.usedAt) }}</span>
+              </template>
+            </el-table-column>
+
+            <!-- 兑换码列 -->
+            <el-table-column label="兑换码" min-width="200">
+              <template #default="{ row }">
+                <span class="text-[13px] font-mono text-black dark:text-white
+                             transition-colors duration-500">
+                  {{ row.code }}
+                </span>
+              </template>
+            </el-table-column>
+
+            <!-- 充值方式列 -->
+            <el-table-column label="充值方式" width="140">
+              <template #default="{ row }">
+                <span class="text-[13px]">{{ row.sourceLabel }}</span>
+              </template>
+            </el-table-column>
+
+            <!-- 金额列 -->
+            <el-table-column label="金额" width="140" align="right">
+              <template #default="{ row }">
+                <span class="text-[13px] font-mono
+                             text-green-500 dark:text-green-400">
+                  +¥{{ formatCost(row.amount) }}
+                </span>
+              </template>
+            </el-table-column>
+
+            <!-- 空状态 -->
+            <template #empty>
+              <div class="py-8 text-sm text-gray-500 dark:text-gray-400
+                          transition-colors duration-500">
+                暂无充值记录
+              </div>
+            </template>
+          </el-table>
+
+          <!-- 分页器 -->
+          <div v-if="rechargePagination.total > 0"
+               class="flex justify-center py-4 border-t
+                      transition-colors duration-500"
+               :style="{ borderColor: 'var(--color-border)' }">
+            <el-pagination
+              v-model:current-page="rechargePage"
+              :page-size="rechargePagination.pageSize"
+              :total="rechargePagination.total"
+              :pager-count="5"
+              layout="prev, pager, next"
+              background
+              @current-change="handleRechargePageChange"
+            />
+          </div>
+        </div>
       </template>
     </div>
   </div>

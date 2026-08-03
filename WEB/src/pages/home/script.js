@@ -22,6 +22,7 @@ import CourseFilesDialog from "../../components/CourseFilesDialog.vue"; // 【�
 import QuizTextbookCard from "../../components/QuizTextbookCard.vue";
 import ImportQuizDialog from "../../components/ImportQuizDialog.vue";
 import MarketPage from "../market/index.vue"; // 题库市场页面组件
+import ToolsPage from "../tools/index.vue"; // 小工具列表组件（集成在首页内容区）
 
 // 日志前缀
 const TAG = "[HomePage]";
@@ -40,6 +41,7 @@ export default {
     QuizTextbookCard,
     ImportQuizDialog,
     MarketPage,
+    ToolsPage,
   },
 
   setup() {
@@ -443,8 +445,9 @@ export default {
           }
         });
       }
+      // 小工具为静态卡片列表，无需额外加载逻辑
       // 其他占位菜单提示即将上线
-      if (menu !== "courses" && menu !== "quiz" && menu !== "market") {
+      if (menu !== "courses" && menu !== "quiz" && menu !== "market" && menu !== "tools") {
         ElMessage.info("该功能即将上线");
       }
     }

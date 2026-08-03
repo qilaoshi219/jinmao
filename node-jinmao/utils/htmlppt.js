@@ -15,10 +15,43 @@ const fs = require("fs");
 const path = require("path");
 const { validateString } = require("./input_validator");
 const llmClient = require("./llm_client"); // 统一 LLM 客户端（替代直接调用 OpenAI）
-const { detectDesignGuideContamination } = require("./htmlppt_guard"); // 生成后污染检测：设计说明文字混入幻灯片正文
+const { detectDesignGuideContamination, detectOverflowViolation } = require("./htmlppt_guard"); // 生成后规范校验：设计说明污染 + 16:9 画布/滚动条违规
 
 // 自动重试时给 LLM 的纠正指令（多轮消息中的最后一轮）
 const CONTAMINATION_CORRECTION = "纠正：你上一次的输出把\"设计说明/设计意图\"类文字混入了幻灯片正文（如：视觉亮点与设计意图、色彩与氛围、叙事性布局、字体与可读性等）。幻灯片正文必须只包含真实的教材教学内容，不得出现任何设计说明、设计复盘、Markdown 标记（###、**、```）。请删除这些内容，仅保留教学内容，重新输出完整的 HTML 幻灯片。";
+const OVERFLOW_CORRECTION = "纠正：你上一次输出的幻灯片违反了画布规范：html/body 必须设置 overflow: hidden；所有内容（含绝对定位元素、图片、长文本）必须完整容纳在 1920×1080（16:9）画布内，严禁超出画布边界；任何元素严禁出现滚动条或设置 overflow: auto/scroll（含 overflow-x/overflow-y）。请修正布局与样式后，重新输出完整的 HTML 幻灯片。";
+
+/**
+ * 对生成的 HTML 同时执行设计说明污染检测与画布溢出检测
+ * @param {string} html - 待检测的 HTML
+ * @returns {{ violated: boolean, reasons: string[], contamination: object, overflow: object }}
+ *   violated — 是否命中任一违规；reasons — 全部命中原因；contamination/overflow — 两项检测的原始结果
+ */
+function checkSlideViolations(html) {
+    const contamination = detectDesignGuideContamination(html);
+    const overflow = detectOverflowViolation(html);
+    const reasons = [
+        ...(contamination.contaminated ? contamination.reasons : []),
+        ...(overflow.violated ? overflow.reasons : []),
+    ];
+    return { violated: reasons.length > 0, reasons, contamination, overflow };
+}
+
+/**
+ * 根据命中的违规类型组装纠正指令（仅包含实际命中的部分）
+ * @param {{ contamination: object, overflow: object }} violations - checkSlideViolations 的返回结果
+ * @returns {string} 拼接后的纠正指令文本
+ */
+function buildCorrectionText(violations) {
+    const corrections = [];
+    if (violations.contamination.contaminated) {
+        corrections.push(CONTAMINATION_CORRECTION);
+    }
+    if (violations.overflow.violated) {
+        corrections.push(OVERFLOW_CORRECTION);
+    }
+    return corrections.join("\n");
+}
 
 /**
  * 调用 DeepSeek（通过 llm_client）生成互动式 HTML PPT（仅返回数据，不负责文件持久化）
@@ -163,21 +196,21 @@ async function main(userId, pptGuide, originalText, imageInfos) {
     }
     resultHtml = cleanResult.html;
 
-    // ========== 设计说明污染检测 + 自动重试（最多 1 次） ==========
+    // ========== 生成结果规范校验（设计说明污染 + 画布/滚动条违规）+ 自动重试（最多 1 次） ==========
     // 背景：LLM 偶发会在正文末尾自创追加"设计说明/设计复盘"段落（如 ``` ### 视觉亮点与设计意图 ... ```），
-    //       前端 iframe 原样渲染导致用户看到设计说明文字。此处检测命中后，
-    //       携带纠正指令自动重新生成一次（会产生额外一次模型调用计费，日志明示）。
-    let contamination = detectDesignGuideContamination(resultHtml);
-    if (contamination.contaminated) {
-        console.warn("[htmlppt] 检测到设计说明污染，命中原因: " + JSON.stringify(contamination.reasons) +
+    //       或生成超出 16:9 画布、带滚动条的布局；前端 iframe 原样渲染后用户会看到多余文字或滚动条。
+    //       此处任一违规命中后，携带对应纠正指令自动重新生成一次（会产生额外一次模型调用计费，日志明示）。
+    let violations = checkSlideViolations(resultHtml);
+    if (violations.violated) {
+        console.warn("[htmlppt] 检测到生成结果违规，命中原因: " + JSON.stringify(violations.reasons) +
             "，触发自动重试（将额外产生一次模型调用计费）。");
 
-        // 多轮消息：系统提示词 + 原始任务 + 本次污染输出 + 纠正指令
+        // 多轮消息：系统提示词 + 原始任务 + 本次违规输出 + 纠正指令（仅包含命中的违规类型）
         const retryMessages = [
             { role: "system", content: formattedPrompt },
             { role: "user", content: "请根据 PPT 生成指引与教材原文，生成单页静态 HTML 幻灯片。" },
             { role: "assistant", content: resultHtml },
-            { role: "user", content: CONTAMINATION_CORRECTION },
+            { role: "user", content: buildCorrectionText(violations) },
         ];
         const retryResult = await llmClient.chat(userId, "htmlppt", {
             modelSize: "big",
@@ -189,27 +222,27 @@ async function main(userId, pptGuide, originalText, imageInfos) {
             const retryClean = cleanAndValidateHtml(retryResult.message.content);
             if (retryClean.code === 200) {
                 resultHtml = retryClean.html;
-                contamination = detectDesignGuideContamination(resultHtml);
-                console.log("[htmlppt] 自动重试完成：仍污染=" + contamination.contaminated +
-                    (contamination.contaminated ? "，命中原因: " + JSON.stringify(contamination.reasons) : ""));
+                violations = checkSlideViolations(resultHtml);
+                console.log("[htmlppt] 自动重试完成：仍违规=" + violations.violated +
+                    (violations.violated ? "，命中原因: " + JSON.stringify(violations.reasons) : ""));
             } else {
                 // 重试输出无法通过清理校验（空内容/非 HTML），保留首次结果并告警
                 console.error("[htmlppt] 自动重试返回的内容清理失败（code=" + retryClean.code + "），保留首次结果");
-                contamination = { contaminated: true, reasons: ["自动重试输出无效（code=" + retryClean.code + "）"] };
+                violations = { violated: true, reasons: ["自动重试输出无效（code=" + retryClean.code + "）"] };
             }
         } else {
             console.error("[htmlppt] 自动重试调用失败：" + (retryResult.message || "未知错误") + "，保留首次结果");
-            contamination = { contaminated: true, reasons: ["自动重试调用失败"] };
+            violations = { violated: true, reasons: ["自动重试调用失败"] };
         }
 
-        // 重试后仍污染：保留结果返回 200（不中断流水线），附严重告警供排查
-        if (contamination.contaminated) {
-            console.error("[htmlppt] 严重告警：最终输出仍含设计说明污染（命中原因: " +
-                JSON.stringify(contamination.reasons) + "），该页将保留多余文字，建议后续重新生成该页");
+        // 重试后仍违规：保留结果返回 200（不中断流水线），附严重告警供排查
+        if (violations.violated) {
+            console.error("[htmlppt] 严重告警：最终输出仍违反生成规范（命中原因: " +
+                JSON.stringify(violations.reasons) + "），该页将保留异常内容，建议后续重新生成该页");
             return {
                 code: 200,
                 html: resultHtml,
-                message: "生成完成（警告：输出仍含设计说明污染，命中原因: " + JSON.stringify(contamination.reasons) + "）"
+                message: "生成完成（警告：输出仍违反生成规范，命中原因: " + JSON.stringify(violations.reasons) + "）"
             };
         }
     }

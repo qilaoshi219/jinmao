@@ -11,6 +11,8 @@ export default {
   setup() {
     // ========== 导航 ==========
     const navigate = inject("navigate", () => {});
+    // 返回上一页函数（从 App.vue 注入，无应用内历史时兜底回首页）
+    const navigateBack = inject("goBack", () => navigate("home"));
 
     // ========== 页面参数 ==========
     const quizParams = inject("quizParams", ref({}));
@@ -143,14 +145,14 @@ export default {
     }
 
     /**
-     * 返回题库列表
+     * 返回上一页
      */
     function goBack() {
       // 清除 SSE
       if (reader) {
         reader.cancel().catch(() => {});
       }
-      navigate("home", { menu: "quiz" });
+      navigateBack();
     }
 
     // ========== 生命周期 ==========

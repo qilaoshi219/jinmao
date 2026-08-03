@@ -418,6 +418,16 @@
         <section v-if="activeMenu === 'market'">
           <MarketPage ref="marketPageRef" />
         </section>
+
+        <!--
+        ============================================================
+        小工具区域 — 仅当 activeMenu === 'tools' 时显示
+        ============================================================
+        -->
+        <section v-if="activeMenu === 'tools'">
+          <ToolsPage />
+        </section>
+
       </main>
     </div>
 

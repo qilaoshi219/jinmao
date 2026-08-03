@@ -1,0 +1,146 @@
+<!-- ===== 攻击事件筛选区 ===== -->
+<el-card shadow="never" style="margin-bottom:20px;">
+  <template #header>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">攻击事件查询</span>
+      <span style="font-size:12px;color:#9ca3af;">安全防护中间件检测到的可疑攻击已记录，供分析研究</span>
+    </div>
+  </template>
+  <div class="filter-row">
+    <el-select v-model="secTypeFilter" placeholder="攻击类型" style="width:150px;" clearable @change="loadSecurityEvents">
+      <el-option label="全部类型" value="all" />
+      <el-option v-for="t in attackTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
+    </el-select>
+    <el-select v-model="secSeverityFilter" placeholder="严重程度" style="width:130px;" clearable @change="loadSecurityEvents">
+      <el-option label="全部严重度" value="all" />
+      <el-option label="高危" value="high" />
+      <el-option label="中危" value="medium" />
+      <el-option label="低危" value="low" />
+    </el-select>
+    <el-select v-model="secHandledFilter" placeholder="处理状态" style="width:130px;" clearable @change="loadSecurityEvents">
+      <el-option label="全部状态" value="all" />
+      <el-option label="未处理" value="false" />
+      <el-option label="已处理" value="true" />
+    </el-select>
+    <el-input v-model="secIpFilter" placeholder="IP 模糊搜索" clearable style="width:180px;" @keyup.enter="loadSecurityEvents" @clear="loadSecurityEvents" />
+    <el-button type="primary" @click="loadSecurityEvents">🔍 查询</el-button>
+    <el-button type="success" :loading="exportingSecurity" @click="exportSecurityEvents">📥 导出 CSV</el-button>
+  </div>
+</el-card>
+
+<!-- ===== 攻击事件列表 ===== -->
+<el-card shadow="never">
+  <template #header>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">攻击事件列表</span>
+    </div>
+  </template>
+  <el-table :data="securityEvents" stripe v-loading="loadingSecurityEvents" empty-text="暂无攻击事件">
+    <el-table-column label="事件ID" width="90" align="center">
+      <template #default="{ row }"><span style="font-family:monospace;">#{{ row.id }}</span></template>
+    </el-table-column>
+    <el-table-column label="时间" width="165">
+      <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+    </el-table-column>
+    <el-table-column prop="ip" label="IP" width="130" />
+    <el-table-column prop="method" label="方法" width="70" align="center" />
+    <el-table-column prop="path" label="路径" min-width="220">
+      <template #default="{ row }">
+        <span :title="row.query ? row.path + '?' + row.query : row.path" style="cursor:pointer;">{{ truncateStr(row.path + (row.query ? '?' + row.query : ''), 40) }}</span>
+      </template>
+    </el-table-column>
+    <el-table-column prop="attackType" label="攻击类型" width="110" align="center">
+      <template #default="{ row }">
+        <el-tag size="small" type="danger">{{ attackTypeLabel(row.attackType) }}</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column prop="severity" label="严重度" width="80" align="center">
+      <template #default="{ row }">
+        <el-tag size="small" :type="severityType(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column prop="count" label="次数" width="70" align="center" />
+    <el-table-column prop="handled" label="状态" width="80" align="center">
+      <template #default="{ row }">
+        <el-tag size="small" :type="row.handled ? 'info' : 'warning'">{{ row.handled ? '已处理' : '未处理' }}</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column label="触发原因" min-width="200">
+      <template #default="{ row }">
+        <span :title="row.reason || ''" style="cursor:pointer;">{{ truncateStr(row.reason, 24) }}</span>
+      </template>
+    </el-table-column>
+    <el-table-column label="UA" min-width="150">
+      <template #default="{ row }">
+        <span :title="row.userAgent || ''" style="cursor:pointer;">{{ truncateStr(row.userAgent, 18) }}</span>
+      </template>
+    </el-table-column>
+    <el-table-column label="是否阻断" width="90" align="center">
+      <template #default="{ row }">
+        <el-tag size="small" :type="blockedType(row.blocked)">{{ blockedLabel(row.blocked) }}</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column label="操作" width="170" align="center">
+      <template #default="{ row }">
+        <el-button link type="info" size="small" @click="showSecurityDetail(row)">详情</el-button>
+        <el-button v-if="!row.handled" link type="primary" size="small" :loading="handlingEventId === row.id" @click="handleSecurityEvent(row)">标记已处理</el-button>
+        <span v-else style="color:#9ca3af;font-size:12px;">—</span>
+      </template>
+    </el-table-column>
+  </el-table>
+  <!-- 分页 -->
+  <div style="margin-top:16px;display:flex;justify-content:flex-end;">
+    <el-pagination
+      v-model:current-page="secPage"
+      v-model:page-size="secPageSize"
+      :total="secTotal"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      @size-change="loadSecurityEvents"
+      @current-change="loadSecurityEvents"
+      small
+    />
+  </div>
+</el-card>
+
+<!-- ===== 攻击事件详情弹窗：展示 SecurityEvent 表的全部字段（供管理员分析研究） ===== -->
+<el-dialog v-model="secDetailVisible" title="攻击事件详情" width="720px" destroy-on-close>
+  <el-descriptions v-if="secDetailRow" :column="1" border>
+    <el-description-item label="事件ID">
+      <span style="font-family:monospace;">#{{ secDetailRow.id }}</span>
+    </el-description-item>
+    <el-description-item label="触发时间">{{ formatTime(secDetailRow.createTime) }}</el-description-item>
+    <el-description-item label="攻击者IP">{{ secDetailRow.ip }}</el-description-item>
+    <el-description-item label="请求方法">
+      <el-tag size="small" type="info">{{ secDetailRow.method }}</el-tag>
+    </el-description-item>
+    <el-description-item label="攻击类型">
+      <el-tag size="small" type="danger">{{ attackTypeLabel(secDetailRow.attackType) }}</el-tag>
+    </el-description-item>
+    <el-description-item label="严重程度">
+      <el-tag size="small" :type="severityType(secDetailRow.severity)">{{ severityLabel(secDetailRow.severity) }}</el-tag>
+    </el-description-item>
+    <el-description-item label="触发次数">{{ secDetailRow.count }} 次</el-description-item>
+    <el-description-item label="触发原因">
+      <div class="sec-detail-text">{{ secDetailRow.reason }}</div>
+    </el-description-item>
+    <el-description-item label="完整路径">
+      <div class="sec-detail-text">{{ secDetailRow.path }}</div>
+    </el-description-item>
+    <el-description-item label="完整Query">
+      <div class="sec-detail-text">{{ secDetailRow.query || '-' }}</div>
+    </el-description-item>
+    <el-description-item label="User-Agent">
+      <div class="sec-detail-text">{{ secDetailRow.userAgent || '-' }}</div>
+    </el-description-item>
+    <el-description-item label="是否阻断">
+      <el-tag size="small" :type="blockedType(secDetailRow.blocked)">{{ blockedLabel(secDetailRow.blocked) }}</el-tag>
+    </el-description-item>
+    <el-description-item label="处理状态">
+      <el-tag size="small" :type="secDetailRow.handled ? 'info' : 'warning'">{{ secDetailRow.handled ? '已处理' : '未处理' }}</el-tag>
+    </el-description-item>
+  </el-descriptions>
+  <template #footer>
+    <el-button type="primary" @click="secDetailVisible = false">关闭</el-button>
+  </template>
+</el-dialog>

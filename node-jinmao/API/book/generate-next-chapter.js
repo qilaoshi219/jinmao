@@ -5,6 +5,7 @@
 // 职责：
 //   1. POST /api/v1/courses/:courseId/generate-next-chapter — 触发下一章生成
 //   2. GET  /api/v1/courses/:courseId/chapters/:chapterId/generation-progress — 查询章节生成进度
+//   3. GET  /api/v1/courses/:courseId/generate-next-chapter/status — 查询"生成下一章"按钮状态
 // 使用 Express Router 管理路由，挂载到 /api/v1 前缀下
 
 const express = require("express");
@@ -239,6 +240,112 @@ router.post("/courses/:courseId/generate-next-chapter", authenticateToken, async
   } catch (error) {
     console.error(TAG + " [POST /courses/:courseId/generate-next-chapter] 处理异常: " + error.message);
     console.error(error.stack);
+    return res.status(500).json({ code: 500, message: "服务器内部错误: " + error.message, data: null });
+  }
+});
+
+/**
+ * @openapi
+ * /api/v1/courses/{courseId}/generate-next-chapter/status:
+ *   get:
+ *     tags: [章节]
+ *     summary: 查询"生成下一章"按钮状态
+ *     description: |
+ *       轻量级状态查询接口，供前端轮询"生成下一章"按钮状态：
+ *       - canGenerateNext：当前是否还能生成下一章（复用 computeCanGenerateNext 统一计算，
+ *         包含 maxline 数值校验、课程完成标记、章节生成中拦截等全部判断）
+ *       - isGenerating：是否存在正在生成中的章节
+ *       前端依据该结果实时切换按钮三态：生成中（禁用）/ 生成下一章（可点击）/ 已经是最后一章了（禁用）。
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: courseId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 课程 ID（纯数字）
+ *     responses:
+ *       200:
+ *         description: 查询成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code: { type: integer, example: 0 }
+ *                 message: { type: string, example: "查询成功" }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     courseId: { type: string, example: "2" }
+ *                     canGenerateNext: { type: boolean, example: false, description: "是否还能生成下一章" }
+ *                     isGenerating: { type: boolean, example: true, description: "是否存在正在生成中的章节" }
+ *                     reason: { type: string, example: "有章节正在生成中", description: "不可生成时的原因（可生成时为空字符串）" }
+ *       400:
+ *         description: 课程 ID 格式无效
+ *       401:
+ *         description: 未认证
+ *       403:
+ *         description: 无权访问（课程不属于当前用户）
+ *       404:
+ *         description: 课程不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
+
+/**
+ * GET /api/v1/courses/:courseId/generate-next-chapter/status — 查询"生成下一章"按钮状态
+ *
+ * 轮询专用轻量接口，返回 canGenerateNext + isGenerating 两个权威值：
+ *   - canGenerateNext：computeCanGenerateNext 统一计算（与 POST 生成接口、详情接口完全一致）
+ *   - isGenerating：课程下是否存在 status="generating" 的章节
+ * 前端在页面停留期间轮询此接口，确保"生成中/生成下一章/已经是最后一章了"三态及时切换。
+ */
+router.get("/courses/:courseId/generate-next-chapter/status", authenticateToken, async (req, res) => {
+  const courseId = req.params.courseId;
+  const userId = req.userId;
+  console.log(TAG + "[GET /courses/:courseId/generate-next-chapter/status] 收到查询请求，courseId: " + courseId + "，userId: " + userId);
+
+  try {
+    // ===== 1. 参数校验 =====
+    const parsedId = parseInt(courseId, 10);
+    if (isNaN(parsedId) || String(parsedId) !== courseId) {
+      return res.status(400).json({ code: 400, message: "课程 ID 格式无效，必须为纯数字。", data: null });
+    }
+
+    // ===== 2. 查询课程信息 =====
+    const courseResult = await bookRepo.getCourseById(courseId);
+    if (courseResult.code === 404) {
+      return res.status(404).json({ code: 404, message: "课程不存在。", data: null });
+    }
+    if (courseResult.code !== 200) {
+      return res.status(500).json({ code: 500, message: courseResult.message, data: null });
+    }
+    const course = courseResult.course;
+
+    // ===== 3. 权限校验 =====
+    if (String(course.userId) !== String(userId)) {
+      return res.status(403).json({ code: 403, message: "无权访问该教材。", data: null });
+    }
+
+    // ===== 4. 统一计算按钮状态（与 POST 生成接口共用 computeCanGenerateNext，单一真相来源） =====
+    const chapters = (course.chapters || []).filter(c => !c.isDeleted);
+    const canResult = computeCanGenerateNext(course, chapters);
+    const isGenerating = chapters.some(c => c.status === "generating");
+
+    return res.status(200).json({
+      code: 0,
+      message: "查询成功",
+      data: {
+        courseId: String(course.id),
+        canGenerateNext: canResult.can,
+        isGenerating: isGenerating,
+        reason: canResult.can ? "" : canResult.reason,
+      },
+    });
+  } catch (error) {
+    console.error(TAG + "[GET /courses/:courseId/generate-next-chapter/status] 处理异常: " + error.message);
     return res.status(500).json({ code: 500, message: "服务器内部错误: " + error.message, data: null });
   }
 });

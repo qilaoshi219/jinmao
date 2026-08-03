@@ -33,6 +33,51 @@ function enqueueWrite(task) {
 // ==================== 导出函数 ====================
 
 /**
+ * 构建安全事件筛选条件（供 listEvents 与 listAllEvents 共用）
+ * @param {Object} filters - 筛选参数
+ * @param {string} filters.attackType - 攻击类型（"all" 或具体类型）
+ * @param {string} filters.severity - 严重程度（"all" 或 low/medium/high）
+ * @param {string} filters.handled - 处理状态（"all"/"true"/"false"）
+ * @param {string} filters.ip - IP 模糊搜索
+ * @returns {Object} Prisma where 条件对象
+ */
+function buildSecurityWhere({ attackType = "all", severity = "all", handled = "all", ip = "" } = {}) {
+  const where = {};
+  if (attackType && attackType !== "all") where.attackType = attackType;
+  if (severity && severity !== "all") where.severity = severity;
+  if (handled === "true") where.handled = true;
+  if (handled === "false") where.handled = false;
+  if (ip && ip.trim() !== "") {
+    // IP 使用包含匹配（contains），支持模糊搜索
+    where.ip = { contains: ip.trim() };
+  }
+  return where;
+}
+
+/**
+ * 格式化单个攻击事件（BigInt id 转字符串、DateTime 转 ISO 字符串）
+ * @param {Object} e - SecurityEvent 原始记录
+ * @returns {Object} 格式化后的事件对象
+ */
+function formatEvent(e) {
+  return {
+    id: String(e.id),
+    ip: e.ip,
+    method: e.method,
+    path: e.path,
+    query: e.query,
+    userAgent: e.userAgent,
+    attackType: e.attackType,
+    severity: e.severity,
+    reason: e.reason,
+    blocked: e.blocked,
+    handled: e.handled,
+    count: e.count,
+    createTime: e.createTime.toISOString(),
+  };
+}
+
+/**
  * 记录一条攻击事件（带去重合并逻辑）
  * 若 5 分钟窗口内已存在同 IP + 同 attackType 且未处理的记录，则 count 累加，不新增记录
  * 该函数为 fire-and-forget 设计：调用方（安全中间件）不 await，失败不阻塞请求流程
@@ -135,15 +180,7 @@ async function listEvents({ page = 1, pageSize = 20, attackType = "all", severit
     if (ps > 100) ps = 100; // 单页最多 100 条
 
     // 构建查询条件（仅添加有意义的筛选）
-    const where = {};
-    if (attackType && attackType !== "all") where.attackType = attackType;
-    if (severity && severity !== "all") where.severity = severity;
-    if (handled === "true") where.handled = true;
-    if (handled === "false") where.handled = false;
-    if (ip && ip.trim() !== "") {
-      // IP 使用包含匹配（contains），支持模糊搜索
-      where.ip = { contains: ip.trim() };
-    }
+    const where = buildSecurityWhere({ attackType, severity, handled, ip });
 
     console.log(TAG + " 查询攻击事件: page=" + p + ", pageSize=" + ps + ", 筛选=" + JSON.stringify(where));
 
@@ -160,21 +197,7 @@ async function listEvents({ page = 1, pageSize = 20, attackType = "all", severit
     ]);
 
     // 格式化返回数据：BigInt id 转字符串、DateTime 转 ISO 字符串
-    const formattedEvents = events.map((e) => ({
-      id: String(e.id),
-      ip: e.ip,
-      method: e.method,
-      path: e.path,
-      query: e.query,
-      userAgent: e.userAgent,
-      attackType: e.attackType,
-      severity: e.severity,
-      reason: e.reason,
-      blocked: e.blocked,
-      handled: e.handled,
-      count: e.count,
-      createTime: e.createTime.toISOString(),
-    }));
+    const formattedEvents = events.map(formatEvent);
 
     console.log(TAG + " 查询到 " + events.length + " 条事件，总计 " + total + " 条");
     return {
@@ -185,6 +208,30 @@ async function listEvents({ page = 1, pageSize = 20, attackType = "all", severit
   } catch (error) {
     console.error(TAG + " ❌ 查询攻击事件异常: " + error.message);
     return { code: 500, message: "查询攻击事件异常: " + error.message };
+  }
+}
+
+/**
+ * 查询全部符合条件的攻击事件（不分页，供 CSV 导出分析使用）
+ * @param {Object} filters - 筛选参数（同 buildSecurityWhere）
+ * @returns {Promise<{ code: number, events?: Array, total?: number, message?: string }>}
+ */
+async function listAllEvents({ attackType = "all", severity = "all", handled = "all", ip = "" } = {}) {
+  try {
+    const where = buildSecurityWhere({ attackType, severity, handled, ip });
+
+    const events = await prisma.securityEvent.findMany({
+      where,
+      orderBy: { createTime: "desc" }, // 最新的在前
+    });
+
+    const formattedEvents = events.map(formatEvent);
+
+    console.log(TAG + " 导出查询攻击事件: " + formattedEvents.length + " 条");
+    return { code: 200, events: formattedEvents, total: formattedEvents.length };
+  } catch (error) {
+    console.error(TAG + " ❌ 查询全部攻击事件异常: " + error.message);
+    return { code: 500, message: "查询全部攻击事件异常: " + error.message };
   }
 }
 
@@ -241,6 +288,7 @@ async function markHandled(id) {
 module.exports = {
   recordAttack,
   listEvents,
+  listAllEvents,
   countUnhandled,
   markHandled,
 };

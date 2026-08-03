@@ -35,7 +35,7 @@
 | `.gitignore` | Git 忽略规则 — 新增 admin_config.json | **修改 2026-07-31** |
 | `setup.sh` | 宝塔部署一键初始化脚本（检查环境、安装依赖、初始化DB、构建前端） | 2026-07-09 |
 | `ecosystem.config.js` | PM2 进程管理配置（宝塔PM2管理器可识别）；已移除硬编码 PORT，端口改由各环境 .env 控制 | **修改 2026-08-01** |
-| `admin/index.html` | 管理员 CMS 单页应用 — Vue3+ElementPlus CDN，含登录、兑换码管理、系统设置、未来功能占位 | **新建 2026-07-31** |
+| `admin/index.html` | 管理员 CMS 骨架页（Vue3 + Element Plus + ECharts CDN）：模板/样式/JS 拆分为 admin/static 目录，由 main.js 运行时加载 | **修改 2026-08-02** |
 
 ### API 路由层 `API/`
 | 文件 | 用途 | 上次修改 |
@@ -44,12 +44,12 @@
 | `POSTbook.js` | 教材上传+状态查询+PDF页数预检路由（新增 check-pdf-pages） | **修改 2026-08-01** |
 | `billing.js` | 账单查询路由：GET /api/v1/billing 返回用户 VIP 等级、余额、扣费记录分页列表（需 Token），新增 balanceLocked 字段 | **修改 2026-07-31** |
 | `redeem.js` | 兑换码兑换路由：POST /api/v1/redeem 用户输入兑换码兑换余额（需 Token），Prisma事务保证原子性，频率限制每用户每小时3次 | **新建 2026-07-31** |
-| `admin.js` | 管理员 API 路由：包含生成兑换码、查询兑换码列表、获取/修改系统配置，所有端点需双重鉴权（URL后缀 + JWT管理员角色） | **新建 2026-07-31** |
+| `admin.js` | 管理员 API 路由聚合器：统一双重鉴权（URL后缀 + JWT管理员角色），挂载 API/admin/ 下 6 个功能子路由（兑换码/用户/账单/统计/安全/配置） | **修改 2026-08-02** |
 | `recharge.js` | ~~充值路由（已被 redeem.js 替换，路由已从 app.js 移除，文件保留）~~ | ~~2026-07-31~~ |
 | `book.js` | 教材 CRUD 路由：列表/详情（已实现），更新/删除（待实现） | 2026-07-06 |
 | `progress.js` | 学习进度路由：PUT 保存进度（需 Token，支持 studyDuration 增量学习时长）、GET 获取进度（需 Token，支持单课程/全部），保存后自动记录每日活动 | **修改 2026-07-29** |
 | `stats.js` | 统计数据路由：GET /api/v1/stats 聚合返回首页 4 项统计指标（学习时长/已完成章节/正确率/连续天数） | **新建 2026-07-29** |
-| `book/generate-next-chapter.js` | 下一章生成 + 章节进度查询路由，新增课程已完成状态双重检查，新增余额前置校验（402 Payment Required 响应） | **修改 2026-07-31** |
+| `book/generate-next-chapter.js` | 下一章生成 + 章节进度查询 + "生成下一章"按钮状态查询路由（含完整 OpenAPI 注解） | **修改 2026-08-03** |
 | `book/fix-missing.js` | 文件缺失补全路由：POST 触发补全 / GET 查询补全状态（含完整 OpenAPI JSDoc） | **新建 2026-07-28** |
 | `quiz/session.js` | 刷题会话路由：随机刷题（random-sessions）和顺序刷题（sequential-sessions）的完整 CRUD，含断点续做、进度保存、交卷，含完整 @openapi JSDoc 注释 | **修改 2026-07-30** |
 | `quiz/textbooks.js` | 题库管理路由：列表/详情/删除/共享切换 | **修改 2026-07-30** |
@@ -120,7 +120,9 @@
 | `upload_minio.js` | MinIO 文件上传封装 | — |
 | `input_validator.js` | 输入参数校验工具 | — |
 | `create_image.js` | 文生图模块（Grsai gpt-image-2 API 异步模式 + 轮询） | 2026-07-09 |
-| `billing.js` | 计费模块：LLM Token / 文生图 / TTS / doc2x 统一计费，自动扣减用户余额（调用 balance.js） | **修改 2026-07-31** |
+| `billing.js` | 计费模块：LLM Token / 文生图 / TTS / doc2x 统一计费，售价+成本双轨记账（成本来自 model_cost_config.json，利润=售价-成本），自动扣减用户余额（调用 balance.js） | **修改 2026-08-02** |
+| `billing_config.js` | 计费配置工具：售价/成本两套配置共用的 JSON 读取、时段匹配、取价、金额取整 | **新建 2026-08-02** |
+| `billing_cost.js` | 模型成本计算：按 model_cost_config.json 计算 LLM/文生图/TTS/doc2x 的成本单价/分项/总额，缺失时回退售价 | **新建 2026-08-02** |
 | `balance.js` | 余额管理模块：统一管理余额检查（checkCanUseAI）、原子扣减（deductBalance）、锁定/解锁（lockUserIfNegative / unlockUserOnRecharge），是所有 AI 消费操作的安全边界 | **新建 2026-07-31** |
 | `can_generate_next.js` | 统一判断函数：根据课程状态+章节列表计算是否可生成下一章 | 2026-07-29 |
 
@@ -136,6 +138,7 @@
 | `index.js` | 统一配置加载（含 API Key 校验 + DeepSeek 超时常量） | 2026-07-20 |
 | `swagger.js` | OpenAPI 3.0 规范定义 | — |
 | `deepseek_config.json` | DeepSeek API 配置 | — |
+| `model_cost_config.json` | 模型成本价配置（与 billing_pricing.json 售价配置结构一致，独立调整；利润=售价-成本） | **新建 2026-08-02** |
 | `doc2x_config.json` | Doc2x API 配置 | — |
 | `minio_config.json` | MinIO 对象存储配置 | — |
 | `volcengine_config.json` | 火山引擎 TTS 配置 | — |
@@ -155,7 +158,7 @@
 |------|------|---------|
 | `src/api/auth.js` | 认证 API 封装（登录/注册/用户信息） | — |
 | `src/api/quiz.js` | 题库/刷题 API 封装：题库 CRUD、共享管理（市场列表/借用/取消借用/共享切换）、随机/顺序刷题会话、报告、错题本、AI 文本格式化 | **修改 2026-07-30** |
-| `src/api/books.js` | 教材 API 封装（上传/列表/详情/状态/进度/章节幻灯片/PDF页数预检，新增 `checkPdfPages()`） | **修改 2026-08-01** |
+| `src/api/books.js` | 教材 API 封装（上传/列表/详情/状态/进度/章节幻灯片/PDF页数预检/生成下一章状态查询） | **修改 2026-08-03** |
 | `src/api/progress.js` | 学习进度 API 封装（保存/获取单课程/获取全部，saveProgress 新增 studyDuration 参数） | **修改 2026-07-29** |
 | `src/api/stats.js` | 首页统计数据 API 封装（getStats） | **新建 2026-07-29** |
 | `src/api/client.js` | Axios 实例（baseURL/interceptors/Token 注入） | — |
@@ -164,7 +167,7 @@
 | `src/pages/home/index.vue` | 首页模板 — NERV 蓝色战术风格，4 个统计卡片改为数据绑定（学习时长/已完成章节/正确率/连续天数），新增顺序刷题事件绑定 + 文本导入按钮 | **修改 2026-07-30** |
 | `src/pages/home/script.js` | 首页业务逻辑：课程加载/上传/删除，底部加载更多，新增 navigateToRedeem | **修改 2026-07-31** |
 | `src/pages/study/index.vue` | 课程学习页模板 — NERV 三栏可拖动布局，PPT iframe 改用固定 1920×1080 + transform scale 缩放渲染 | 2026-07-29 |
-| `src/pages/study/script.js` | 课程学习页逻辑（含播放控制、章节导航、SRT 字幕、学习进度、下一章生成、PPT 缩放渲染、学习时长追踪与上报等；修复恢复进度后进度条显示 00:00） | **修改 2026-08-02** |
+| `src/pages/study/script.js` | 课程学习页逻辑（含播放控制、章节导航、SRT 字幕、学习进度、下一章生成三态轮询、PPT 缩放渲染、学习时长追踪与上报等；修复恢复进度后进度条显示 00:00） | **修改 2026-08-03** |
 | `src/stores/auth.js` | Pinia 认证状态管理 | — |
 | `src/composables/useTheme.js` | 暗黑模式切换逻辑 | — |
 | `src/composables/useResize.js` | 侧边栏拖动调整宽度 composable | 2026-07-23（新增） |

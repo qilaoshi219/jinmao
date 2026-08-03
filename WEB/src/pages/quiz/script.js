@@ -16,6 +16,7 @@ import {
 // 导入子组件
 import QuizQuestionCard from "../../components/quiz/QuizQuestionCard.vue";
 import QuizAnswerSheet from "../../components/quiz/QuizAnswerSheet.vue";
+import QuizReport from "./report.vue";
 
 // 日志前缀
 const TAG = "[QuizPage]";
@@ -25,14 +26,20 @@ export default {
   components: {
     QuizQuestionCard,
     QuizAnswerSheet,
+    QuizReport,
   },
 
   setup() {
     // ========== 导航 ==========
     const navigate = inject("navigate", () => {});
+    // 返回上一页函数（从 App.vue 注入，无应用内历史时兜底回首页）
+    const navigateBack = inject("goBack", () => navigate("home"));
 
     // ========== 页面参数（从 App.vue 注入）==========
     const quizParams = inject("quizParams", ref({}));
+
+    // 报告子视图模式（交卷后或直达 /quiz/report 时渲染报告页）
+    const isReportMode = computed(() => quizParams.value?.mode === "report");
 
     // ========== 响应式数据 ==========
     const loading = ref(true);
@@ -83,6 +90,9 @@ export default {
      * 加载会话详情
      */
     async function loadSession() {
+      // 报告子视图：由 QuizReport 组件渲染，无需加载会话
+      if (isReportMode.value) return;
+
       const sid = quizParams.value?.sessionId;
       if (!sid) {
         ElMessage.error("会话ID缺失");
@@ -224,8 +234,8 @@ export default {
         if (result.code === 0) {
           stopTimer();
           ElMessage.success("交卷成功！");
-          // 跳转到报告页
-          navigate("quiz", { mode: "report", reportId: result.data.reportId });
+          // 跳转到报告页（replaceState：报告页覆盖当前会话，浏览器返回不会回到已交卷的会话）
+          navigate("quiz", { mode: "report", reportId: result.data.reportId }, { replace: true });
         } else {
           ElMessage.error(result.message || "交卷失败");
         }
@@ -238,11 +248,11 @@ export default {
     }
 
     /**
-     * 返回首页
+     * 返回上一页
      */
     function goBack() {
       stopTimer();
-      navigate("home", { menu: "quiz" });
+      navigateBack();
     }
 
     // ========== 生命周期 ==========
@@ -273,6 +283,7 @@ export default {
       currentQuestion,
       currentAnswer,
       questionStatuses,
+      isReportMode,
 
       // 方法
       jumpToQuestion,

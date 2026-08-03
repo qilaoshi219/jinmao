@@ -1,0 +1,39 @@
+<!-- ===== 已登录：CMS 主界面 ===== -->
+<div class="admin-container">
+  <!-- 顶部导航 -->
+  <div class="admin-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <h1>金毛教你学 — 管理后台</h1>
+      <span class="suffix-badge">/admin/{{ currentSuffix }}</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:13px;color:#6b7280;transition:color 500ms;">{{ auth.adminEmail }}</span>
+      <button class="theme-toggle" @click="toggleTheme" :title="isDark ? '切换到亮色模式' : '切换到暗黑模式'">
+        {{ isDark ? '☀️' : '🌙' }}
+      </button>
+      <!-- 安全攻击提醒徽标：未处理攻击数大于 0 时显示红色数字，点击跳转安全防护 Tab -->
+      <el-badge :value="unreadAttackCount" :hidden="unreadAttackCount <= 0" :max="99" style="cursor:pointer;" @click="switchToSecurityTab">
+        <button class="theme-toggle" title="安全防护（点击查看攻击事件）">🛡️</button>
+      </el-badge>
+      <el-button @click="doLogout" size="small" type="danger" plain>退出</el-button>
+    </div>
+  </div>
+
+  <!-- 选项卡内容 -->
+  <div class="admin-content">
+    <el-tabs v-model="activeTab" tab-position="left" style="min-height:400px;">
+      <!-- ===== Tab 1: 兑换码管理 ===== -->
+      <el-tab-pane label="🎫 兑换码管理" name="codes"><codes-tab /></el-tab-pane>
+      <!-- ===== Tab 2: 用户管理 ===== -->
+      <el-tab-pane label="👥 用户管理" name="users"><users-tab /></el-tab-pane>
+      <!-- ===== Tab 3: 账单管理 ===== -->
+      <el-tab-pane label="📊 账单管理" name="billing"><billing-tab /></el-tab-pane>
+      <!-- ===== Tab 4: 消费统计 ===== -->
+      <el-tab-pane label="📈 消费统计" name="stats"><stats-tab :active="activeTab === 'stats'" /></el-tab-pane>
+      <!-- ===== Tab 5: 安全防护 ===== -->
+      <el-tab-pane label="🛡️ 安全防护" name="security"><security-tab :active="activeTab === 'security'" /></el-tab-pane>
+      <!-- ===== Tab 6: 系统设置 ===== -->
+      <el-tab-pane label="⚙️ 系统设置" name="settings"><settings-tab /></el-tab-pane>
+    </el-tabs>
+  </div>
+</div>

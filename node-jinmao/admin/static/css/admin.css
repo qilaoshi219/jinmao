@@ -1,0 +1,286 @@
+/* ===== 管理后台全局样式（遵循设计规范） ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html {
+  transition: background-color 500ms ease, color 500ms ease;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f7fa;
+  color: #000000;
+  transition: background-color 500ms ease, color 500ms ease;
+  min-height: 100vh;
+}
+/* 暗黑模式 */
+body.dark {
+  background: #1a1a2e;
+  color: #ffffff;
+}
+body.dark .el-card {
+  background: #16213e;
+  border-color: #0f3460;
+}
+body.dark .el-table {
+  --el-table-bg-color: #16213e;
+  --el-table-tr-bg-color: #16213e;
+  --el-table-header-bg-color: #0f3460;
+  --el-table-border-color: #0f3460;
+  --el-table-text-color: #ffffff;
+  --el-table-header-text-color: #ffffff;
+}
+body.dark .el-tabs__item {
+  color: #cccccc;
+}
+body.dark .el-tabs__item.is-active {
+  color: #60a5fa;
+}
+body.dark .el-input__inner {
+  background: #0f3460;
+  border-color: #1a1a2e;
+  color: #ffffff;
+}
+body.dark .el-pagination .btn-prev,
+body.dark .el-pagination .btn-next,
+body.dark .el-pager li {
+  background: #16213e;
+  color: #cccccc;
+}
+/* 攻击事件详情弹窗暗黑模式适配（双轨适配） */
+body.dark .el-dialog {
+  background: #16213e;
+}
+body.dark .el-dialog__title {
+  color: #ffffff;
+}
+body.dark .el-descriptions__table {
+  --el-descriptions-table-border: 1px solid #0f3460;
+}
+body.dark .el-descriptions__label {
+  background: #0f3460;
+  color: #cccccc;
+}
+body.dark .el-descriptions__content {
+  color: #ffffff;
+}
+/* 详情弹窗超长字段自动换行，避免撑爆弹窗 */
+.sec-detail-text {
+  word-break: break-all;
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+/* ===== 圆角统一10px ===== */
+.el-button,
+.el-input__inner,
+.el-card,
+.el-tag,
+.el-dialog,
+.el-message {
+  border-radius: 10px !important;
+}
+
+/* ===== 过渡统一500ms ===== */
+.el-button,
+.el-card,
+.el-input__inner,
+.el-tabs__item {
+  transition: all 500ms ease !important;
+}
+
+/* ===== 布局 ===== */
+.admin-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: #ffffff;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: all 500ms ease;
+}
+body.dark .admin-header {
+  background: #16213e;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.admin-header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #000000;
+  transition: color 500ms ease;
+}
+body.dark .admin-header h1 {
+  color: #ffffff;
+}
+.admin-header .suffix-badge {
+  font-size: 12px;
+  color: #60a5fa;
+  background: #eff6ff;
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-family: monospace;
+  transition: all 500ms ease;
+}
+body.dark .admin-header .suffix-badge {
+  background: #1e3a5f;
+  color: #60a5fa;
+}
+.admin-content {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  min-height: 500px;
+  transition: all 500ms ease;
+}
+body.dark .admin-content {
+  background: #16213e;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ===== 登录页 ===== */
+.login-card {
+  max-width: 400px;
+  margin: 120px auto;
+  padding: 40px;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  transition: all 500ms ease;
+}
+body.dark .login-card {
+  background: #16213e;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+.login-card h2 {
+  text-align: center;
+  margin-bottom: 24px;
+  color: #000000;
+  font-size: 20px;
+  font-weight: 700;
+  transition: color 500ms ease;
+}
+body.dark .login-card h2 {
+  color: #ffffff;
+}
+
+/* ===== 兑换码卡片 ===== */
+.code-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.code-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 500ms ease;
+}
+body.dark .code-card {
+  background: #0f3460;
+  border-color: #1a1a2e;
+}
+.code-card .code-text {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: #000000;
+  letter-spacing: 1px;
+  transition: color 500ms ease;
+}
+body.dark .code-card .code-text {
+  color: #ffffff;
+}
+.code-card .copy-btn {
+  cursor: pointer;
+  color: #409eff;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid #409eff;
+  border-radius: 10px;
+  background: transparent;
+  transition: all 500ms ease;
+}
+.code-card .copy-btn:hover {
+  background: #409eff;
+  color: #ffffff;
+}
+
+/* ===== 403 禁止访问 ===== */
+.forbidden {
+  text-align: center;
+  padding: 80px 20px;
+  color: #ef4444;
+}
+
+/* ===== 主题切换按钮 ===== */
+.theme-toggle {
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: transparent;
+  font-size: 16px;
+  transition: all 500ms ease;
+}
+body.dark .theme-toggle {
+  border-color: #0f3460;
+}
+
+/* ===== 统计卡片（用户/账单/统计 Tab 通用） ===== */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  transition: all 500ms ease;
+}
+body.dark .stat-card {
+  background: #0f3460;
+  border-color: #1a1a2e;
+}
+.stat-card .stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #000000;
+  transition: color 500ms ease;
+}
+body.dark .stat-card .stat-value {
+  color: #ffffff;
+}
+.stat-card .stat-label {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 6px;
+}
+
+/* ===== 筛选行 ===== */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ===== 图表容器（消费统计 Tab） ===== */
+.chart-box {
+  width: 100%;
+  height: 320px;
+}

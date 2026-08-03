@@ -184,6 +184,25 @@ export async function generateNextChapter(courseId) {
 }
 
 /**
+ * 查询"生成下一章"按钮状态（轮询用）
+ * GET /api/v1/courses/:courseId/generate-next-chapter/status
+ * @param {string|number} courseId - 课程 ID
+ * @returns {Promise} 后端返回 { code, data: { courseId, canGenerateNext, isGenerating, reason } }
+ *   canGenerateNext: 是否还能生成下一章
+ *   isGenerating: 是否存在正在生成中的章节
+ */
+export async function getGenerateNextStatus(courseId) {
+  const response = await apiClient.get("/courses/" + courseId + "/generate-next-chapter/status");
+  // 轮询接口日志频率高，仅打印状态变化关键值
+  console.log(
+    TAG + "[getGenerateNextStatus] 响应: code=" + response.data.code +
+    ", canGenerateNext=" + response.data?.data?.canGenerateNext +
+    ", isGenerating=" + response.data?.data?.isGenerating
+  );
+  return response.data;
+}
+
+/**
  * 查询章节生成进度（轮询用）
  * GET /api/v1/courses/:courseId/chapters/:chapterId/generation-progress
  * @param {string|number} courseId - 课程 ID

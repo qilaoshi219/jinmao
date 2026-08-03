@@ -289,6 +289,10 @@ async function deleteExam(examId, userId) {
 
     // 2. 事务：级联删除试卷关联的所有数据
     await prisma.$transaction([
+      // 删除该试卷的公开考试发布记录（含其作答会话，外键 SET NULL 不阻塞）
+      prisma.publicExam.deleteMany({
+        where: { examId: bigExamId },
+      }),
       // 删除与该试卷题目关联的报告题目明细
       prisma.quizReportItem.deleteMany({
         where: { question: { examId: bigExamId } },
@@ -333,6 +337,10 @@ async function deleteExam(examId, userId) {
       console.log(TAG + " deleteExam — 题库试卷数为0，执行整库删除");
       // 直接软删除题库：题库的试卷/题目已在上述事务中删除，剩余关联数据需额外清理
       await prisma.$transaction([
+        // 删除题库下的公开考试发布记录
+        prisma.publicExam.deleteMany({
+          where: { exam: { textbookId } },
+        }),
         // 删除题库级别的关联数据（可能未在试卷级联中覆盖）
         prisma.quizReportItem.deleteMany({
           where: { report: { textbookId } },
