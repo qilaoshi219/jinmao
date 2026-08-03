@@ -74,7 +74,7 @@ console.log(TAG + " MinIO 客户端已初始化: endpoint=" + (process.env.MINIO
  *   get:
  *     tags: [文件]
  *     summary: 代理访问 MinIO 文件
- *     description: 通过后端代理访问 MinIO 中的文件，无需暴露 MinIO 服务。前端用于《img src》等直接引用场景。
+ *     description: 通过后端代理访问 MinIO 中的文件，无需暴露 MinIO 服务。前端用于《img src》等直接引用场景；非 HTML 文件支持 HTTP Range 请求（206 分段响应，供浏览器确定音频时长与拖动 seek），完整响应附带 Accept-Ranges 与 Content-Length。
  *     parameters:
  *       - name: path
  *         in: path
@@ -90,6 +90,22 @@ console.log(TAG + " MinIO 客户端已初始化: endpoint=" + (process.env.MINIO
  *             schema:
  *               type: string
  *               format: binary
+ *       206:
+ *         description: 文件部分内容（Range 请求，含 Content-Range / Accept-Ranges / Content-Length）
+ *         content:
+ *           audio/mpeg:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       416:
+ *         description: Range 范围无效（返回 Content-Range 头：bytes 前缀 + 星号斜杠 + 文件总大小）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code: { type: integer, example: 416 }
+ *                 message: { type: string, example: "Range 范围无效。" }
  *       400:
  *         description: 文件路径无效
  *         content:
@@ -191,11 +207,9 @@ router.get("/*", async (req, res) => {
   }
 
   try {
-    // 先检查文件是否存在（statObject 当文件不存在时会抛出异常）
-    await minioClient.statObject(BUCKET, filePath);
-
-    // 获取文件流（getObject 返回可读流）
-    const fileStream = await minioClient.getObject(BUCKET, filePath);
+    // 先检查文件是否存在并获取大小（statObject 当文件不存在时会抛出异常）
+    const stat = await minioClient.statObject(BUCKET, filePath);
+    const fileSize = stat.size;
 
     // 设置 Content-Type（根据文件扩展名从内置映射表查找）
     const ext = path.extname(filePath).toLowerCase();
@@ -212,6 +226,8 @@ router.get("/*", async (req, res) => {
 
     // HTML 文件：读取完整内容并规范化 URL 后再发送（因为 AI 可能生成绝对 URL）
     if (isHtml) {
+      // 获取文件流（getObject 返回可读流）
+      const fileStream = await minioClient.getObject(BUCKET, filePath);
       // 读取文件流到内存（幻灯片 HTML 通常 < 500KB，内存开销可忽略）
       const chunks = [];
       fileStream.on("data", (chunk) => chunks.push(chunk));
@@ -230,7 +246,42 @@ router.get("/*", async (req, res) => {
       return; // HTML 文件已手动处理，不再走 pipe
     }
 
-    // 非 HTML 文件：流式 pipe 到 HTTP 响应流，不占用服务器内存
+    // ========== HTTP Range 支持（浏览器确定音频时长与拖动 seek 必需） ==========
+    // 支持 bytes=start-end / bytes=start- / bytes=-suffix 三种格式，命中后返回 206 分段响应
+    const rangeHeader = req.headers.range;
+    if (rangeHeader) {
+      const rangeMatch = /^bytes=(\d*)-(\d*)$/.exec(String(rangeHeader).trim());
+      if (rangeMatch) {
+        let start = rangeMatch[1] === "" ? -1 : parseInt(rangeMatch[1], 10);
+        let end = rangeMatch[2] === "" ? -1 : parseInt(rangeMatch[2], 10);
+        if (start === -1 && end >= 0) {
+          // 后缀范围 bytes=-N：返回最后 N 字节
+          start = Math.max(0, fileSize - end);
+          end = fileSize - 1;
+        } else if (start >= 0 && end === -1) {
+          end = fileSize - 1;
+        }
+        if (start < 0 || start >= fileSize || (end >= 0 && end < start)) {
+          res.setHeader("Content-Range", "bytes */" + fileSize);
+          return res.status(416).json({ code: 416, message: "Range 范围无效。" });
+        }
+        end = Math.min(end, fileSize - 1);
+        const length = end - start + 1;
+        const rangeStream = await minioClient.getPartialObject(BUCKET, filePath, start, length);
+        res.status(206);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Content-Range", "bytes " + start + "-" + end + "/" + fileSize);
+        res.setHeader("Content-Length", length);
+        rangeStream.pipe(res);
+        console.log(TAG + " 文件代理成功（Range）: " + filePath + " bytes " + start + "-" + end + "/" + fileSize);
+        return;
+      }
+    }
+
+    // 非 Range 请求：完整响应，附带 Accept-Ranges 与 Content-Length 供浏览器确定媒体时长
+    const fileStream = await minioClient.getObject(BUCKET, filePath);
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Content-Length", fileSize);
     fileStream.pipe(res);
 
     console.log(TAG + " 文件代理成功: " + filePath + " (" + contentType + ")");

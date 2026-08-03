@@ -881,9 +881,12 @@ export default {
             const entries = await fetchAndParseSrt(slide.srtUrl);
             if (entries.length > 0) {
               const duration = entries[entries.length - 1].end; // 最后一帧结束时间即该页时长
-              slide._duration = duration; // 缓存到 slide 数据中，后续 onAudioLoaded 不会重复覆盖
-              console.log(TAG + " 页 " + (idx + 1) + " 预估时长: " + duration.toFixed(1) + "s");
-              return duration;
+              // 防御：SRT 解析异常可能产生非有限值，只采纳有效的正时长
+              if (Number.isFinite(duration) && duration > 0) {
+                slide._duration = duration; // 缓存到 slide 数据中，后续 onAudioLoaded 不会重复覆盖
+                console.log(TAG + " 页 " + (idx + 1) + " 预估时长: " + duration.toFixed(1) + "s");
+                return duration;
+              }
             }
           } catch (e) {
             console.warn(TAG + " 页 " + (idx + 1) + " SRT 预读失败: " + e.message);
@@ -1487,18 +1490,22 @@ export default {
      */
     function commitSeek(pct) {
       const audio = audioRef.value;
-      if (!audio || chapterTotalTime.value <= 0 || slides.value.length === 0) return;
+      if (!audio || slides.value.length === 0) return;
+      if (!Number.isFinite(pct)) return;
+      const total = chapterTotalTime.value;
+      if (!(Number.isFinite(total) && total > 0)) return;
 
-      const targetCumulative = (Math.max(0, Math.min(100, pct)) / 100) * chapterTotalTime.value;
+      const targetCumulative = (Math.max(0, Math.min(100, pct)) / 100) * total;
 
-      // 按各页已知时长累加，定位目标页与页内偏移（未知时长按 0 处理，与 chapterTotalTime 口径一致）
+      // 按各页已知时长累加，定位目标页与页内偏移（未知/非有限时长按 0 处理，与 chapterTotalTime 口径一致）
       let targetPage = 1;
       let offset = 0;
       let elapsed = 0;
       let acc = 0;
       let found = false;
       for (let i = 0; i < slides.value.length; i++) {
-        const dur = slides.value[i]?._duration || 0;
+        const d = slides.value[i]?._duration;
+        const dur = Number.isFinite(d) && d > 0 ? d : 0;
         if (!found && targetCumulative < acc + dur) {
           targetPage = i + 1;
           offset = targetCumulative - acc;
@@ -1510,18 +1517,24 @@ export default {
       // 点击位置等于或超过已知总时长（含 100% 末尾）：定位到最后一页末尾
       if (!found) {
         targetPage = slides.value.length;
-        offset = slides.value[targetPage - 1]?._duration || 0;
-        elapsed = acc - offset;
+        const lastDur = slides.value[targetPage - 1]?._duration;
+        offset = Number.isFinite(lastDur) && lastDur > 0 ? lastDur : 0;
+        elapsed = Math.max(0, acc - offset);
       }
+      if (!Number.isFinite(offset) || !Number.isFinite(elapsed)) return;
 
       // 目标页就是当前页：直接在当前音频内定位（保留播放/暂停状态）
       if (targetPage === currentPage.value) {
         const dur = totalTime.value;
-        if (!(dur > 0)) return;
+        if (!(Number.isFinite(dur) && dur > 0)) return;
         const target = Math.min(offset, Math.max(0, dur - 0.05));
-        audio.currentTime = target;
+        try {
+          audio.currentTime = target;
+        } catch (_) {
+          // 音频不可 seek（如流式响应）时忽略，保持页面与显示时间一致
+        }
         currentTime.value = target;
-        progressPercent.value = Math.round(((chapterElapsedTime.value + target) / chapterTotalTime.value) * 100);
+        progressPercent.value = Math.round(((chapterElapsedTime.value + target) / total) * 100);
         updateSubtitleFromTime(target);
         rescheduleMobileControls();
         return;
@@ -1540,13 +1553,16 @@ export default {
      */
     function applyAudioSeek(audio, time) {
       if (!audio) return;
+      if (!Number.isFinite(time) || time < 0) return;
       const doSeek = () => {
         const dur = audio.duration;
         const max = Number.isFinite(dur) && dur > 0 ? Math.max(0, dur - 0.05) : time;
+        const target = Math.min(time, max);
+        if (!Number.isFinite(target)) return;
         try {
-          audio.currentTime = Math.min(Math.max(0, time), max);
+          audio.currentTime = target;
         } catch (_) {
-          // 元数据尚未就绪时的赋值异常静默忽略，等下次事件再同步
+          // 元数据尚未就绪或流不可 seek 时的赋值异常静默忽略，等下次事件再同步
         }
       };
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
@@ -1645,7 +1661,9 @@ export default {
       const audio = audioRef.value;
       if (!audio) return;
 
-      const duration = audio.duration || 0;
+      // 防御：无 Range 支持/流式响应时 audio.duration 可能是 Infinity 或 NaN，只采纳有限正时长
+      const rawDuration = audio.duration;
+      const duration = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 0;
       totalTime.value = duration;
       console.log(TAG + " 当前页音频时长: " + duration.toFixed(1) + "s");
 
