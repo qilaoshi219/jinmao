@@ -117,9 +117,9 @@
       </div>
 
       <!-- === 中间播放区 === -->
-      <!-- 桌面/移动常规：flex-1 自适应；移动全屏：左侧 70% -->
+      <!-- 桌面：flex-1 自适应；移动竖屏：按 16:9 内容高度，避免挤占下面板；移动全屏：左侧 70% -->
       <section class="flex flex-col min-w-0 bg-[var(--color-bg-primary)] transition-colors duration-500"
-               :class="mobileFullscreen ? 'flex-shrink-0' : 'flex-1'"
+               :class="isMobileView ? 'flex-shrink-0' : 'flex-1'"
                :style="mobileFullscreen ? { width: '70%' } : {}">
         <div id="ppt-area" class="flex-1 relative flex flex-col items-center justify-center min-h-0 bg-[var(--color-card)]">
 
@@ -139,7 +139,7 @@
           <!-- PPT 容器（overflow-hidden 配合 iframe 缩放；桌面固定 16:9，移动端填满可用区域） -->
           <div id="ppt-container" ref="pptContainer"
                class="relative w-full border border-[var(--color-border)] z-10 transition-all duration-500 bg-[var(--color-card-hover)] overflow-hidden"
-               :class="isMobileView ? 'flex-1' : 'aspect-[16/9]'"
+               :class="mobileFullscreen ? 'flex-1' : 'aspect-[16/9]'"
                @click="onPptClick"
                @mouseenter="onPptMouseEnter"
                @mouseleave="onPptMouseLeave">
@@ -358,12 +358,13 @@
       </aside>
 
       <!-- === 移动端面板：常规态位于底部（上下分栏），全屏态位于右侧（3:7 分栏） === -->
-      <div class="flex-col flex-shrink-0 min-h-0 min-w-0 bg-[var(--color-bg-secondary)] border-[var(--color-border)] transition-colors duration-500"
+      <div class="flex-col min-h-0 min-w-0 bg-[var(--color-bg-secondary)] border-[var(--color-border)] transition-colors duration-500"
            :class="[
              isMobileView ? 'flex' : 'hidden',
+             mobileFullscreen ? 'flex-shrink-0' : 'flex-1',
              mobileFullscreen ? 'border-l' : 'border-t'
            ]"
-           :style="mobileFullscreen ? { width: '30%' } : { height: '42%' }">
+           :style="mobileFullscreen ? { width: '30%' } : {}">
         <!-- Tab 切换（默认 AI 助教；全屏态标签为"聊天"；口播稿在移动端屏蔽） -->
         <div class="flex border-b border-[var(--color-border)] flex-shrink-0">
           <button @click="mobilePanelTab = 'ai'"
