@@ -582,7 +582,9 @@ router.get("/book/:book_id/progress", authenticateToken, async (req, res) => {
     // ========== 文件生成进度（PPT + TTS + SRT） ==========
     let filesProgress = { current: 0, total: totalSlides * 3, isComplete: false };
     if (phase === "generating_files" || phase === "validating") {
-      filesProgress.current = progressData.filesCompleted || 0;
+      // 流水线写入的是 filesProgress.current（PPT 每页 +1，MP3/SRT 每页各 +1）；
+      // 兼容旧数据回退读取 filesCompleted
+      filesProgress.current = progressData.filesProgress?.current ?? progressData.filesCompleted ?? 0;
       filesProgress.total = totalSlides * 3;
       filesProgress.isComplete = false;
     } else if (phase === "completed") {
