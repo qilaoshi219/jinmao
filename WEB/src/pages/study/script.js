@@ -334,28 +334,33 @@ export default {
     watch([aiMessages, aiStreaming], () => scrollAiToBottom(), { deep: true });
 
     /**
-     * 助教提示以"问候消息"发送给用户（本地展示，不落库）：
-     * 页面加载/翻页后，将当前页 zjts 作为一条 AI 消息追加到对话末尾，增强互动感
+     * 助教提示以"AI 主动发送的消息"形式展示（本地展示，不落库）：
+     * 幂等追加：仅当对话中最近一条 greeting 消息不是当前页提示时，才把当前页 zjts 追加到末尾；
+     * 不删除、不移动任何既有消息，保证提示位置稳定不跳动。
      */
     function ensurePageGreeting() {
-      if (aiStreaming.value) return;
+      if (aiStreaming.value) return; // 流式回答期间不追加，避免破坏"最后一条消息"的流式写入定位，由 onEnd 兜底
       const zjts = (currentZjts.value || "").trim();
-      // 先移除全部旧问候消息，再按当前页重建（避免追问后问候残留对话中间）
-      const msgs = aiMessages.value.filter((m) => !m.greeting);
-      if (zjts) {
-        msgs.push({
-          role: "assistant",
-          text: zjts,
-          greeting: true,
-          streaming: false,
-          failed: false,
-          suggestions: null,
-          thinking: "",
-          thinkingOpen: false,
-          thinkingMode: false,
-        });
+      if (!zjts) return; // 当前页无提示则不追加
+      const msgs = aiMessages.value;
+      // 从末尾向前找最近一条 greeting：内容相同说明当前页提示已在聊天中，无需重复追加
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].greeting) {
+          if (msgs[i].text === zjts) return;
+          break;
+        }
       }
-      aiMessages.value = msgs;
+      msgs.push({
+        role: "assistant",
+        text: zjts,
+        greeting: true,
+        streaming: false,
+        failed: false,
+        suggestions: null,
+        thinking: "",
+        thinkingOpen: false,
+        thinkingMode: false,
+      });
     }
 
     // ---- Tab ----
@@ -428,7 +433,7 @@ export default {
       return currentSlide.value?.zjts || "";
     });
 
-    // 翻页/章节切换时，把新一页的助教提示"发送"给用户（本地问候消息）
+    // 翻页/章节切换时，把新一页的助教提示追加为一条新消息（本地展示，位置固定）
     watch(currentZjts, () => ensurePageGreeting());
 
     /** 已完成或部分完成的有效章节状态集合 */
@@ -1680,12 +1685,12 @@ export default {
           if (latest) {
             await loadAiConversation(latest.id);
           } else {
-            ensurePageGreeting(); // 无历史：空对话状态下发送当前页助教提示
+            ensurePageGreeting(); // 无历史：空对话状态下追加当前页助教提示
           }
         }
       } catch (e) {
         console.warn(TAG + " 章节对话加载失败: " + (e?.message || e));
-        ensurePageGreeting(); // 加载失败也补发当前页助教提示，保证互动消息可见
+        ensurePageGreeting(); // 加载失败也追加当前页助教提示，保证互动消息可见
       }
     }
 
@@ -1726,7 +1731,7 @@ export default {
           aiUsage.value.completionTokens = lastAssistant?.completionTokens || 0;
           aiUsage.value.totalTokens = lastAssistant?.totalTokens || 0;
           aiUsage.value.cost = lastAssistant?.cost || 0;
-          ensurePageGreeting(); // 恢复后补发当前页助教提示
+          ensurePageGreeting(); // 恢复后追加当前页助教提示（只追加不移动既有消息）
           scrollAiToBottom();
         }
       } catch (e) {
@@ -1751,7 +1756,7 @@ export default {
         cumulative: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, assistantMessageCount: 0 },
       };
       aiHistoryVisible.value = false;
-      ensurePageGreeting(); // 新对话空状态：发送当前页助教提示
+      ensurePageGreeting(); // 新对话空状态：追加当前页助教提示
     }
 
     /**
@@ -1876,7 +1881,7 @@ export default {
             last.streaming = false;
           }
           aiStreaming.value = false;
-          ensurePageGreeting(); // 回答结束后把当前页助教提示补发到末尾
+          ensurePageGreeting(); // 回答结束兜底：仅当最近一条提示与当前页不同时追加（如流式中翻页），否则不移动不重复
           refreshAiHistory();
           scrollAiToBottom();
         },
@@ -1966,7 +1971,7 @@ export default {
         // AI 助教：加载历史列表 + 自动恢复当前章节最近对话
         await refreshAiHistory();
         await loadAiForChapter(activeChapter.value);
-        ensurePageGreeting(); // 兜底：无论加载结果如何，都把当前页助教提示发送出来
+        ensurePageGreeting(); // 兜底：无论加载结果如何，都确保当前页助教提示出现在聊天中
       } else {
         courseLoading.value = false;
         console.warn(TAG + " 未接收到课程参数，页面为空状态");

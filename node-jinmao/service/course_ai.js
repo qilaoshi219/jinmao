@@ -446,16 +446,27 @@ async function streamChat(res, userId, params) {
   const zjts = slideOutline.zjts || "";
   const pageContext = buildPageContext(page, script, zjts);
 
-  // 拼接/更新当前页素材：最后一条是 context 且页码不同 → 原地更新；否则插入新 context
-  const historyRows = (conversation.messages || []).map((m) => ({
+  // 拼接/更新当前页素材：整个对话只保留一条 context 消息，追问时原地更新内容
+  // 修复前可能残留多份旧页 context，本轮只把最近一条置于对话末尾发给 LLM（DB 历史数据不删除）
+  const rawRows = (conversation.messages || []).map((m) => ({
+    id: m.id,
     role: m.role,
     content: m.content,
   }));
-  const lastMsg = historyRows[historyRows.length - 1] || null;
-  if (lastMsg && lastMsg.role === "context") {
-    if (extractContextPage(lastMsg.content) !== page) {
-      await aiRepo.updateMessageContent(String(conversation.messages[conversation.messages.length - 1].id), pageContext).catch(() => {});
-      lastMsg.content = pageContext;
+  const historyRows = [];
+  let lastCtxRow = null;
+  for (const row of rawRows) {
+    if (row.role === "context") {
+      lastCtxRow = row; // 只记录最近一条 context，其余旧 context 不进入本轮上下文
+    } else {
+      historyRows.push(row);
+    }
+  }
+  if (lastCtxRow) {
+    historyRows.push(lastCtxRow); // 当前页素材置于对话末尾（紧邻问题），与新增时的位置一致
+    if (extractContextPage(lastCtxRow.content) !== page) {
+      await aiRepo.updateMessageContent(String(lastCtxRow.id), pageContext).catch(() => {});
+      lastCtxRow.content = pageContext;
     }
   } else {
     const ctxMsg = await aiRepo.addMessage(convId, "context", pageContext);
