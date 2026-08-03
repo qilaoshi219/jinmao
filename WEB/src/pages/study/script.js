@@ -273,7 +273,7 @@ export default {
     /** 消息区 DOM（自动滚动用） */
     const aiMessagesRef = ref(null);
     /** 上下文 token 上限（与后端常量保持一致） */
-    const AI_CONTEXT_LIMIT = 128000;
+    const AI_CONTEXT_LIMIT = 1000000;
     /** 可选模型列表（默认值，后端返回配置时覆盖） */
     const aiModels = ref([
       { key: "flash", label: "经济版 flash", inputCacheMiss: 1, inputCacheHit: 0.02, output: 2 },
@@ -1700,17 +1700,20 @@ export default {
         const result = await getAiConversation(courseId, conversationId);
         if (result.code === 0 && result.data) {
           const conv = result.data.conversation;
-          aiMessages.value = (conv.messages || []).map((m) => ({
-            role: m.role,
-            text: m.content || "",
-            suggestions: m.suggestions || null,
-            streaming: false,
-            failed: false,
-            thinking: m.thinking || "",
-            thinkingOpen: false,
-            thinkingMode: false,
-            greeting: false,
-          }));
+          // context 消息（页码+口播稿+助教提示）静默注入 AI 上下文，不显示在聊天框
+          aiMessages.value = (conv.messages || [])
+            .filter((m) => m.role !== "context")
+            .map((m) => ({
+              role: m.role,
+              text: m.content || "",
+              suggestions: m.suggestions || null,
+              streaming: false,
+              failed: false,
+              thinking: m.thinking || "",
+              thinkingOpen: false,
+              thinkingMode: false,
+              greeting: false,
+            }));
           activeConversationId.value = String(conversationId);
           if (conv.model) selectedModel.value = conv.model;
           aiUsage.value.cumulative = conv.cumulative || { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, assistantMessageCount: 0 };
