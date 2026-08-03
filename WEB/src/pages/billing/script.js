@@ -183,12 +183,12 @@ export default {
     }
 
     /**
-     * 格式化费用为 2 位小数显示
+     * 格式化费用为 5 位小数显示
      * @param {string} costStr - 费用字符串（7 位小数）
      * @returns {string} 格式化后的费用
      */
     function formatCost(costStr) {
-      return parseFloat(costStr).toFixed(2);
+      return parseFloat(costStr).toFixed(5);
     }
 
     // ========== 生命周期 ==========
