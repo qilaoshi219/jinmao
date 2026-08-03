@@ -45,11 +45,48 @@
   <!-- 已登录 + 手机端个人中心 -->
   <MobileProfilePage v-else-if="currentPage === 'mobile-profile'" />
 
+  <!-- 已登录 + 手机端刷题页（含报告子页） -->
+  <MobileQuizPage v-else-if="currentPage === 'mobile-quiz'" />
+
+  <!-- 已登录 + 手机端题库详情页 -->
+  <MobileQuizDetailPage v-else-if="currentPage === 'mobile-quiz-detail'" />
+
+  <!-- 已登录 + 手机端账单页 -->
+  <MobileBillingPage v-else-if="currentPage === 'mobile-billing'" />
+
+  <!-- 已登录 + 手机端兑换码页 -->
+  <MobileRedeemPage v-else-if="currentPage === 'mobile-redeem'" />
+
+  <!-- 已登录 + 手机端个人设置页 -->
+  <MobileSettingsPage v-else-if="currentPage === 'mobile-settings'" />
+
+  <!-- 已登录 + 手机端题库市场页 -->
+  <MobileMarketPage v-else-if="currentPage === 'mobile-market'" />
+
+  <!-- 已登录 + 手机端小工具列表页 -->
+  <MobileToolsPage v-else-if="currentPage === 'mobile-tools'" />
+
+  <!-- 已登录 + 手机端 PDF 分割器页 -->
+  <MobilePdfSplitterPage v-else-if="currentPage === 'mobile-tools-pdf-splitter'" />
+
+  <!-- 已登录 + 手机端公开考试数据页（所有者） -->
+  <MobilePublicStatsPage v-else-if="currentPage === 'mobile-public-stats'" />
+
+  <!-- 已登录 + 手机端公开考试列表页 -->
+  <MobilePublicExamsListPage v-else-if="currentPage === 'mobile-public-exams-list'" />
+
   <!-- 已登录 + 公开考试数据页（所有者） -->
   <PublicStatsPage v-else-if="currentPage === 'public-stats'" />
 
   <!-- 已登录 + 选择考试页（我的公开考试列表） -->
   <PublicExamsListPage v-else-if="currentPage === 'public-exams-list'" />
+
+  <!-- 手机端跳转提示全屏弹窗（仅手机用户进入电脑端页面时出现） -->
+  <MobileRedirectDialog
+    :visible="showMobileRedirect"
+    @confirm="handleMobileRedirectConfirm"
+    @cancel="handleMobileRedirectCancel"
+  />
 
   <!-- ========== 前端版本号 ========== -->
   <div class="fixed bottom-2 right-3 z-50 text-[11px] text-[var(--color-text-secondary)] select-none pointer-events-none transition-colors duration-500">
@@ -72,9 +109,20 @@ import QuizImportPage from "./pages/quiz-import/index.vue"; // 文本粘贴导�
 import PdfSplitterPage from "./pages/tools/pdf-splitter/index.vue"; // PDF 分割器页面
 import MobileHomePage from "./pages/mobile-home/index.vue"; // 手机端首页
 import MobileProfilePage from "./pages/mobile-profile/index.vue"; // 手机端个人中心
+import MobileQuizPage from "./pages/mobile-quiz/index.vue"; // 手机端刷题页
+import MobileQuizDetailPage from "./pages/mobile-quiz-detail/index.vue"; // 手机端题库详情页
+import MobileBillingPage from "./pages/mobile-billing/index.vue"; // 手机端账单页
+import MobileRedeemPage from "./pages/mobile-redeem/index.vue"; // 手机端兑换码页
+import MobileSettingsPage from "./pages/mobile-settings/index.vue"; // 手机端个人设置页
+import MobileMarketPage from "./pages/mobile-market/index.vue"; // 手机端题库市场页
+import MobileToolsPage from "./pages/mobile-tools/index.vue"; // 手机端小工具列表页
+import MobilePdfSplitterPage from "./pages/mobile-tools/pdf-splitter/index.vue"; // 手机端 PDF 分割器页
+import MobilePublicStatsPage from "./pages/mobile-public-stats/index.vue"; // 手机端公开考试数据页
+import MobilePublicExamsListPage from "./pages/mobile-public-exams-list/index.vue"; // 手机端公开考试列表页
 import PublicExamPage from "./pages/public-exam/index.vue"; // 公开考试页（二维码考试，免登录）
 import PublicStatsPage from "./pages/public-stats/index.vue"; // 公开考试数据页（所有者）
 import PublicExamsListPage from "./pages/public-exams-list/index.vue"; // 选择考试页（我的公开考试列表）
+import MobileRedirectDialog from "./components/MobileRedirectDialog.vue"; // 手机端跳转提示弹窗
 import pkg from "../package.json";
 
 const TAG = "[App]";
@@ -97,6 +145,17 @@ const PATH_TO_PAGE = {
   "/tools/pdf-splitter": "tools-pdf-splitter",
   "/mobile": "mobile-home",
   "/mobile/profile": "mobile-profile",
+  "/mobile/quiz": "mobile-quiz",
+  "/mobile/quiz/report": "mobile-quiz",
+  "/mobile/quiz-detail": "mobile-quiz-detail",
+  "/mobile/billing": "mobile-billing",
+  "/mobile/redeem": "mobile-redeem",
+  "/mobile/settings": "mobile-settings",
+  "/mobile/market": "mobile-market",
+  "/mobile/tools": "mobile-tools",
+  "/mobile/tools/pdf-splitter": "mobile-tools-pdf-splitter",
+  "/mobile/public-stats": "mobile-public-stats",
+  "/mobile/public-exams": "mobile-public-exams-list",
   "/quiz/public-stats": "public-stats",
   "/quiz/public-exams": "public-exams-list",
 };
@@ -114,6 +173,16 @@ const PAGE_TO_PATH = {
   "tools-pdf-splitter": "/tools/pdf-splitter",
   "mobile-home": "/mobile",
   "mobile-profile": "/mobile/profile",
+  "mobile-quiz": "/mobile/quiz",
+  "mobile-quiz-detail": "/mobile/quiz-detail",
+  "mobile-billing": "/mobile/billing",
+  "mobile-redeem": "/mobile/redeem",
+  "mobile-settings": "/mobile/settings",
+  "mobile-market": "/mobile/market",
+  "mobile-tools": "/mobile/tools",
+  "mobile-tools-pdf-splitter": "/mobile/tools/pdf-splitter",
+  "mobile-public-stats": "/mobile/public-stats",
+  "mobile-public-exams-list": "/mobile/public-exams",
   "public-stats": "/quiz/public-stats",
   "public-exams-list": "/quiz/public-exams",
 };
@@ -152,10 +221,29 @@ function parseLocation() {
       const mode = query.get("mode");
       if (mode) params.sessionMode = mode;
     }
+  } else if (page === "mobile-quiz") {
+    if (pathname === "/mobile/quiz/report") {
+      const reportId = query.get("reportId");
+      if (reportId) {
+        params.mode = "report";
+        params.reportId = reportId;
+      }
+    } else {
+      const sessionId = query.get("sessionId");
+      if (sessionId) params.sessionId = sessionId;
+      const mode = query.get("mode");
+      if (mode) params.sessionMode = mode;
+    }
   } else if (page === "quiz-detail") {
     const textbookId = query.get("textbookId");
     if (textbookId) params.textbookId = textbookId;
+  } else if (page === "mobile-quiz-detail") {
+    const textbookId = query.get("textbookId");
+    if (textbookId) params.textbookId = textbookId;
   } else if (page === "public-stats") {
+    const token = query.get("token");
+    if (token) params.token = token;
+  } else if (page === "mobile-public-stats") {
     const token = query.get("token");
     if (token) params.token = token;
   }
@@ -178,6 +266,14 @@ function buildPath(page, params = null) {
     return "/quiz/report" + (reportQs ? "?" + reportQs : "");
   }
 
+  // 手机端刷题报告子视图使用嵌套路径 /mobile/quiz/report
+  if (page === "mobile-quiz" && params?.mode === "report") {
+    const reportQuery = new URLSearchParams();
+    if (params.reportId) reportQuery.set("reportId", params.reportId);
+    const reportQs = reportQuery.toString();
+    return "/mobile/quiz/report" + (reportQs ? "?" + reportQs : "");
+  }
+
   const query = new URLSearchParams();
   if (page === "public-exam" && params?.token) {
     return "/p/" + encodeURIComponent(params.token);
@@ -186,9 +282,16 @@ function buildPath(page, params = null) {
   } else if (page === "quiz") {
     if (params?.sessionId) query.set("sessionId", params.sessionId);
     if (params?.sessionMode) query.set("mode", params.sessionMode);
+  } else if (page === "mobile-quiz") {
+    if (params?.sessionId) query.set("sessionId", params.sessionId);
+    if (params?.sessionMode) query.set("mode", params.sessionMode);
   } else if (page === "quiz-detail" && params?.textbookId) {
     query.set("textbookId", params.textbookId);
+  } else if (page === "mobile-quiz-detail" && params?.textbookId) {
+    query.set("textbookId", params.textbookId);
   } else if (page === "public-stats" && params?.token) {
+    query.set("token", params.token);
+  } else if (page === "mobile-public-stats" && params?.token) {
     query.set("token", params.token);
   }
 
@@ -234,12 +337,25 @@ function applyPageState(page, params) {
     quizDetailParams.value = params; // 传递参数给题库详情页
   } else if (page === "public-stats") {
     publicStatsParams.value = params; // 传递参数给公开考试数据页
+  } else if (page === "mobile-quiz") {
+    quizParams.value = params; // 手机端刷题页复用同一参数通道
+  } else if (page === "mobile-quiz-detail") {
+    quizDetailParams.value = params; // 手机端题库详情页复用同一参数通道
+  } else if (page === "mobile-public-stats") {
+    publicStatsParams.value = params; // 手机端公开考试数据页复用同一参数通道
   } else if (
     page === "billing" ||
     page === "profile" ||
     page === "redeem" ||
     page === "quiz-import" ||
-    page === "tools-pdf-splitter"
+    page === "tools-pdf-splitter" ||
+    page === "mobile-billing" ||
+    page === "mobile-redeem" ||
+    page === "mobile-settings" ||
+    page === "mobile-market" ||
+    page === "mobile-tools" ||
+    page === "mobile-tools-pdf-splitter" ||
+    page === "mobile-public-exams-list"
   ) {
     // 无需参数
   } else {
@@ -346,6 +462,75 @@ provide("quizParams", quizParams);
 provide("quizDetailParams", quizDetailParams);
 // 提供公开考试数据页参数给 PublicStatsPage 组件
 provide("publicStatsParams", publicStatsParams);
+
+// ==================== 移动端设备检测与跳转提示 ====================
+// 当手机用户进入电脑端页面时，弹出全屏提示询问是否跳转到手机版。
+// 每会话只询问一次（sessionStorage 记忆），"是"保留 query 参数跳转。
+
+/** 移动端跳转提示的记忆键（会话级） */
+const MOBILE_REDIRECT_KEY = "mobile_redirect_asked";
+
+/** 是否为手机设备（移动端 UA 或窄屏） */
+const isMobileDevice = ref(
+  /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+  window.innerWidth < 768
+);
+
+/** 跳转提示弹窗可见性 */
+const showMobileRedirect = ref(false);
+
+/** 桌面页 → 移动页映射（仅映射有手机版对应页的页面） */
+const DESKTOP_TO_MOBILE = {
+  home: "mobile-home",
+  quiz: "mobile-quiz",
+  "quiz-detail": "mobile-quiz-detail",
+  billing: "mobile-billing",
+  profile: "mobile-settings",
+  redeem: "mobile-redeem",
+  "tools-pdf-splitter": "mobile-tools-pdf-splitter",
+  "public-stats": "mobile-public-stats",
+  "public-exams-list": "mobile-public-exams-list",
+};
+
+/** 取当前桌面页对应的路由参数（供跳转时保留 query） */
+function currentParamsOf(page) {
+  if (page === "quiz") return quizParams.value;
+  if (page === "quiz-detail") return quizDetailParams.value;
+  if (page === "public-stats") return publicStatsParams.value;
+  return null;
+}
+
+/** 进入有手机版对应页的桌面页时，检查是否需要弹出跳转提示 */
+function maybeShowMobileRedirect() {
+  if (!isMobileDevice.value) return;
+  if (showMobileRedirect.value) return;
+  if (sessionStorage.getItem(MOBILE_REDIRECT_KEY)) return;
+  if (!DESKTOP_TO_MOBILE[currentPage.value]) return;
+  showMobileRedirect.value = true;
+}
+
+/** 用户选择"是，前往手机版" */
+function handleMobileRedirectConfirm() {
+  sessionStorage.setItem(MOBILE_REDIRECT_KEY, "1");
+  showMobileRedirect.value = false;
+  const target = DESKTOP_TO_MOBILE[currentPage.value];
+  if (target) {
+    changePage(target, currentParamsOf(currentPage.value));
+  }
+}
+
+/** 用户选择"否，留在电脑版" */
+function handleMobileRedirectCancel() {
+  sessionStorage.setItem(MOBILE_REDIRECT_KEY, "1");
+  showMobileRedirect.value = false;
+}
+
+// 监听当前页变化：进入桌面页时触发检查，进入手机页时自动关闭弹窗
+// immediate：首次加载直接落在桌面页（如 /、/billing）时也要弹出提示
+watch(currentPage, () => {
+  showMobileRedirect.value = false;
+  maybeShowMobileRedirect();
+}, { immediate: true });
 
 // 退出登录时重置到首页，并同步浏览器 URL（replaceState，不新增历史条目）
 watch(
