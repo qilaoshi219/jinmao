@@ -222,27 +222,6 @@
         <!-- 上传时间 -->
         <span>{{ formattedDate }}</span>
       </div>
-
-      <!-- ========== 底部操作栏（参考老项目 .home-course-action） ========== -->
-      <div class="flex items-center justify-between mt-3 pt-3
-                  border-t border-gray-100 dark:border-gray-700
-                  transition-colors duration-500">
-        <!-- 查看详情按钮 -->
-        <el-button
-          text
-          size="small"
-          type="primary"
-          @click.stop="$emit('open', course.id)"
-        >
-          查看详情
-        </el-button>
-
-        <!-- 状态快捷操作按钮 -->
-        <span class="text-xs text-gray-400 dark:text-gray-600
-                     transition-colors duration-500">
-          {{ formattedDate }}
-        </span>
-      </div>
     </div>
   </div>
 </template>

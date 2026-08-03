@@ -237,13 +237,6 @@
                             transition-colors duration-500" />
                 <div class="h-3 bg-slate-100 dark:bg-slate-700/50 rounded w-1/2
                             transition-colors duration-500" />
-                <div class="flex justify-between mt-3 pt-3
-                            border-t border-slate-200 dark:border-slate-700">
-                  <div class="h-6 bg-slate-100 dark:bg-slate-700/50 rounded w-16
-                              transition-colors duration-500" />
-                  <div class="h-6 bg-slate-100 dark:bg-slate-700/50 rounded w-12
-                              transition-colors duration-500" />
-                </div>
               </div>
             </div>
           </div>
