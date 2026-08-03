@@ -44,7 +44,8 @@ import { useResize } from "../../composables/useResize";
 import { getBookDetail, getChapterSlides, generateNextChapter, getChapterGenerationProgress, getGenerateNextStatus, fixMissingFiles, getFixStatus } from "../../api/books";
 import { getProgress, saveProgress } from "../../api/progress"; // 学习进度保存/恢复 API
 import { getAiConversations, getAiConversation, streamAiChat } from "../../api/ai"; // AI 助教问答 API
-import { renderMarkdown } from "../../utils/markdown"; // AI 回答 Markdown 渲染
+import AiChatPanel from "./AiChatPanel.vue"; // AI 助教面板组件（桌面右栏/移动端面板复用）
+import ChapterList from "./ChapterList.vue"; // 章节列表组件（桌面左栏/移动端面板复用）
 
 // ============================================================================
 // 一、常量定义
@@ -60,6 +61,9 @@ const FALLBACK_PAGE_DURATION = 30;
 let saveProgressTimer = null;
 /** 进度保存防抖延迟（毫秒） */
 const SAVE_DEBOUNCE_MS = 2000;
+
+/** 移动端控制条自动隐藏延迟（毫秒） */
+const MOBILE_CONTROLS_HIDE_MS = 5000;
 
 /** 本次学习页面打开的时间戳（用于计算学习时长增量） */
 let studySessionStart = Date.now();
@@ -167,6 +171,10 @@ async function fetchAndParseSrt(srtUrl) {
 // ============================================================================
 
 export default {
+  components: {
+    AiChatPanel,
+    ChapterList,
+  },
   /**
    * 使用 inject('navigate') 导航，由 App.vue provide
    * 使用 inject('studyParams') 获取课程参数，由 App.vue provide
@@ -238,6 +246,8 @@ export default {
     const currentPage = ref(1);
     const totalPages = ref(0);
     const progressPercent = ref(0);
+    /** 进度条拖动预览百分比（0-100，null=未拖动；模板优先显示该值） */
+    const dragPercent = ref(null);
     /** 当前幻灯片内的音频播放时间（秒） */
     const currentTime = ref(0);
     /** 本章节已播放过的幻灯片累计时长（秒），用于在进度条和格式化时间中累加已播页面的时长 */
@@ -247,8 +257,22 @@ export default {
     /** 当前章节总时长预计算 Promise（供恢复进度时 await，确保各页 _duration 已填充后再计算已播累计时长） */
     let currentPrefetchPromise = null;
 
+    // ---- 移动端布局与控件 ----
+    /** 是否为手机视图（手机 UA 或视口 <768px），决定上下分栏/全屏 3:7 布局 */
+    const isMobileView = ref(false);
+    /** 移动端全屏态：true = 横屏 3:7 分栏（左 70% 播放区 + 右 30% 面板） */
+    const mobileFullscreen = ref(false);
+    /** 移动端面板 Tab：'ai'（AI 助教/聊天，默认）| 'chapter'（章节） */
+    const mobilePanelTab = ref("ai");
+    /** 移动端控制条是否可见（点按 PPT 切换，5 秒自动隐藏） */
+    const mobileControlsVisible = ref(false);
+    /** 移动端控制条自动隐藏定时器 */
+    let mobileHideTimer = null;
+
     // ---- 控件显示 ----
     let hideTimer = null;
+    /** 进度条是否正在拖动 */
+    let isDragging = false;
 
     // ---- PPT 固定尺寸缩放渲染 ----
     /** iframe 基准渲染宽度（px），iframe 内容始终以该宽度作为内部视口，保持布局稳定 */
@@ -268,10 +292,10 @@ export default {
     const aiStreaming = ref(false);
     /** 历史对话列表 */
     const aiHistory = ref([]);
-    /** 历史对话弹层是否可见 */
-    const aiHistoryVisible = ref(false);
-    /** 消息区 DOM（自动滚动用） */
-    const aiMessagesRef = ref(null);
+    /** AI 助教面板组件实例（桌面右栏），滚动消息区用 */
+    const aiDesktopPanelRef = ref(null);
+    /** AI 助教面板组件实例（移动端面板，常规底部/全屏右侧共用） */
+    const aiMobilePanelRef = ref(null);
     /** 上下文 token 上限（与后端常量保持一致） */
     const AI_CONTEXT_LIMIT = 1000000;
     /** 可选模型列表（默认值，后端返回配置时覆盖） */
@@ -312,23 +336,11 @@ export default {
       return { circumference: AI_RING_CIRCUMFERENCE, offset: offset };
     });
 
-    /** 格式化 token 数（千分位） */
-    function formatAiTokens(n) {
-      return (n || 0).toLocaleString("zh-CN");
-    }
-
-    /** 格式化费用（元，小额显示 6 位小数） */
-    function formatAiCost(c) {
-      const v = parseFloat(c || 0);
-      if (!isFinite(v) || v <= 0) return "¥0";
-      return "¥" + (v < 0.0001 ? v.toFixed(6) : v.toFixed(4));
-    }
-
-    /** 消息区自动滚动到底部 */
+    /** 消息区自动滚动到底部（桌面与移动端两个 AI 面板各自滚动） */
     function scrollAiToBottom() {
       nextTick(() => {
-        const el = aiMessagesRef.value;
-        if (el) el.scrollTop = el.scrollHeight;
+        aiDesktopPanelRef.value?.scrollToBottom?.();
+        aiMobilePanelRef.value?.scrollToBottom?.();
       });
     }
     watch([aiMessages, aiStreaming], () => scrollAiToBottom(), { deep: true });
@@ -473,9 +485,12 @@ export default {
     /** 音频总时长（秒） — 仅当前页面音频，保留用于 onAudioLoaded */
     const totalTime = ref(0);
 
-    /** 格式化显示的当前时间 MM:SS = 已播幻灯片累计 + 当前页播放位置（处理 NaN/Infinity） */
+    /** 格式化显示的当前时间 MM:SS = 已播幻灯片累计 + 当前页播放位置；拖动进度条时显示预览时间（处理 NaN/Infinity） */
     const formattedTime = computed(() => {
-      const time = chapterElapsedTime.value + currentTime.value;
+      // 拖动中显示预览章节时间，松开后回落到真实播放位置
+      const time = dragPercent.value !== null
+        ? (dragPercent.value / 100) * chapterTotalTime.value
+        : chapterElapsedTime.value + currentTime.value;
       if (time === undefined || time === null || !isFinite(time) || time < 0) {
         return "00:00";
       }
@@ -1359,18 +1374,20 @@ export default {
           console.warn(TAG + " 音频播放失败: " + (err?.message || err));
         });
       }
+      rescheduleMobileControls();
     }
 
     /**
      * 切换到指定页码的幻灯片
      * @param {number} page - 目标页码（1-based）
      * @param {boolean} shouldAutoResume - 切换后是否自动播放（用于音频结束自动翻页场景）
+     * @param {null|{offset:number, elapsed:number}} seekOptions - 进度条跳转参数：offset 为目标页页内秒数，elapsed 为目标页之前各页时长之和；传入时跳过普通翻页的时长累加逻辑，精确定位到目标位置
      */
-    async function goToPage(page, shouldAutoResume = false) {
+    async function goToPage(page, shouldAutoResume = false, seekOptions = null) {
       if (page < 1 || page > totalPages.value) return;
       if (page === currentPage.value) return;
 
-      console.log(TAG + " 切换幻灯片: " + currentPage.value + " → " + page + (shouldAutoResume ? "（自动恢复播放）" : ""));
+      console.log(TAG + " 切换幻灯片: " + currentPage.value + " → " + page + (shouldAutoResume ? "（自动恢复播放）" : "") + (seekOptions ? "（进度条跳转）" : ""));
 
       // 暂停当前音频
       const audio = audioRef.value;
@@ -1380,33 +1397,39 @@ export default {
         isPlaying.value = false;
       }
 
-      // 累加当前页的已播放时长到章节累计（无论前进还是后退都不丢进度）
-      // 如果是自动翻页（onAudioEnded 触发），chapterElapsedTime 已在 onAudioEnded 中累加过，此处避免重复累加
-      if (!shouldAutoResume) {
-        const currentSlideData = slides.value[currentPage.value - 1];
-        const currentDuration = currentSlideData?._duration || totalTime.value || 0;
-        chapterElapsedTime.value += currentDuration;
-        console.log(TAG + " 手动翻页，累加当前页时长: " + currentDuration.toFixed(1) + "s，累计已播: " + chapterElapsedTime.value.toFixed(1) + "s");
-      }
-
-      // 如果是后退，重新计算已播放累计时长（确保准确）
-      if (page < currentPage.value) {
-        let sum = 0;
-        for (let i = 0; i < page - 1; i++) {
-          sum += (slides.value[i]?._duration || 0);
+      if (seekOptions) {
+        // 进度条跳转：直接使用精确的已播累计与页内偏移，跳过普通翻页的时长累加/重算
+        chapterElapsedTime.value = seekOptions.elapsed;
+        console.log(TAG + " 进度条跳转，目标页已播累计: " + seekOptions.elapsed.toFixed(1) + "s，页内偏移: " + seekOptions.offset.toFixed(1) + "s");
+      } else {
+        // 累加当前页的已播放时长到章节累计（无论前进还是后退都不丢进度）
+        // 如果是自动翻页（onAudioEnded 触发），chapterElapsedTime 已在 onAudioEnded 中累加过，此处避免重复累加
+        if (!shouldAutoResume) {
+          const currentSlideData = slides.value[currentPage.value - 1];
+          const currentDuration = currentSlideData?._duration || totalTime.value || 0;
+          chapterElapsedTime.value += currentDuration;
+          console.log(TAG + " 手动翻页，累加当前页时长: " + currentDuration.toFixed(1) + "s，累计已播: " + chapterElapsedTime.value.toFixed(1) + "s");
         }
-        chapterElapsedTime.value = sum;
-        console.log(TAG + " 后退翻页，重新计算累计已播: " + sum.toFixed(1) + "s");
+
+        // 如果是后退，重新计算已播放累计时长（确保准确）
+        if (page < currentPage.value) {
+          let sum = 0;
+          for (let i = 0; i < page - 1; i++) {
+            sum += (slides.value[i]?._duration || 0);
+          }
+          chapterElapsedTime.value = sum;
+          console.log(TAG + " 后退翻页，重新计算累计已播: " + sum.toFixed(1) + "s");
+        }
       }
 
-      // 更新页码，重置当前页音频时间为0
+      // 更新页码；普通翻页从 0 开始，进度条跳转定位到页内偏移
       currentPage.value = page;
-      currentTime.value = 0;
+      currentTime.value = seekOptions ? seekOptions.offset : 0;
       pptLoading.value = true;
 
-      // 进度条基于章节累计时间计算，不从0开始（当前页音频还未播放，currentTime=0）
+      // 进度条基于章节累计时间计算（当前页音频尚未播放/定位，用 chapterElapsedTime + 目标偏移）
       if (chapterTotalTime.value > 0) {
-        progressPercent.value = Math.round((chapterElapsedTime.value / chapterTotalTime.value) * 100);
+        progressPercent.value = Math.round(((chapterElapsedTime.value + currentTime.value) / chapterTotalTime.value) * 100);
       } else {
         progressPercent.value = 0;
       }
@@ -1426,19 +1449,28 @@ export default {
         if (newAudio) {
           newAudio.play().then(() => {
             isPlaying.value = true;
+            // 进度条跳转：播放恢复后把音频定位到页内偏移
+            if (seekOptions) {
+              applyAudioSeek(newAudio, seekOptions.offset);
+            }
           }).catch((err) => {
             console.warn(TAG + " 切换后音频播放失败: " + (err?.message || err));
           });
         }
+      } else if (seekOptions) {
+        // 暂停状态下的进度条跳转：直接定位到页内偏移（元数据未就绪时由 applyAudioSeek 兜底等待）
+        applyAudioSeek(audioRef.value, seekOptions.offset);
       }
     }
 
     function prevPage() {
       goToPage(currentPage.value - 1);
+      rescheduleMobileControls();
     }
 
     function nextPage() {
       goToPage(currentPage.value + 1);
+      rescheduleMobileControls();
     }
 
     function toggleAutoPlay() {
@@ -1446,18 +1478,132 @@ export default {
       console.log(TAG + " 自动播放: " + autoPlay.value);
     }
 
-    /** 点击进度条跳转 */
-    function seekProgress(e) {
+    // ---- 进度条点击/拖动跳转（章节累计时间 → 目标页 + 页内偏移） ----
+
+    /**
+     * 提交一次进度跳转：把章节累计百分比换算为目标页与页内偏移
+     * 目标页=当前页时直接在当前音频内定位；跨页时交给 goToPage 切换并定位
+     * @param {number} pct - 点击/松开位置百分比（0-100）
+     */
+    function commitSeek(pct) {
       const audio = audioRef.value;
-      if (!audio || totalTime.value <= 0) return;
+      if (!audio || chapterTotalTime.value <= 0 || slides.value.length === 0) return;
 
+      const targetCumulative = (Math.max(0, Math.min(100, pct)) / 100) * chapterTotalTime.value;
+
+      // 按各页已知时长累加，定位目标页与页内偏移（未知时长按 0 处理，与 chapterTotalTime 口径一致）
+      let targetPage = 1;
+      let offset = 0;
+      let elapsed = 0;
+      let acc = 0;
+      let found = false;
+      for (let i = 0; i < slides.value.length; i++) {
+        const dur = slides.value[i]?._duration || 0;
+        if (!found && targetCumulative < acc + dur) {
+          targetPage = i + 1;
+          offset = targetCumulative - acc;
+          elapsed = acc;
+          found = true;
+        }
+        acc += dur;
+      }
+      // 点击位置等于或超过已知总时长（含 100% 末尾）：定位到最后一页末尾
+      if (!found) {
+        targetPage = slides.value.length;
+        offset = slides.value[targetPage - 1]?._duration || 0;
+        elapsed = acc - offset;
+      }
+
+      // 目标页就是当前页：直接在当前音频内定位（保留播放/暂停状态）
+      if (targetPage === currentPage.value) {
+        const dur = totalTime.value;
+        if (!(dur > 0)) return;
+        const target = Math.min(offset, Math.max(0, dur - 0.05));
+        audio.currentTime = target;
+        currentTime.value = target;
+        progressPercent.value = Math.round(((chapterElapsedTime.value + target) / chapterTotalTime.value) * 100);
+        updateSubtitleFromTime(target);
+        rescheduleMobileControls();
+        return;
+      }
+
+      // 跨页跳转：切换页面并定位到页内偏移（goToPage 内保持/恢复播放状态）
+      goToPage(targetPage, false, { offset, elapsed });
+      rescheduleMobileControls();
+    }
+
+    /**
+     * 将 audio 定位到指定秒数
+     * 元数据未就绪时等待一次 loadedmetadata 后再设置；赋值异常静默忽略
+     * @param {HTMLAudioElement|null} audio - 音频元素
+     * @param {number} time - 目标秒数
+     */
+    function applyAudioSeek(audio, time) {
+      if (!audio) return;
+      const doSeek = () => {
+        const dur = audio.duration;
+        const max = Number.isFinite(dur) && dur > 0 ? Math.max(0, dur - 0.05) : time;
+        try {
+          audio.currentTime = Math.min(Math.max(0, time), max);
+        } catch (_) {
+          // 元数据尚未就绪时的赋值异常静默忽略，等下次事件再同步
+        }
+      };
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        doSeek();
+      } else {
+        audio.addEventListener("loadedmetadata", doSeek, { once: true });
+      }
+    }
+
+    /** 进度条指针按下：开始拖动并记录预览位置 */
+    function onBarPointerDown(e) {
       const bar = e.currentTarget;
-      const rect = bar.getBoundingClientRect();
-      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (!bar || !bar.setPointerCapture) return;
+      isDragging = true;
+      try {
+        bar.setPointerCapture(e.pointerId);
+      } catch (_) {
+        // 指针捕获失败不阻塞后续交互
+      }
+      updateDragPercent(e);
+    }
 
-      audio.currentTime = pct * totalTime.value;
-      currentTime.value = audio.currentTime;
-      progressPercent.value = Math.round(pct * 100);
+    /** 进度条指针移动：拖动中实时更新预览位置 */
+    function onBarPointerMove(e) {
+      if (!isDragging) return;
+      updateDragPercent(e);
+    }
+
+    /** 进度条指针松开：用最终预览位置提交一次跳转 */
+    function onBarPointerUp(e) {
+      if (!isDragging) return;
+      isDragging = false;
+      const finalPct = dragPercent.value;
+      dragPercent.value = null;
+      try {
+        e.currentTarget?.releasePointerCapture?.(e.pointerId);
+      } catch (_) {
+        // 忽略释放捕获异常
+      }
+      if (finalPct !== null) {
+        commitSeek(finalPct);
+      }
+    }
+
+    /** 进度条指针取消（如浏览器抢占指针）：取消拖动，不提交跳转 */
+    function onBarPointerCancel() {
+      isDragging = false;
+      dragPercent.value = null;
+    }
+
+    /** 根据指针横坐标更新拖动预览百分比 */
+    function updateDragPercent(e) {
+      const bar = e.currentTarget;
+      if (!bar) return;
+      const rect = bar.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      dragPercent.value = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
     }
 
     // ---- 音频事件处理 ----
@@ -1646,6 +1792,100 @@ export default {
     }
 
     // ========================================================================
+    // 3.12.5 移动端布局与控制条
+    // ========================================================================
+
+    /** 更新手机视图标记（手机 UA 或视口 <768px），随窗口缩放/旋转联动 */
+    function updateIsMobileView() {
+      isMobileView.value =
+        /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+        window.innerWidth < 768;
+    }
+
+    /** 清空移动端控制条自动隐藏定时器 */
+    function clearMobileHideTimer() {
+      if (mobileHideTimer) {
+        clearTimeout(mobileHideTimer);
+        mobileHideTimer = null;
+      }
+    }
+
+    /** 显示移动端控制条（仅手机视图生效） */
+    function showMobileControls() {
+      if (!isMobileView.value) return;
+      mobileControlsVisible.value = true;
+      const el = playerControls.value;
+      if (el) {
+        el.style.opacity = "1";
+        el.style.pointerEvents = "auto";
+      }
+      clearMobileHideTimer();
+      mobileHideTimer = setTimeout(hideMobileControls, MOBILE_CONTROLS_HIDE_MS);
+    }
+
+    /** 隐藏移动端控制条并清除定时器 */
+    function hideMobileControls() {
+      clearMobileHideTimer();
+      mobileControlsVisible.value = false;
+      const el = playerControls.value;
+      if (el) {
+        el.style.opacity = "0";
+        el.style.pointerEvents = "none";
+      }
+    }
+
+    /** 控制条交互后重置 5 秒自动隐藏计时（控制条可见时才有意义） */
+    function rescheduleMobileControls() {
+      if (!isMobileView.value || !mobileControlsVisible.value) return;
+      showMobileControls();
+    }
+
+    /** 点按 PPT 区域：切换移动端控制条显隐 */
+    function onPptClick() {
+      if (!isMobileView.value) return;
+      if (mobileControlsVisible.value) {
+        hideMobileControls();
+      } else {
+        showMobileControls();
+      }
+    }
+
+    /** 桌面 hover 显示控制条（手机视图下禁用，避免与点按逻辑冲突） */
+    function onPptMouseEnter() {
+      if (isMobileView.value) return;
+      showControls();
+    }
+
+    function onPptMouseLeave() {
+      if (isMobileView.value) return;
+      hideControls();
+    }
+
+    function onControlsMouseEnter() {
+      if (isMobileView.value) return;
+      cancelHideTimer();
+    }
+
+    function onControlsMouseLeave() {
+      if (isMobileView.value) return;
+      hideControls();
+    }
+
+    /**
+     * 切换移动端全屏态（横屏 3:7 分栏）
+     * 页面内布局切换：仅改容器类，不重载章节、不暂停音频
+     */
+    function toggleMobileFullscreen() {
+      mobileFullscreen.value = !mobileFullscreen.value;
+      // 布局切换后控制条保持隐藏，避免遮挡
+      hideMobileControls();
+      // 容器尺寸改变后重算 PPT 缩放（ResizeObserver 也会触发，此处兜底）
+      nextTick(() => {
+        updatePptScale();
+      });
+    }
+
+    // ========================================================================
     // 3.13 AI 对话
     // ========================================================================
 
@@ -1755,7 +1995,6 @@ export default {
         cost: 0,
         cumulative: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, assistantMessageCount: 0 },
       };
-      aiHistoryVisible.value = false;
       ensurePageGreeting(); // 新对话空状态：追加当前页助教提示
     }
 
@@ -1764,7 +2003,6 @@ export default {
      * @param {string|number} conversationId - 对话 ID
      */
     async function openAiConversation(conversationId) {
-      aiHistoryVisible.value = false;
       await loadAiConversation(conversationId);
     }
 
@@ -1934,6 +2172,10 @@ export default {
     onMounted(async () => {
       console.log(TAG + " NERV 三栏播放器学习页初始化完成");
 
+      // ========== 手机视图标记（UA 或视口 <768px）==========
+      updateIsMobileView();
+      window.addEventListener("resize", updateIsMobileView);
+
       // ========== PPT 容器缩放监听 ==========
       // 使用 ResizeObserver 监听 pptContainer 尺寸变化，动态更新 iframe 缩放比
       // 这样即使容器因侧边栏拖动、窗口缩放等变化，PPT 内容也能正确缩放
@@ -1979,6 +2221,10 @@ export default {
     });
 
     onUnmounted(async () => {
+      // 移除手机视图标记监听，清理移动端控制条定时器
+      window.removeEventListener("resize", updateIsMobileView);
+      clearMobileHideTimer();
+
       // 清理 PPT 缩放监听
       if (pptResizeObserver) {
         pptResizeObserver.disconnect();
@@ -2106,8 +2352,8 @@ export default {
       activeConversationId,
       aiStreaming,
       aiHistory,
-      aiHistoryVisible,
-      aiMessagesRef,
+      aiDesktopPanelRef,
+      aiMobilePanelRef,
       aiUsage,
       aiUsagePercent,
       aiUsagePercentText,
@@ -2119,9 +2365,6 @@ export default {
       openAiConversation,
       useSuggestion,
       onModelSelect,
-      formatAiTokens,
-      formatAiCost,
-      renderMarkdown,
 
       // 方法
       goBack,
@@ -2130,7 +2373,22 @@ export default {
       nextPage,
       toggleAutoPlay,
       toggleFullscreen,
-      seekProgress,
+      dragPercent,
+      onBarPointerDown,
+      onBarPointerMove,
+      onBarPointerUp,
+      onBarPointerCancel,
+
+      // 移动端
+      isMobileView,
+      mobileFullscreen,
+      mobilePanelTab,
+      toggleMobileFullscreen,
+      onPptClick,
+      onPptMouseEnter,
+      onPptMouseLeave,
+      onControlsMouseEnter,
+      onControlsMouseLeave,
 
       // 下一章生成
       generateBtnDisabled,
