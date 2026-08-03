@@ -112,204 +112,203 @@
 
         </div>
 
-        <!-- ===== 扣费明细表格 ===== -->
+        <!-- ===== 记录明细（消费 / 充值选项卡） ===== -->
         <div class="rounded-[10px] border transition-colors duration-500 overflow-hidden"
              :style="{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border)' }">
-          <!-- 表格标题 -->
-          <div class="px-4 py-3 border-b transition-colors duration-500"
-               :style="{ borderColor: 'var(--color-border)' }">
-            <h2 class="text-sm font-semibold text-black dark:text-white
-                       transition-colors duration-500">
-              扣费明细
-            </h2>
-          </div>
+          <el-tabs v-model="activeTab" class="billing-page__tabs">
 
-          <!-- el-table 表格 -->
-          <el-table
-            :data="records"
-            stripe
-            style="width: 100%"
-            :header-cell-style="{
-              backgroundColor: 'var(--color-bg-secondary)',
-              color: 'var(--color-text-primary)',
-              borderColor: 'var(--color-border)',
-            }"
-            :cell-style="{
-              backgroundColor: 'var(--color-bg-secondary)',
-              color: 'var(--color-text-primary)',
-              borderColor: 'var(--color-border)',
-            }">
-            <!-- 日期列 -->
-            <el-table-column label="日期" width="180">
-              <template #default="{ row }">
-                <span class="text-[13px]">{{ formatDate(row.createdAt) }}</span>
-              </template>
-            </el-table-column>
+            <!-- ===== 消费记录 Tab ===== -->
+            <el-tab-pane label="消费记录" name="consume">
+              <el-table
+                :data="records"
+                stripe
+                style="width: 100%"
+                :header-cell-style="{
+                  backgroundColor: 'var(--color-bg-secondary)',
+                  color: 'var(--color-text-primary)',
+                  borderColor: 'var(--color-border)',
+                }"
+                :cell-style="{
+                  backgroundColor: 'var(--color-bg-secondary)',
+                  color: 'var(--color-text-primary)',
+                  borderColor: 'var(--color-border)',
+                }">
+                <!-- 日期列 -->
+                <el-table-column label="日期" width="180">
+                  <template #default="{ row }">
+                    <span class="text-[13px]">{{ formatDate(row.createdAt) }}</span>
+                  </template>
+                </el-table-column>
 
-            <!-- 服务列 -->
-            <el-table-column label="服务" min-width="140">
-              <template #default="{ row }">
-                <span class="text-[13px]">{{ row.callTagLabel }}</span>
-              </template>
-            </el-table-column>
+                <!-- 服务列 -->
+                <el-table-column label="服务" min-width="140">
+                  <template #default="{ row }">
+                    <span class="text-[13px]">{{ row.callTagLabel }}</span>
+                  </template>
+                </el-table-column>
 
-            <!-- 费用列 -->
-            <el-table-column label="费用" width="140" align="right">
-              <template #default="{ row }">
-                <span class="text-[13px] font-mono
-                             text-red-500 dark:text-red-400">
-                  ¥{{ formatCost(row.totalCost) }}
-                </span>
-              </template>
-            </el-table-column>
-
-            <!-- 状态列 -->
-            <el-table-column label="状态" width="120" align="center">
-              <template #default="{ row }">
-                <el-tooltip
-                  v-if="row.status === 'failed' && row.errorMessage"
-                  :content="'失败原因：' + row.errorMessage"
-                  placement="top"
-                  :show-after="300">
-                  <el-tag
-                    :type="row.status === 'success' ? 'success' : 'danger'"
-                    size="small"
-                    effect="plain"
-                    class="cursor-help">
-                    {{ row.status === 'success' ? '成功' : '失败' }}
-                    <span v-if="row.retryCount > 0" class="ml-1 text-[10px] opacity-70">
-                      (重试{{ row.retryCount }}次)
+                <!-- 费用列 -->
+                <el-table-column label="费用" width="140" align="right">
+                  <template #default="{ row }">
+                    <span class="text-[13px] font-mono
+                                 text-red-500 dark:text-red-400">
+                      ¥{{ formatCost(row.totalCost) }}
                     </span>
-                  </el-tag>
-                </el-tooltip>
-                <el-tag
-                  v-else
-                  :type="row.status === 'success' ? 'success' : 'danger'"
-                  size="small"
-                  effect="plain">
-                  {{ row.status === 'success' ? '成功' : '失败' }}
-                  <span v-if="row.retryCount > 0" class="ml-1 text-[10px] opacity-70">
-                    (重试{{ row.retryCount }}次)
-                  </span>
-                </el-tag>
-              </template>
-            </el-table-column>
+                  </template>
+                </el-table-column>
 
-            <!-- 空状态 -->
-            <template #empty>
-              <div class="py-8 text-sm text-gray-500 dark:text-gray-400
-                          transition-colors duration-500">
-                暂无扣费记录
+                <!-- 状态列 -->
+                <el-table-column label="状态" width="120" align="center">
+                  <template #default="{ row }">
+                    <el-tooltip
+                      v-if="row.status === 'failed' && row.errorMessage"
+                      :content="'失败原因：' + row.errorMessage"
+                      placement="top"
+                      :show-after="300">
+                      <el-tag
+                        :type="row.status === 'success' ? 'success' : 'danger'"
+                        size="small"
+                        effect="plain"
+                        class="cursor-help">
+                        {{ row.status === 'success' ? '成功' : '失败' }}
+                        <span v-if="row.retryCount > 0" class="ml-1 text-[10px] opacity-70">
+                          (重试{{ row.retryCount }}次)
+                        </span>
+                      </el-tag>
+                    </el-tooltip>
+                    <el-tag
+                      v-else
+                      :type="row.status === 'success' ? 'success' : 'danger'"
+                      size="small"
+                      effect="plain">
+                      {{ row.status === 'success' ? '成功' : '失败' }}
+                      <span v-if="row.retryCount > 0" class="ml-1 text-[10px] opacity-70">
+                        (重试{{ row.retryCount }}次)
+                      </span>
+                    </el-tag>
+                  </template>
+                </el-table-column>
+
+                <!-- 空状态 -->
+                <template #empty>
+                  <div class="py-8 text-sm text-gray-500 dark:text-gray-400
+                              transition-colors duration-500">
+                    暂无消费记录
+                  </div>
+                </template>
+              </el-table>
+
+              <!-- 分页器 -->
+              <div v-if="pagination.total > 0"
+                   class="flex justify-center py-4 border-t
+                          transition-colors duration-500"
+                   :style="{ borderColor: 'var(--color-border)' }">
+                <el-pagination
+                  v-model:current-page="currentPage"
+                  :page-size="pagination.pageSize"
+                  :total="pagination.total"
+                  :pager-count="5"
+                  layout="prev, pager, next"
+                  background
+                  @current-change="handlePageChange"
+                />
               </div>
-            </template>
-          </el-table>
+            </el-tab-pane>
 
-          <!-- 分页器 -->
-          <div v-if="pagination.total > 0"
-               class="flex justify-center py-4 border-t
-                      transition-colors duration-500"
-               :style="{ borderColor: 'var(--color-border)' }">
-            <el-pagination
-              v-model:current-page="currentPage"
-              :page-size="pagination.pageSize"
-              :total="pagination.total"
-              :pager-count="5"
-              layout="prev, pager, next"
-              background
-              @current-change="handlePageChange"
-            />
-          </div>
-        </div>
+            <!-- ===== 充值记录 Tab ===== -->
+            <el-tab-pane label="充值记录" name="recharge">
+              <el-table
+                :data="rechargeRecords"
+                stripe
+                style="width: 100%"
+                :header-cell-style="{
+                  backgroundColor: 'var(--color-bg-secondary)',
+                  color: 'var(--color-text-primary)',
+                  borderColor: 'var(--color-border)',
+                }"
+                :cell-style="{
+                  backgroundColor: 'var(--color-bg-secondary)',
+                  color: 'var(--color-text-primary)',
+                  borderColor: 'var(--color-border)',
+                }">
+                <!-- 日期列 -->
+                <el-table-column label="日期" width="180">
+                  <template #default="{ row }">
+                    <span class="text-[13px]">{{ formatDate(row.usedAt) }}</span>
+                  </template>
+                </el-table-column>
 
-        <!-- ===== 充值记录表格 ===== -->
-        <div class="rounded-[10px] border transition-colors duration-500 overflow-hidden mt-4"
-             :style="{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border)' }">
-          <!-- 表格标题 -->
-          <div class="px-4 py-3 border-b transition-colors duration-500"
-               :style="{ borderColor: 'var(--color-border)' }">
-            <h2 class="text-sm font-semibold text-black dark:text-white
-                       transition-colors duration-500">
-              充值记录
-            </h2>
-          </div>
+                <!-- 兑换码列 -->
+                <el-table-column label="兑换码" min-width="200">
+                  <template #default="{ row }">
+                    <span class="text-[13px] font-mono text-black dark:text-white
+                                 transition-colors duration-500">
+                      {{ row.code }}
+                    </span>
+                  </template>
+                </el-table-column>
 
-          <!-- el-table 表格 -->
-          <el-table
-            :data="rechargeRecords"
-            stripe
-            style="width: 100%"
-            :header-cell-style="{
-              backgroundColor: 'var(--color-bg-secondary)',
-              color: 'var(--color-text-primary)',
-              borderColor: 'var(--color-border)',
-            }"
-            :cell-style="{
-              backgroundColor: 'var(--color-bg-secondary)',
-              color: 'var(--color-text-primary)',
-              borderColor: 'var(--color-border)',
-            }">
-            <!-- 日期列 -->
-            <el-table-column label="日期" width="180">
-              <template #default="{ row }">
-                <span class="text-[13px]">{{ formatDate(row.usedAt) }}</span>
-              </template>
-            </el-table-column>
+                <!-- 充值方式列 -->
+                <el-table-column label="充值方式" width="140">
+                  <template #default="{ row }">
+                    <span class="text-[13px]">{{ row.sourceLabel }}</span>
+                  </template>
+                </el-table-column>
 
-            <!-- 兑换码列 -->
-            <el-table-column label="兑换码" min-width="200">
-              <template #default="{ row }">
-                <span class="text-[13px] font-mono text-black dark:text-white
-                             transition-colors duration-500">
-                  {{ row.code }}
-                </span>
-              </template>
-            </el-table-column>
+                <!-- 金额列 -->
+                <el-table-column label="金额" width="140" align="right">
+                  <template #default="{ row }">
+                    <span class="text-[13px] font-mono
+                                 text-green-500 dark:text-green-400">
+                      +¥{{ formatCost(row.amount) }}
+                    </span>
+                  </template>
+                </el-table-column>
 
-            <!-- 充值方式列 -->
-            <el-table-column label="充值方式" width="140">
-              <template #default="{ row }">
-                <span class="text-[13px]">{{ row.sourceLabel }}</span>
-              </template>
-            </el-table-column>
+                <!-- 空状态 -->
+                <template #empty>
+                  <div class="py-8 text-sm text-gray-500 dark:text-gray-400
+                              transition-colors duration-500">
+                    暂无充值记录
+                  </div>
+                </template>
+              </el-table>
 
-            <!-- 金额列 -->
-            <el-table-column label="金额" width="140" align="right">
-              <template #default="{ row }">
-                <span class="text-[13px] font-mono
-                             text-green-500 dark:text-green-400">
-                  +¥{{ formatCost(row.amount) }}
-                </span>
-              </template>
-            </el-table-column>
-
-            <!-- 空状态 -->
-            <template #empty>
-              <div class="py-8 text-sm text-gray-500 dark:text-gray-400
-                          transition-colors duration-500">
-                暂无充值记录
+              <!-- 分页器 -->
+              <div v-if="rechargePagination.total > 0"
+                   class="flex justify-center py-4 border-t
+                          transition-colors duration-500"
+                   :style="{ borderColor: 'var(--color-border)' }">
+                <el-pagination
+                  v-model:current-page="rechargePage"
+                  :page-size="rechargePagination.pageSize"
+                  :total="rechargePagination.total"
+                  :pager-count="5"
+                  layout="prev, pager, next"
+                  background
+                  @current-change="handleRechargePageChange"
+                />
               </div>
-            </template>
-          </el-table>
-
-          <!-- 分页器 -->
-          <div v-if="rechargePagination.total > 0"
-               class="flex justify-center py-4 border-t
-                      transition-colors duration-500"
-               :style="{ borderColor: 'var(--color-border)' }">
-            <el-pagination
-              v-model:current-page="rechargePage"
-              :page-size="rechargePagination.pageSize"
-              :total="rechargePagination.total"
-              :pager-count="5"
-              layout="prev, pager, next"
-              background
-              @current-change="handleRechargePageChange"
-            />
-          </div>
+            </el-tab-pane>
+          </el-tabs>
         </div>
       </template>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 选项卡与卡片边缘对齐：标签栏左侧留 16px，表格保持满宽 */
+.billing-page__tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+.billing-page__tabs :deep(.el-tabs__nav-wrap) {
+  padding-left: 16px;
+}
+.billing-page__tabs :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+  background-color: var(--color-border);
+}
+</style>
 
 <script src="./script.js"></script>

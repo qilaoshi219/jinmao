@@ -46,6 +46,9 @@ export default {
     });
     const rechargePage = ref(1);        // 充值记录 el-pagination 绑定的当前页
 
+    // 记录明细选项卡：consume=消费记录，recharge=充值记录
+    const activeTab = ref("consume");
+
     // ========== 计算属性 ==========
 
     /** VIP 等级中文标签映射 */
@@ -214,6 +217,8 @@ export default {
       rechargeRecords,
       rechargePagination,
       rechargePage,
+      // 选项卡
+      activeTab,
       // 计算属性
       vipLevelLabel,
       planLabel,
