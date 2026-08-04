@@ -21,6 +21,7 @@ router.use("/:suffix/api/stats", require("./admin/stats"));       // 消费统�
 router.use("/:suffix/api/security", require("./admin/security")); // 安全防护
 router.use("/:suffix/api/config", require("./admin/config"));     // 系统设置
 router.use("/:suffix/api/pricing", require("./admin/pricing"));   // 价格调整
+router.use("/:suffix/api/env", require("./admin/env"));           // API 密钥（.env）
 
 // ==================== 导出路由 ====================
 module.exports = router;

@@ -134,4 +134,5 @@ module.exports = {
     grsai: grsaiConfig,             // { GRSAI_API_KEY, GRSAI_API_BASE, GRSAI_MODEL, ... }
     DEEPSEEK_TIMEOUT: DEEPSEEK_TIMEOUT, // { BIG_MODEL: 900000, SMALL_MODEL: 300000 }
     billing: billingPricingConfig,     // 计费价格配置（从 billing_pricing.json 加载）
+    validateApiKey,                     // API Key 格式校验（非空 + 全 ASCII），供管理端 env 路由复用
 };
