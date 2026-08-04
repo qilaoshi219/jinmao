@@ -95,7 +95,6 @@
           :generate-btn-disabled="generateBtnDisabled"
           :generate-btn-text="generateBtnText"
           :is-generating-chapter="isGeneratingChapter"
-          :auto-generate-enabled="autoGenerateEnabled"
           :is-fixing-missing="isFixingMissing"
           :fixing-banner-text="fixingBannerText"
           :get-chapter-progress-label="getChapterProgressLabel"
@@ -103,7 +102,6 @@
           :get-chapter-progress-count-text="getChapterProgressCountText"
           @select="(ch) => switchChapter(ch.id)"
           @generate-next="handleGenerateNextChapter"
-          @toggle-auto-generate="onAutoGenerateToggle"
         />
       </aside>
 
@@ -414,7 +412,6 @@
           :generate-btn-disabled="generateBtnDisabled"
           :generate-btn-text="generateBtnText"
           :is-generating-chapter="isGeneratingChapter"
-          :auto-generate-enabled="autoGenerateEnabled"
           :is-fixing-missing="isFixingMissing"
           :fixing-banner-text="fixingBannerText"
           :get-chapter-progress-label="getChapterProgressLabel"
@@ -422,7 +419,6 @@
           :get-chapter-progress-count-text="getChapterProgressCountText"
           @select="(ch) => switchChapter(ch.id)"
           @generate-next="handleGenerateNextChapter"
-          @toggle-auto-generate="onAutoGenerateToggle"
         />
       </div>
     </div>

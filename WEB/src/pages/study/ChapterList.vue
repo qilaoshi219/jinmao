@@ -2,8 +2,8 @@
 ============================================================================
 文件名：ChapterList.vue（章节列表组件）
 所属目录：src/pages/study/
-文件作用：章节列表（状态图标/内联提示/生成进度）+ 底部「生成下一章」按钮与
-         自动生成开关，从学习页 index.vue 原样抽取，
+文件作用：章节列表（状态图标/内联提示/生成进度）+ 底部「生成下一章」按钮，
+         从学习页 index.vue 原样抽取，
          供桌面左侧栏、移动端底部面板、移动端全屏右侧面板三处复用
 遵守设计规范：纯黑纯白文字、10px 圆角、500ms 过渡、暗黑双轨适配
 ============================================================================
@@ -135,15 +135,6 @@
       >
         {{ generateBtnText }}
       </el-button>
-      <!-- 自动生成开关 -->
-      <div class="flex items-center justify-between">
-        <span class="text-[10px] text-[var(--color-text-secondary)]">自动生成</span>
-        <el-switch
-          :model-value="autoGenerateEnabled"
-          size="small"
-          @change="$emit('toggle-auto-generate', $event)"
-        />
-      </div>
     </div>
   </div>
 </template>
@@ -170,8 +161,6 @@ defineProps({
   generateBtnText: { type: String, default: "生成下一章" },
   /** 是否正在调用生成 API */
   isGeneratingChapter: { type: Boolean, default: false },
-  /** 自动生成开关状态 */
-  autoGenerateEnabled: { type: Boolean, default: false },
   /** 文件补全中（禁止切换章节） */
   isFixingMissing: { type: Boolean, default: false },
   /** 文件补全横幅文案 */
@@ -186,7 +175,7 @@ defineProps({
   navId: { type: String, default: "" },
 });
 
-defineEmits(["select", "generate-next", "toggle-auto-generate"]);
+defineEmits(["select", "generate-next"]);
 
 /** 非已完成章节点击处理（提示已内联在模板中，保留空函数兼容点击绑定） */
 function showGeneratingTip() {

@@ -381,8 +381,6 @@ export default {
     // ---- 下一章生成相关 ----
     /** 是否正在调用生成 API（按钮 loading 状态） */
     const isGeneratingChapter = ref(false);
-    /** 自动生成模式开关（从 localStorage 读取，每个课程独立记忆） */
-    const autoGenerateEnabled = ref(false);
     /** 章节生成进度映射表 { [chapterId]: { progress, isTerminal } } */
     const chapterProgressMap = reactive({});
     /** 章节进度轮询定时器引用 */
@@ -1023,31 +1021,6 @@ export default {
       startNewAiConversation();
       await refreshAiHistory();
       await loadAiForChapter(chapterId);
-
-      // 自动生成检查：如果开启了自动生成，检查是否需要生成下一章
-      if (autoGenerateEnabled.value) {
-        autoGenerateCheck(targetChapter);
-      }
-    }
-
-    /**
-     * 自动生成检查：学习第 N 章时，检查是否需要生成第 N+1 章
-     * @param {Object} currentChapter - 当前正在学习的章节对象
-     */
-    function autoGenerateCheck(currentChapter) {
-      const currentSeq = currentChapter.sequence;
-      const nextSeq = currentSeq + 1;
-
-      // 查找是否已存在第 N+1 章
-      const nextChapter = chapters.value.find(c => c.sequence === nextSeq);
-
-      if (!nextChapter) {
-        // 不存在 → 自动生成
-        console.log(TAG + " [自动生成] 检测到第 " + currentSeq + " 章，自动生成第 " + nextSeq + " 章");
-        handleGenerateNextChapter(true); // silent=true，不显示错误消息
-      }
-      // 存在且 generating → 启动轮询（由 startChapterProgressPolling 处理）
-      // 存在且 completed → 无需操作
     }
 
     /**
@@ -1061,12 +1034,11 @@ export default {
 
     /**
      * 处理"生成下一章"按钮点击
-     * @param {boolean} silent - 静默模式（自动生成时不显示错误消息）
      */
-    async function handleGenerateNextChapter(silent = false) {
+    async function handleGenerateNextChapter() {
       const courseId = studyParams?.value?.courseId;
       if (!courseId) {
-        if (!silent) ElMessage.error("无法获取课程信息");
+        ElMessage.error("无法获取课程信息");
         return;
       }
 
@@ -1100,41 +1072,18 @@ export default {
           // 启动进度轮询
           startChapterProgressPolling();
 
-          if (!silent) {
-            ElMessage.success("第 " + sequence + " 章已开始生成");
-          }
+          ElMessage.success("第 " + sequence + " 章已开始生成");
         } else {
-          if (!silent) {
-            ElMessage.warning(result.message || "生成下一章失败");
-          }
+          ElMessage.warning(result.message || "生成下一章失败");
           console.warn(TAG + " [生成下一章] 失败: " + (result.message || "未知错误"));
           // 后端拒绝（如已是最后一章）→ 立即刷新按钮状态，同步为禁用态
           refreshGenerateNextStatus();
         }
       } catch (error) {
         console.error(TAG + " [生成下一章] 异常: " + (error?.message || error));
-        if (!silent) {
-          ElMessage.error("生成下一章失败，请稍后重试");
-        }
+        ElMessage.error("生成下一章失败，请稍后重试");
       } finally {
         isGeneratingChapter.value = false;
-      }
-    }
-
-    /**
-     * 自动生成开关变更回调
-     * @param {boolean} enabled - 开关状态
-     */
-    function onAutoGenerateToggle(enabled) {
-      const courseId = studyParams?.value?.courseId;
-      if (!courseId) return;
-      const key = "auto_generate_" + courseId;
-      if (enabled) {
-        localStorage.setItem(key, "1");
-        console.log(TAG + " 自动生成模式已开启");
-      } else {
-        localStorage.removeItem(key);
-        console.log(TAG + " 自动生成模式已关闭");
       }
     }
 
@@ -2219,11 +2168,6 @@ export default {
       if (studyParams?.value?.courseId) {
         console.log(TAG + " 检测到课程参数，自动加载: courseId=" + studyParams.value.courseId);
 
-        // 从 localStorage 恢复自动生成开关状态
-        const key = "auto_generate_" + studyParams.value.courseId;
-        autoGenerateEnabled.value = localStorage.getItem(key) === "1";
-        console.log(TAG + " 自动生成模式: " + (autoGenerateEnabled.value ? "已开启" : "已关闭"));
-
         await loadCourseData();
 
         // 加载完成后，检查是否有正在生成的章节，启动轮询
@@ -2420,10 +2364,8 @@ export default {
       generateBtnDisabled,
       generateBtnText,
       isGeneratingChapter,
-      autoGenerateEnabled,
       chapterProgressMap,
       handleGenerateNextChapter,
-      onAutoGenerateToggle,
       showGeneratingTip,
       getChapterProgressLabel,
       getChapterProgressBarWidth,
