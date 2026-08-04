@@ -367,3 +367,101 @@ export async function getCertificateStatus(courseId) {
   const response = await apiClient.get("/courses/" + courseId + "/certificate-status");
   return response.data;
 }
+
+// ==================== 课程笔记 ====================
+
+/** 获取我的全部笔记 */
+export async function getNotes() {
+  const response = await apiClient.get("/notes");
+  return response.data;
+}
+
+/** 获取某课程的笔记（可过滤 chapterId/page） */
+export async function getCourseNotes(courseId, params = {}) {
+  const response = await apiClient.get("/courses/" + courseId + "/notes", { params });
+  return response.data;
+}
+
+/** 新建笔记 */
+export async function createNote(courseId, chapterId, payload) {
+  const response = await apiClient.post("/courses/" + courseId + "/chapters/" + chapterId + "/notes", payload);
+  return response.data;
+}
+
+/** 更新笔记 */
+export async function updateNote(noteId, payload) {
+  const response = await apiClient.put("/notes/" + noteId, payload);
+  return response.data;
+}
+
+/** 删除笔记 */
+export async function deleteNote(noteId) {
+  const response = await apiClient.delete("/notes/" + noteId);
+  return response.data;
+}
+
+// ==================== 课程评价 ====================
+
+/** 获取课程评价列表 */
+export async function getCourseReviews(courseId) {
+  const response = await apiClient.get("/courses/" + courseId + "/reviews");
+  return response.data;
+}
+
+/** 提交/更新评价 */
+export async function submitReview(courseId, payload) {
+  const response = await apiClient.post("/courses/" + courseId + "/reviews", payload);
+  return response.data;
+}
+
+/** 删除我的评价 */
+export async function deleteReview(courseId) {
+  const response = await apiClient.delete("/courses/" + courseId + "/reviews");
+  return response.data;
+}
+
+// ==================== 公开课广场 ====================
+
+/** 公开课广场列表 */
+export async function getCourseMarket(params = {}) {
+  const response = await apiClient.get("/courses/market", { params });
+  return response.data;
+}
+
+/** 我的公开课与借阅 */
+export async function getCourseMarketMine() {
+  const response = await apiClient.get("/courses/market/mine");
+  return response.data;
+}
+
+/** 课程公开/借阅状态 */
+export async function getCourseMarketStatus(courseId) {
+  const response = await apiClient.get("/courses/" + courseId + "/market-status");
+  return response.data;
+}
+
+/** 发布/取消发布公开课 */
+export async function publishCourse(courseId, publish) {
+  const response = await apiClient.post("/courses/" + courseId + "/publish", { publish });
+  return response.data;
+}
+
+/** 借阅公开课 */
+export async function borrowCourse(courseId) {
+  const response = await apiClient.post("/courses/" + courseId + "/borrow");
+  return response.data;
+}
+
+/** 取消借阅 */
+export async function unborrowCourse(courseId) {
+  const response = await apiClient.delete("/courses/" + courseId + "/borrow");
+  return response.data;
+}
+
+// ==================== 教材全文检索 ====================
+
+/** 全文检索课程内容 */
+export async function searchCourses(keyword) {
+  const response = await apiClient.get("/courses/search", { params: { keyword } });
+  return response.data;
+}

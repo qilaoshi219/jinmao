@@ -56,6 +56,15 @@
   <!-- 已登录 + 记忆曲线复习页 -->
   <ReviewsPage v-else-if="currentPage === 'reviews'" />
 
+  <!-- 已登录 + 我的笔记页 -->
+  <NotesPage v-else-if="currentPage === 'notes'" />
+
+  <!-- 已登录 + 公开课广场页 -->
+  <PlazaPage v-else-if="currentPage === 'plaza'" />
+
+  <!-- 已登录 + 教材全文检索页 -->
+  <CourseSearchPage v-else-if="currentPage === 'course-search'" />
+
   <!-- ===== 手机端页面 ===== -->
   <!-- 已登录 + 手机端首页 -->
   <MobileHomePage v-else-if="currentPage === 'mobile-home'" />
@@ -131,6 +140,9 @@ import MindMapPage from "./pages/mindmap/index.vue"; // 课程思维导图页面
 import FavoritesPage from "./pages/favorites/index.vue"; // 我的收藏页面
 import CertificatePage from "./pages/certificate/index.vue"; // 结业证书页面
 import ReviewsPage from "./pages/reviews/index.vue"; // 记忆曲线复习页面
+import NotesPage from "./pages/notes/index.vue"; // 我的笔记页面
+import PlazaPage from "./pages/plaza/index.vue"; // 公开课广场页面
+import CourseSearchPage from "./pages/course-search/index.vue"; // 教材全文检索页面
 import MobileHomePage from "./pages/mobile-home/index.vue"; // 手机端首页
 import MobileProfilePage from "./pages/mobile-profile/index.vue"; // 手机端个人中心
 import MobileQuizPage from "./pages/mobile-quiz/index.vue"; // 手机端刷题页
@@ -173,6 +185,9 @@ const PATH_TO_PAGE = {
   "/favorites": "favorites",
   "/certificate": "certificate",
   "/reviews": "reviews",
+  "/notes": "notes",
+  "/plaza": "plaza",
+  "/course-search": "course-search",
   "/mobile": "mobile-home",
   "/mobile/profile": "mobile-profile",
   "/mobile/quiz": "mobile-quiz",
@@ -207,6 +222,9 @@ const PAGE_TO_PATH = {
   favorites: "/favorites",
   certificate: "/certificate",
   reviews: "/reviews",
+  notes: "/notes",
+  plaza: "/plaza",
+  "course-search": "/course-search",
   "mobile-home": "/mobile",
   "mobile-profile": "/mobile/profile",
   "mobile-quiz": "/mobile/quiz",
@@ -244,6 +262,8 @@ function parseLocation() {
   } else if (page === "study") {
     const courseId = query.get("courseId");
     if (courseId) params.courseId = courseId;
+    const chapterId = query.get("chapterId");
+    if (chapterId) params.chapterId = chapterId;
   } else if (page === "mindmap") {
     const courseId = query.get("courseId");
     if (courseId) params.courseId = courseId;
@@ -321,6 +341,7 @@ function buildPath(page, params = null) {
     return "/p/" + encodeURIComponent(params.token);
   } else if (page === "study" && params?.courseId) {
     query.set("courseId", params.courseId);
+    if (params?.chapterId) query.set("chapterId", params.chapterId);
   } else if (page === "mindmap" && params?.courseId) {
     query.set("courseId", params.courseId);
   } else if (page === "certificate" && params?.courseId) {
@@ -401,6 +422,9 @@ function applyPageState(page, params) {
     page === "leaderboard" ||
     page === "favorites" ||
     page === "reviews" ||
+    page === "notes" ||
+    page === "plaza" ||
+    page === "course-search" ||
     page === "mobile-billing" ||
     page === "mobile-redeem" ||
     page === "mobile-settings" ||

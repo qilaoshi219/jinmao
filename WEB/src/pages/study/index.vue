@@ -35,15 +35,29 @@
       <span class="text-xs text-[var(--color-text-secondary)] truncate max-w-[50%]">{{ courseInfo.name || '加载中...' }}</span>
       <!-- 右侧：学习工具 -->
       <div class="flex items-center gap-1.5">
-        <button v-for="tool in studyTools" :key="tool.key"
-                @click="tool.handler"
-                class="hidden md:inline-flex items-center px-2 py-1 text-xs rounded-[10px] border
+        <el-dropdown trigger="click" @command="handleToolCommand">
+          <button
+            class="hidden md:inline-flex items-center gap-1 px-2 py-1 text-xs rounded-[10px] border
                        border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)]
                        hover:text-blue-500 hover:border-blue-500
                        dark:hover:text-blue-400 dark:hover:border-blue-400
                        transition-all duration-500 cursor-pointer">
-          {{ tool.label }}
-        </button>
+            工具
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="outline">复习提纲</el-dropdown-item>
+              <el-dropdown-item command="quiz">本章测验</el-dropdown-item>
+              <el-dropdown-item command="mindmap">思维导图</el-dropdown-item>
+              <el-dropdown-item command="certificate">结业证书</el-dropdown-item>
+              <el-dropdown-item command="notes" divided>本页笔记</el-dropdown-item>
+              <el-dropdown-item command="review">课程评价</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <button
           @click="toggleFavorite"
           :disabled="favoriteLoading"
@@ -56,15 +70,6 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
           </svg>
-        </button>
-        <button
-          @click="openCertificate"
-          class="hidden md:inline-flex items-center px-2 py-1 text-xs rounded-[10px] border
-                 border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)]
-                 hover:text-blue-500 hover:border-blue-500
-                 dark:hover:text-blue-400 dark:hover:border-blue-400
-                 transition-all duration-500 cursor-pointer">
-          结业证书
         </button>
         <button @click="toggleTheme"
                 class="flex items-center justify-center w-6 h-6 rounded-[10px] border border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)] hover:text-blue-500 hover:border-blue-500 dark:hover:text-blue-400 dark:hover:border-blue-400 transition-all duration-500 cursor-pointer"
@@ -471,6 +476,18 @@
       :course-id="courseId"
       :chapter-id="activeChapter"
       :chapter-name="currentChapterTitle"
+    />
+    <NotesDialog
+      v-model:visible="notesDialogVisible"
+      :course-id="courseId"
+      :chapter-id="activeChapter"
+      :chapter-name="currentChapterTitle"
+      :page-number="currentPage"
+    />
+    <ReviewDialog
+      v-model:visible="reviewDialogVisible"
+      :course-id="courseId"
+      :course-name="courseInfo.name"
     />
   </div>
 </template>
