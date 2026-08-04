@@ -44,6 +44,28 @@
                        transition-all duration-500 cursor-pointer">
           {{ tool.label }}
         </button>
+        <button
+          @click="toggleFavorite"
+          :disabled="favoriteLoading"
+          class="hidden md:inline-flex items-center justify-center w-7 h-7 rounded-[10px] border
+                 border-[var(--color-border)] bg-transparent
+                 transition-all duration-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          :class="isFavorite ? 'text-red-500 border-red-400' : 'text-[var(--color-text-secondary)] hover:text-blue-500 hover:border-blue-500 dark:hover:text-blue-400 dark:hover:border-blue-400'"
+          :title="isFavorite ? '取消收藏' : '收藏课程'">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+          </svg>
+        </button>
+        <button
+          @click="openCertificate"
+          class="hidden md:inline-flex items-center px-2 py-1 text-xs rounded-[10px] border
+                 border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)]
+                 hover:text-blue-500 hover:border-blue-500
+                 dark:hover:text-blue-400 dark:hover:border-blue-400
+                 transition-all duration-500 cursor-pointer">
+          结业证书
+        </button>
         <button @click="toggleTheme"
                 class="flex items-center justify-center w-6 h-6 rounded-[10px] border border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)] hover:text-blue-500 hover:border-blue-500 dark:hover:text-blue-400 dark:hover:border-blue-400 transition-all duration-500 cursor-pointer"
                 title="切换主题">

@@ -321,3 +321,49 @@ export async function getCourseMindMap(courseId) {
   const response = await apiClient.get("/courses/" + courseId + "/mindmap");
   return response.data;
 }
+
+/**
+ * 查询课程是否已收藏
+ * GET /api/v1/courses/:courseId/favorite-status
+ */
+export async function getFavoriteStatus(courseId) {
+  const response = await apiClient.get("/courses/" + courseId + "/favorite-status");
+  return response.data;
+}
+
+/**
+ * 收藏课程
+ * POST /api/v1/courses/:courseId/favorite
+ */
+export async function addFavorite(courseId) {
+  const response = await apiClient.post("/courses/" + courseId + "/favorite");
+  return response.data;
+}
+
+/**
+ * 取消收藏
+ * DELETE /api/v1/courses/:courseId/favorite
+ */
+export async function removeFavorite(courseId) {
+  const response = await apiClient.delete("/courses/" + courseId + "/favorite");
+  return response.data;
+}
+
+/**
+ * 获取收藏课程列表
+ * GET /api/v1/favorites
+ * @param {Object} params - { page?, pageSize? }
+ */
+export async function getFavorites(params = {}) {
+  const response = await apiClient.get("/favorites", { params });
+  return response.data;
+}
+
+/**
+ * 查询课程结业状态
+ * GET /api/v1/courses/:courseId/certificate-status
+ */
+export async function getCertificateStatus(courseId) {
+  const response = await apiClient.get("/courses/" + courseId + "/certificate-status");
+  return response.data;
+}

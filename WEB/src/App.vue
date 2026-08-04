@@ -47,6 +47,15 @@
   <!-- 已登录 + 课程思维导图页 -->
   <MindMapPage v-else-if="currentPage === 'mindmap'" />
 
+  <!-- 已登录 + 我的收藏页 -->
+  <FavoritesPage v-else-if="currentPage === 'favorites'" />
+
+  <!-- 已登录 + 结业证书页 -->
+  <CertificatePage v-else-if="currentPage === 'certificate'" />
+
+  <!-- 已登录 + 记忆曲线复习页 -->
+  <ReviewsPage v-else-if="currentPage === 'reviews'" />
+
   <!-- ===== 手机端页面 ===== -->
   <!-- 已登录 + 手机端首页 -->
   <MobileHomePage v-else-if="currentPage === 'mobile-home'" />
@@ -119,6 +128,9 @@ import PdfSplitterPage from "./pages/tools/pdf-splitter/index.vue"; // PDF 分�
 import WeeklyPage from "./pages/weekly/index.vue"; // 学习周报页面
 import LeaderboardPage from "./pages/leaderboard/index.vue"; // 排行榜页面
 import MindMapPage from "./pages/mindmap/index.vue"; // 课程思维导图页面
+import FavoritesPage from "./pages/favorites/index.vue"; // 我的收藏页面
+import CertificatePage from "./pages/certificate/index.vue"; // 结业证书页面
+import ReviewsPage from "./pages/reviews/index.vue"; // 记忆曲线复习页面
 import MobileHomePage from "./pages/mobile-home/index.vue"; // 手机端首页
 import MobileProfilePage from "./pages/mobile-profile/index.vue"; // 手机端个人中心
 import MobileQuizPage from "./pages/mobile-quiz/index.vue"; // 手机端刷题页
@@ -158,6 +170,9 @@ const PATH_TO_PAGE = {
   "/weekly": "weekly",
   "/leaderboard": "leaderboard",
   "/mindmap": "mindmap",
+  "/favorites": "favorites",
+  "/certificate": "certificate",
+  "/reviews": "reviews",
   "/mobile": "mobile-home",
   "/mobile/profile": "mobile-profile",
   "/mobile/quiz": "mobile-quiz",
@@ -189,6 +204,9 @@ const PAGE_TO_PATH = {
   weekly: "/weekly",
   leaderboard: "/leaderboard",
   mindmap: "/mindmap",
+  favorites: "/favorites",
+  certificate: "/certificate",
+  reviews: "/reviews",
   "mobile-home": "/mobile",
   "mobile-profile": "/mobile/profile",
   "mobile-quiz": "/mobile/quiz",
@@ -227,6 +245,9 @@ function parseLocation() {
     const courseId = query.get("courseId");
     if (courseId) params.courseId = courseId;
   } else if (page === "mindmap") {
+    const courseId = query.get("courseId");
+    if (courseId) params.courseId = courseId;
+  } else if (page === "certificate") {
     const courseId = query.get("courseId");
     if (courseId) params.courseId = courseId;
   } else if (page === "quiz") {
@@ -302,6 +323,8 @@ function buildPath(page, params = null) {
     query.set("courseId", params.courseId);
   } else if (page === "mindmap" && params?.courseId) {
     query.set("courseId", params.courseId);
+  } else if (page === "certificate" && params?.courseId) {
+    query.set("courseId", params.courseId);
   } else if (page === "quiz") {
     if (params?.sessionId) query.set("sessionId", params.sessionId);
     if (params?.sessionMode) query.set("mode", params.sessionMode);
@@ -354,7 +377,7 @@ function applyPageState(page, params) {
 
   if (page === "study") {
     studyParams.value = params; // 传递参数给学习页
-  } else if (page === "mindmap") {
+  } else if (page === "mindmap" || page === "certificate") {
     studyParams.value = params; // 思维导图页复用课程参数通道
   } else if (page === "quiz") {
     quizParams.value = params; // 传递参数给刷题页
@@ -376,6 +399,8 @@ function applyPageState(page, params) {
     page === "tools-pdf-splitter" ||
     page === "weekly" ||
     page === "leaderboard" ||
+    page === "favorites" ||
+    page === "reviews" ||
     page === "mobile-billing" ||
     page === "mobile-redeem" ||
     page === "mobile-settings" ||

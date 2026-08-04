@@ -255,6 +255,17 @@ export async function explainQuestion(questionId) {
     .then((res) => res.data);
 }
 
+/**
+ * 获取记忆曲线到期复习清单
+ * GET /api/v1/quiz/wrongbook/due-reviews
+ * @returns {Promise<{ code: number, data: { dueCount, totalWrong, groups } }>}
+ */
+export async function getDueReviews() {
+  return apiClient
+    .get("/quiz/wrongbook/due-reviews")
+    .then((res) => res.data);
+}
+
 // ==================== 题库市场 ====================
 
 /**

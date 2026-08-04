@@ -507,6 +507,22 @@ export default {
     }
 
     /**
+     * 导航到记忆曲线复习页面
+     */
+    function navigateToReviews() {
+      console.log(TAG + " 导航到记忆曲线复习页面");
+      navigate("reviews");
+    }
+
+    /**
+     * 导航到我的收藏页面
+     */
+    function navigateToFavorites() {
+      console.log(TAG + " 导航到我的收藏页面");
+      navigate("favorites");
+    }
+
+    /**
      * 退出登录
      */
     function handleLogout() {
@@ -805,6 +821,8 @@ export default {
       navigateToRedeem,
       navigateToWeekly,
       navigateToLeaderboard,
+      navigateToReviews,
+      navigateToFavorites,
       navigateToQuizImport,
       handleLogout,
 

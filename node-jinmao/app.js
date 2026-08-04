@@ -373,6 +373,12 @@ const quizReportRouter = require("./API/quiz/report");
 const quizWrongbookRouter = require("./API/quiz/wrongbook");
 // 错题 AI 讲解路由：/api/v1/quiz/explain
 const quizExplainRouter = require("./API/quiz/explain");
+// 记忆曲线复习路由：/api/v1/quiz/wrongbook/due-reviews
+const quizDueRouter = require("./API/quiz/due");
+// 课程收藏路由：/api/v1/favorites + /courses/:id/favorite
+const favoritesRouter = require("./API/favorites");
+// 结业证书路由：/api/v1/courses/:id/certificate-status
+const certificateRouter = require("./API/certificate");
 // 题库市场路由：/api/v1/quiz/market*
 const quizMarketRouter = require("./API/quiz/market");
 // 题库详情路由：/api/v1/quiz/textbooks/:id/stats + exams 刷题
@@ -518,6 +524,12 @@ app.use("/api/v1/quiz", quizSessionRouter);
 app.use("/api/v1/quiz", quizReportRouter);
 app.use("/api/v1/quiz", quizWrongbookRouter);
 app.use("/api/v1/quiz", quizExplainRouter);
+app.use("/api/v1/quiz", quizDueRouter);
+console.log("[app] ✅ 记忆曲线复习路由已注册: /api/v1/quiz/wrongbook/due-reviews");
+app.use("/api/v1", favoritesRouter);
+console.log("[app] ✅ 课程收藏路由已注册: /api/v1/favorites、/api/v1/courses/:id/favorite");
+app.use("/api/v1", certificateRouter);
+console.log("[app] ✅ 结业证书路由已注册: /api/v1/courses/:id/certificate-status");
 app.use("/api/v1/quiz", quizMarketRouter);
 app.use("/api/v1/quiz", quizDetailRouter);
 app.use("/api/v1/quiz", quizPublicExamRouter);
