@@ -414,6 +414,12 @@ export default {
     let mindmapPollTimer = null;
     /** 思维导图状态轮询间隔（毫秒） */
     const MINDMAP_POLL_INTERVAL = 3000;
+    /** 思维导图是否正在原地展示（替换 PPT iframe，不离开学习页） */
+    const showMindmap = ref(false);
+    /** 当前章节思维导图文件代理访问 URL（done 状态由状态接口返回） */
+    const mindmapUrl = ref("");
+    /** 思维导图 iframe 加载状态 */
+    const mindmapLoading = ref(false);
 
     // ---- DOM 引用 ----
     const pptContainer = ref(null);
@@ -492,9 +498,17 @@ export default {
 
     /** 思维导图按钮：文案（生成中 / 已生成查看 / 未生成） */
     const mindmapButtonText = computed(() => {
+      if (showMindmap.value) return "返回课件";
       if (isGeneratingMindmap.value || mindmapStatus.value === "generating") return "生成中...";
       if (mindmapStatus.value === "done") return "查看思维导图";
       return "生成思维导图";
+    });
+
+    /** 带主题参数的思维导图 iframe 地址（主题切换时重新计算，配合 :key 强制重载） */
+    const mindmapSrc = computed(() => {
+      if (!mindmapUrl.value) return "";
+      const sep = mindmapUrl.value.includes("?") ? "&" : "?";
+      return mindmapUrl.value + sep + "theme=" + (isDark.value ? "dark" : "light");
     });
 
     /** 当前章节标题 */
@@ -1252,6 +1266,12 @@ export default {
         if (result.code === 0 && result.data) {
           const prev = mindmapStatus.value;
           mindmapStatus.value = result.data.status || "none";
+          // 记录/清空思维导图文件 URL（仅 done 有值，供原地展示 iframe 使用）
+          if (result.data.status === "done") {
+            mindmapUrl.value = result.data.mindmapUrl || "";
+          } else {
+            mindmapUrl.value = "";
+          }
 
           if (result.data.status === "generating") {
             startMindmapPolling(); // 切章回来后仍在生成中 → 恢复轮询
@@ -1301,11 +1321,14 @@ export default {
       stopMindmapPolling();
       mindmapStatus.value = "none";
       isGeneratingMindmap.value = false;
+      showMindmap.value = false;
+      mindmapUrl.value = "";
+      mindmapLoading.value = false;
     }
 
     /**
      * 思维导图按钮点击：
-     * 已生成 → 进入查看页；未生成/失败 → 触发生成并启动轮询
+     * 已生成 → 原地切换 PPT/思维导图；未生成/失败 → 触发生成并启动轮询
      */
     async function handleMindmapClick() {
       const courseId = studyParams?.value?.courseId;
@@ -1316,10 +1339,11 @@ export default {
       }
       if (isGeneratingMindmap.value || mindmapStatus.value === "generating") return; // 防重复点击
 
-      // 已生成：进入查看页
+      // 已生成：原地切换（显示思维导图 / 返回课件），学习页与播放位置保持不变
       if (mindmapStatus.value === "done") {
-        console.log(TAG + " [思维导图] 进入查看页，courseId: " + courseId + "，chapterId: " + chapterId);
-        navigate("mindmap", { courseId, chapterId });
+        showMindmap.value = !showMindmap.value;
+        if (showMindmap.value) mindmapLoading.value = true; // 进入展示时显示加载态（iframe @load 后清除）
+        console.log(TAG + " [思维导图] " + (showMindmap.value ? "展示思维导图" : "返回课件") + "，courseId: " + courseId + "，chapterId: " + chapterId);
         return;
       }
 
@@ -1952,6 +1976,7 @@ export default {
     /** 点按 PPT 区域：切换移动端控制条显隐 */
     function onPptClick() {
       if (!isMobileView.value) return;
+      if (showMindmap.value) return; // 思维导图展示期间不响应控制条点按
       if (mobileControlsVisible.value) {
         hideMobileControls();
       } else {
@@ -2518,6 +2543,10 @@ export default {
       isGeneratingMindmap,
       mindmapEnabled,
       mindmapButtonText,
+      showMindmap,
+      mindmapUrl,
+      mindmapSrc,
+      mindmapLoading,
       handleMindmapClick,
     };
   },

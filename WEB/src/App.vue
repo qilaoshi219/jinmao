@@ -17,9 +17,6 @@
   <!-- 已登录 + 课程学习页 -->
   <StudyPage v-else-if="currentPage === 'study'" />
 
-  <!-- 已登录 + 思维导图查看页 -->
-  <MindmapPage v-else-if="currentPage === 'mindmap'" />
-
   <!-- 已登录 + 刷题页（含报告子页）-->
   <QuizPage v-else-if="currentPage === 'quiz'" />
 
@@ -103,7 +100,6 @@ import { useAuthStore } from "./stores/auth";
 import LoginPage from "./pages/login/index.vue";
 import HomePage from "./pages/home/index.vue";
 import StudyPage from "./pages/study/index.vue";
-import MindmapPage from "./pages/mindmap/index.vue"; // 思维导图查看页
 import QuizPage from "./pages/quiz/index.vue";
 import BillingPage from "./pages/billing/index.vue"; // 账单页面
 import QuizDetailPage from "./pages/quiz-detail/index.vue"; // 题库详情页面
@@ -139,7 +135,6 @@ const authStore = useAuthStore();
 const PATH_TO_PAGE = {
   "/": "home",
   "/study": "study",
-  "/mindmap": "mindmap",
   "/quiz": "quiz",
   "/quiz/report": "quiz", // 刷题报告子视图（params.mode === "report"）
   "/billing": "billing",
@@ -169,7 +164,6 @@ const PATH_TO_PAGE = {
 const PAGE_TO_PATH = {
   home: "/",
   study: "/study",
-  mindmap: "/mindmap",
   quiz: "/quiz",
   billing: "/billing",
   "quiz-detail": "/quiz-detail",
@@ -214,11 +208,6 @@ function parseLocation() {
   } else if (page === "study") {
     const courseId = query.get("courseId");
     if (courseId) params.courseId = courseId;
-  } else if (page === "mindmap") {
-    const courseId = query.get("courseId");
-    const chapterId = query.get("chapterId");
-    if (courseId) params.courseId = courseId;
-    if (chapterId) params.chapterId = chapterId;
   } else if (page === "quiz") {
     if (pathname === "/quiz/report") {
       const reportId = query.get("reportId");
@@ -290,9 +279,6 @@ function buildPath(page, params = null) {
     return "/p/" + encodeURIComponent(params.token);
   } else if (page === "study" && params?.courseId) {
     query.set("courseId", params.courseId);
-  } else if (page === "mindmap") {
-    if (params?.courseId) query.set("courseId", params.courseId);
-    if (params?.chapterId) query.set("chapterId", params.chapterId);
   } else if (page === "quiz") {
     if (params?.sessionId) query.set("sessionId", params.sessionId);
     if (params?.sessionMode) query.set("mode", params.sessionMode);
@@ -320,9 +306,6 @@ const currentPage = ref("home");
 /** 学习页参数（课程 ID 等），由首页传递，学习页接收 */
 const studyParams = ref(null);
 
-/** 思维导图页参数（courseId/chapterId），由学习页传递 */
-const mindmapParams = ref(null);
-
 /** 刷题页参数（sessionId/reportId/mode），由首页或刷题页传递 */
 const quizParams = ref(null);
 
@@ -348,8 +331,6 @@ function applyPageState(page, params) {
 
   if (page === "study") {
     studyParams.value = params; // 传递参数给学习页
-  } else if (page === "mindmap") {
-    mindmapParams.value = params; // 传递参数给思维导图查看页
   } else if (page === "quiz") {
     quizParams.value = params; // 传递参数给刷题页
   } else if (page === "quiz-detail") {
@@ -380,7 +361,6 @@ function applyPageState(page, params) {
   } else {
     // 非参数页面：清空所有参数
     studyParams.value = null;
-    mindmapParams.value = null;
     quizParams.value = null;
     quizDetailParams.value = null;
     publicStatsParams.value = null;
@@ -476,8 +456,6 @@ provide("navigate", changePage);
 provide("goBack", goBack);
 // 提供学习页参数给 StudyPage 组件
 provide("studyParams", studyParams);
-// 提供思维导图页参数给 MindmapPage 组件
-provide("mindmapParams", mindmapParams);
 // 提供刷题页参数给 QuizPage 组件（含报告页）
 provide("quizParams", quizParams);
 // 提供题库详情页参数给 QuizDetailPage 组件

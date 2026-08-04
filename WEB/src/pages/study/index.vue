@@ -152,7 +152,7 @@
           <span class="absolute bottom-3 right-3 text-blue-500 dark:text-blue-400 font-mono text-xs select-none z-10">&#9700;</span>
 
           <!-- 页码指示器（top-12 避开上方工具横条） -->
-          <div class="absolute top-12 right-10 z-20 font-mono text-xs tracking-wider px-2 py-0.5 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)] text-blue-500 dark:text-blue-400">
+          <div v-show="!showMindmap" class="absolute top-12 right-10 z-20 font-mono text-xs tracking-wider px-2 py-0.5 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)] text-blue-500 dark:text-blue-400">
             {{ currentPage }} / {{ totalPages }}
           </div>
 
@@ -188,7 +188,7 @@
             <!-- PPT iframe：固定 1920×1080 渲染，通过 transform scale 缩放适配容器 -->
             <!-- 使用 translate(-50%,-50%) + scale 实现居中等比缩放，无论容器比例如何变化都不会错位 -->
             <!-- pointer-events-none + tabindex=-1 + scrolling=no：iframe 为纯展示，不与用户交互（不可点击/选中/滚动） -->
-            <iframe v-show="!pptLoading && currentPptUrl"
+            <iframe v-show="!pptLoading && currentPptUrl && !showMindmap"
               :key="currentPptUrl"
               :src="currentPptUrl"
               class="absolute border-none z-10 pointer-events-none select-none"
@@ -206,8 +206,24 @@
               @error="pptLoading = false"
             ></iframe>
 
+            <!-- 思维导图 iframe：原地替换 PPT 展示（可交互：折叠/展开/拖动/缩放） -->
+            <div v-if="showMindmap && mindmapLoading" class="absolute inset-0 flex flex-col items-center justify-center z-10 bg-[var(--color-card)]">
+              <svg class="w-8 h-8 text-blue-500 dark:text-blue-400 mb-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              <span class="text-xs text-[var(--color-text-secondary)]">思维导图加载中...</span>
+            </div>
+            <iframe v-if="showMindmap"
+                    :key="isDark ? 'dark' : 'light'"
+                    :src="mindmapSrc"
+                    class="absolute inset-0 w-full h-full border-none z-10"
+                    sandbox="allow-scripts allow-same-origin"
+                    @load="mindmapLoading = false"
+            ></iframe>
+
             <!-- 全屏按钮（桌面端，hover 显示） -->
             <button @click.stop="toggleFullscreen"
+                    v-show="!showMindmap"
                     class="absolute top-2 right-2 z-30 items-center justify-center w-7 h-7 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-text-secondary)] hover:text-blue-500 hover:border-blue-500 dark:hover:text-blue-400 dark:hover:border-blue-400 transition-all duration-500 cursor-pointer opacity-0 pointer-events-none ppt-hover-show"
                     :class="isMobileView ? 'hidden' : 'flex'"
                     title="全屏">
@@ -221,6 +237,7 @@
 
             <!-- 全屏按钮（移动端，常驻显示，切换横屏 3:7 布局） -->
             <button @click.stop="toggleMobileFullscreen"
+                    v-show="!showMindmap"
                     class="absolute top-2 right-2 z-30 items-center justify-center w-7 h-7 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-text-secondary)] hover:text-blue-500 hover:border-blue-500 dark:hover:text-blue-400 dark:hover:border-blue-400 transition-all duration-500 cursor-pointer"
                     :class="isMobileView ? 'flex' : 'hidden'"
                     :title="mobileFullscreen ? '退出全屏' : '全屏'">
@@ -233,7 +250,7 @@
             </button>
 
             <!-- 字幕层 -->
-            <div class="absolute left-0 right-0 z-20 text-center px-6" style="bottom:4.5rem;">
+            <div v-show="!showMindmap" class="absolute left-0 right-0 z-20 text-center px-6" style="bottom:4.5rem;">
               <p class="text-base md:text-lg font-bold leading-relaxed select-none pointer-events-none"
                  style="color:#000;text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff,0 0 8px rgba(0,0,0,0.15);">
                 {{ subtitleText }}
@@ -242,6 +259,7 @@
 
             <!-- 播放控件 (桌面 hover 显示；移动端点按 PPT 显示，5 秒自动隐藏) -->
             <div ref="playerControls"
+                 v-show="!showMindmap"
                  class="absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-[400ms]"
                  style="opacity:0;pointer-events:none;"
                  @click.stop
