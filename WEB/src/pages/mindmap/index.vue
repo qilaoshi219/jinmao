@@ -57,7 +57,8 @@
 
       <!-- 思维导图 iframe：全屏展示 markmap HTML -->
       <iframe v-show="!loading && mindmapUrl"
-              :src="mindmapUrl"
+              :key="isDark ? 'dark' : 'light'"
+              :src="mindmapSrc"
               class="absolute inset-0 w-full h-full border-none z-10"
               sandbox="allow-scripts allow-same-origin"
               @load="onMindmapLoad"

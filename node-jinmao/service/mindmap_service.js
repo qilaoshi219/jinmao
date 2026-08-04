@@ -202,6 +202,9 @@ async function generateMarkdownOutline(userId, course, chapter, outline) {
 /**
  * 组装自包含 markmap HTML
  * markdown 以 <script type="text/template"> 内嵌，避免 # 标题被当作 HTML 解析
+ * 主题处理：内嵌脚本读取 URL 的 ?theme=dark/light（缺省跟随系统偏好），
+ * 给 body 添加/移除 markmap-dark class（markmap 官方暗黑变量，节点文字 #eee），
+ * 同时覆盖 body 背景色，确保深色模式下节点文本可读
  */
 function buildMindmapHtml(markdown, title) {
   const escapedTitle = escapeHtml(title || "思维导图");
@@ -209,6 +212,17 @@ function buildMindmapHtml(markdown, title) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+  const themeScript = [
+    "(function () {",
+    "  var theme = new URLSearchParams(location.search).get('theme');",
+    "  if (theme !== 'dark' && theme !== 'light') {",
+    "    theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';",
+    "  }",
+    "  var dark = theme === 'dark';",
+    "  document.body.classList.toggle('markmap-dark', dark);",
+    "  document.body.style.background = dark ? '#141414' : '#ffffff';",
+    "})();",
+  ].join("\n");
 
   return [
     "<!DOCTYPE html>",
@@ -220,10 +234,10 @@ function buildMindmapHtml(markdown, title) {
     "<style>",
     "  html, body { height: 100%; margin: 0; overflow: hidden; background: #ffffff; }",
     "  .markmap { width: 100%; height: 100%; }",
-    "  @media (prefers-color-scheme: dark) { html, body { background: #141414; } }",
     "</style>",
     "</head>",
     "<body>",
+    "<script>" + themeScript + "</script>",
     '<div class="markmap"><script type="text/template">',
     escapedMarkdown,
     "</script></div>",

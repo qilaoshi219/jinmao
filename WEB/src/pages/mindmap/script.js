@@ -11,7 +11,7 @@
 // 依赖关系：useTheme、api/mindmap、api/books
 // ============================================================================
 
-import { ref, inject, onMounted } from "vue";
+import { ref, inject, computed, onMounted } from "vue";
 import { useTheme } from "../../composables/useTheme";
 import { getMindmapStatus } from "../../api/mindmap";
 import { getBookDetail } from "../../api/books";
@@ -35,6 +35,16 @@ export default {
     // ==================== 响应式数据 ====================
     /** 思维导图 HTML 代理访问 URL（为空则显示未生成空态） */
     const mindmapUrl = ref("");
+    /**
+     * 带主题参数的 iframe 地址
+     * 主题切换时重新计算（配合模板 :key 强制 iframe 重载），
+     * 让思维导图 HTML 通过 ?theme=dark/light 应用 markmap 暗黑样式
+     */
+    const mindmapSrc = computed(() => {
+      if (!mindmapUrl.value) return "";
+      const sep = mindmapUrl.value.includes("?") ? "&" : "?";
+      return mindmapUrl.value + sep + "theme=" + (isDark.value ? "dark" : "light");
+    });
     /** 页面加载状态（查询状态 + iframe 首次加载前） */
     const loading = ref(true);
     /** 顶栏标题：章节名 · 思维导图 */
@@ -94,6 +104,7 @@ export default {
       // 数据
       title,
       mindmapUrl,
+      mindmapSrc,
       loading,
       onMindmapLoad,
     };
