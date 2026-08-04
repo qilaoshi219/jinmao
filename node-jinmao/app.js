@@ -379,14 +379,6 @@ const quizDueRouter = require("./API/quiz/due");
 const favoritesRouter = require("./API/favorites");
 // 结业证书路由：/api/v1/courses/:id/certificate-status
 const certificateRouter = require("./API/certificate");
-// 课程笔记路由：/api/v1/notes + /courses/:id/notes
-const notesRouter = require("./API/notes");
-// 课程评价路由：/api/v1/courses/:id/reviews
-const reviewsRouter = require("./API/reviews");
-// 公开课广场路由：/api/v1/courses/market + /courses/:id/borrow|publish
-const courseMarketRouter = require("./API/course_market");
-// 教材全文检索路由：/api/v1/courses/search
-const searchRouter = require("./API/search");
 // 题库市场路由：/api/v1/quiz/market*
 const quizMarketRouter = require("./API/quiz/market");
 // 题库详情路由：/api/v1/quiz/textbooks/:id/stats + exams 刷题
@@ -538,14 +530,6 @@ app.use("/api/v1", favoritesRouter);
 console.log("[app] ✅ 课程收藏路由已注册: /api/v1/favorites、/api/v1/courses/:id/favorite");
 app.use("/api/v1", certificateRouter);
 console.log("[app] ✅ 结业证书路由已注册: /api/v1/courses/:id/certificate-status");
-app.use("/api/v1", notesRouter);
-console.log("[app] ✅ 课程笔记路由已注册: /api/v1/notes");
-app.use("/api/v1", reviewsRouter);
-console.log("[app] ✅ 课程评价路由已注册: /api/v1/courses/:id/reviews");
-app.use("/api/v1", courseMarketRouter);
-console.log("[app] ✅ 公开课广场路由已注册: /api/v1/courses/market");
-app.use("/api/v1", searchRouter);
-console.log("[app] ✅ 全文检索路由已注册: /api/v1/courses/search");
 app.use("/api/v1/quiz", quizMarketRouter);
 app.use("/api/v1/quiz", quizDetailRouter);
 app.use("/api/v1/quiz", quizPublicExamRouter);

@@ -36,9 +36,6 @@
       @navigate-leaderboard="navigateToLeaderboard"
       @navigate-reviews="navigateToReviews"
       @navigate-favorites="navigateToFavorites"
-      @navigate-notes="navigateToNotes"
-      @navigate-plaza="navigateToPlaza"
-      @navigate-course-search="navigateToCourseSearch"
     />
 
     <!-- ========== 右侧主区域 ========== -->

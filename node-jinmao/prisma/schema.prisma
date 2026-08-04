@@ -36,9 +36,6 @@ model User {
 
   courses          Course[]               // 课程列表
   favorites        CourseFavorite[]       // 收藏的课程
-  notes            CourseNote[]           // 课程笔记
-  reviews          CourseReview[]         // 课程评价
-  courseBorrows    CourseBorrow[]         // 借用的公开课
   studyRecords     UserStudyRecord[]    // 用户学习记录
   dailyActivities  UserDailyActivity[]  // 用户每日活动记录
   quizTextbooks    QuizTextbook[]       // 题库列表
@@ -71,7 +68,6 @@ model Course {
   maxline            Int       @default(0) @map("maxline") @db.UnsignedInt       // MD 文件总行数（持久化的权威值，用于判断教材是否已全部生成完毕）
   pipelineStatus     String    @default("idle") @map("pipeline_status") @db.VarChar(30) // 流水线状态（idle/extracting/indexing/.../completed）
   pipelineProgress   String?   @map("pipeline_progress") @db.VarChar(1000)      // 流水线进度 JSON（outlineStartTime/totalSlides/elaborationCompleted/filesCompleted）
-  isPublic           Boolean   @default(false) @map("is_public")                // 是否发布为公开课（广场可借阅）
   createTime         DateTime  @default(now()) @map("create_time")              // 创建时间
   updateTime         DateTime  @updatedAt @map("update_time")                   // 更新时间
   isDeleted          Boolean   @default(false) @map("is_deleted")               // 软删除标记
@@ -81,9 +77,6 @@ model Course {
   studyRecords       UserStudyRecord[]                                            // 该课程的学习记录（Prisma 虚拟关系）
   aiConversations    AiConversation[]                                              // AI 助教对话（Prisma 虚拟关系）
   favorites          CourseFavorite[]                                              // 收藏记录（Prisma 虚拟关系）
-  notes              CourseNote[]                                                  // 课程笔记（Prisma 虚拟关系）
-  reviews            CourseReview[]                                                // 课程评价（Prisma 虚拟关系）
-  courseBorrows      CourseBorrow[]                                                // 公开课借用记录（Prisma 虚拟关系）
 
   @@map("Course")
 }
@@ -111,7 +104,6 @@ model Chapter {
 
   studyRecords  UserStudyRecord[]                                             // 该章节的学习记录（Prisma 虚拟关系）
   aiConversations AiConversation[]                                            // AI 助教对话（Prisma 虚拟关系）
-  notes         CourseNote[]                                                   // 章节笔记（Prisma 虚拟关系）
 
   @@map("Chapter")
 }
@@ -129,60 +121,6 @@ model CourseFavorite {
 
   @@unique([userId, courseId]) // 同一用户同一课程只能收藏一次
   @@map("CourseFavorite")
-}
-
-// ==================== 课程笔记表 CourseNote ====================
-// 记录用户在课程-章节-页码维度的笔记（可选高亮色标记）
-model CourseNote {
-  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt // 笔记ID，主键自增
-  userId     BigInt   @map("user_id") @db.UnsignedBigInt               // 用户ID
-  courseId   BigInt   @map("course_id") @db.UnsignedBigInt             // 课程ID
-  chapterId  BigInt   @map("chapter_id") @db.UnsignedBigInt            // 章节ID
-  pageNumber Int      @default(1) @map("page_number") @db.UnsignedInt  // 页码
-  color      String   @default("yellow") @db.VarChar(20)               // 标记色：yellow/green/blue/pink
-  content    String   @db.Text                                         // 笔记内容
-  createTime DateTime @default(now()) @map("create_time")              // 创建时间
-  updateTime DateTime @updatedAt @map("update_time")                   // 更新时间
-
-  user    User    @relation(fields: [userId], references: [id])       // 所属用户
-  course  Course  @relation(fields: [courseId], references: [id])     // 所属课程
-  chapter Chapter @relation(fields: [chapterId], references: [id])    // 所属章节
-
-  @@index([userId, courseId])
-  @@map("CourseNote")
-}
-
-// ==================== 课程评价表 CourseReview ====================
-// 记录用户对课程的评分与评价，同一用户同一课程仅一条（联合唯一）
-model CourseReview {
-  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt // 评价ID，主键自增
-  userId     BigInt   @map("user_id") @db.UnsignedBigInt               // 用户ID
-  courseId   BigInt   @map("course_id") @db.UnsignedBigInt             // 课程ID
-  rating     Int      @default(5) @db.UnsignedInt                      // 评分 1-5
-  content    String   @db.Text                                         // 评价内容
-  createTime DateTime @default(now()) @map("create_time")              // 创建时间
-  updateTime DateTime @updatedAt @map("update_time")                   // 更新时间
-
-  user   User   @relation(fields: [userId], references: [id])     // 评价用户
-  course Course @relation(fields: [courseId], references: [id])   // 被评价课程
-
-  @@unique([userId, courseId]) // 同一用户同一课程仅一条评价
-  @@map("CourseReview")
-}
-
-// ==================== 公开课借用表 CourseBorrow ====================
-// 记录用户借用的公开课（类似题库市场借用），联合唯一约束 (userId, courseId)
-model CourseBorrow {
-  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt // 记录ID，主键自增
-  userId     BigInt   @map("user_id") @db.UnsignedBigInt               // 借用者用户ID
-  courseId   BigInt   @map("course_id") @db.UnsignedBigInt             // 被借用的课程ID
-  createTime DateTime @default(now()) @map("create_time")              // 借用时间
-
-  user   User   @relation(fields: [userId], references: [id])     // 借用者
-  course Course @relation(fields: [courseId], references: [id])   // 被借课程
-
-  @@unique([userId, courseId]) // 同一用户同一课程只能借用一次
-  @@map("CourseBorrow")
 }
 
 // ==================== AI 助教对话表 AiConversation ====================

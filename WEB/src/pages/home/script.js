@@ -523,30 +523,6 @@ export default {
     }
 
     /**
-     * 导航到我的笔记页面
-     */
-    function navigateToNotes() {
-      console.log(TAG + " 导航到我的笔记页面");
-      navigate("notes");
-    }
-
-    /**
-     * 导航到公开课广场页面
-     */
-    function navigateToPlaza() {
-      console.log(TAG + " 导航到公开课广场页面");
-      navigate("plaza");
-    }
-
-    /**
-     * 导航到教材全文检索页面
-     */
-    function navigateToCourseSearch() {
-      console.log(TAG + " 导航到教材全文检索页面");
-      navigate("course-search");
-    }
-
-    /**
      * 退出登录
      */
     function handleLogout() {
@@ -847,9 +823,6 @@ export default {
       navigateToLeaderboard,
       navigateToReviews,
       navigateToFavorites,
-      navigateToNotes,
-      navigateToPlaza,
-      navigateToCourseSearch,
       navigateToQuizImport,
       handleLogout,
 

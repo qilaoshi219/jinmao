@@ -48,8 +48,6 @@ import AiChatPanel from "./AiChatPanel.vue"; // AI 助教面板组件（桌面�
 import ChapterList from "./ChapterList.vue"; // 章节列表组件（桌面左栏/移动端面板复用）
 import ReviewOutlineDialog from "./ReviewOutlineDialog.vue"; // 复习提纲弹窗
 import ChapterQuizDialog from "./ChapterQuizDialog.vue"; // 章节测验弹窗
-import NotesDialog from "./NotesDialog.vue"; // 课程笔记弹窗
-import ReviewDialog from "./ReviewDialog.vue"; // 课程评价弹窗
 
 // ============================================================================
 // 一、常量定义
@@ -180,8 +178,6 @@ export default {
     ChapterList,
     ReviewOutlineDialog,
     ChapterQuizDialog,
-    NotesDialog,
-    ReviewDialog,
   },
   /**
    * 使用 inject('navigate') 导航，由 App.vue provide
@@ -531,46 +527,16 @@ export default {
       navigate("mindmap", { courseId: courseId.value });
     }
 
+    /** 顶栏学习工具按钮列表 */
+    const studyTools = computed(() => [
+      { key: "outline", label: "复习提纲", handler: openReviewOutline },
+      { key: "quiz", label: "本章测验", handler: openChapterQuiz },
+      { key: "mindmap", label: "思维导图", handler: openMindMap },
+    ]);
+
     // ========================================================================
     // 3.15.1 收藏 + 结业证书
     // ========================================================================
-
-    /** 笔记弹窗可见性 */
-    const notesDialogVisible = ref(false);
-    /** 课程评价弹窗可见性 */
-    const reviewDialogVisible = ref(false);
-
-    /** 打开本页笔记弹窗 */
-    function openNotes() {
-      if (!courseId.value || !activeChapter.value) {
-        ElMessage.warning("请先进入一个章节再查看笔记");
-        return;
-      }
-      notesDialogVisible.value = true;
-    }
-
-    /** 打开课程评价弹窗 */
-    function openReview() {
-      if (!courseId.value) {
-        ElMessage.warning("课程尚未加载完成，请稍后再试");
-        return;
-      }
-      reviewDialogVisible.value = true;
-    }
-
-    /** 顶栏「工具」下拉菜单分发 */
-    function handleToolCommand(command) {
-      const handlers = {
-        outline: openReviewOutline,
-        quiz: openChapterQuiz,
-        mindmap: openMindMap,
-        certificate: openCertificate,
-        notes: openNotes,
-        review: openReview,
-      };
-      const handler = handlers[command];
-      if (handler) handler();
-    }
 
     /** 是否已收藏 */
     const isFavorite = ref(false);
@@ -759,17 +725,7 @@ export default {
           // ========== 选中目标章节：优先恢复上次进度，其次选第一个已完成/部分完成章节 ==========
           if (chapters.value.length > 0) {
             let targetChapter;
-            // 支持从全文检索/笔记跳转：URL 携带 chapterId 时直达该章节
-            const jumpChapterId = studyParams?.value?.chapterId;
-            const jumpTarget = jumpChapterId
-              ? chapters.value.find(
-                  (c) => String(c.id) === String(jumpChapterId) && VALID_COMPLETED_STATUSES.includes(c.status)
-                )
-              : null;
-            if (jumpTarget) {
-              targetChapter = jumpTarget;
-              console.log(TAG + " 通过章节参数直达章节: " + targetChapter.title);
-            } else if (restoredChapter) {
+            if (restoredChapter) {
               targetChapter = restoredChapter;
             } else {
               const firstCompleted = chapters.value.find((c) => VALID_COMPLETED_STATUSES.includes(c.status));
@@ -2518,9 +2474,7 @@ export default {
       openReviewOutline,
       openChapterQuiz,
       openMindMap,
-      handleToolCommand,
-      notesDialogVisible,
-      reviewDialogVisible,
+      studyTools,
 
       // 收藏 + 结业证书
       isFavorite,

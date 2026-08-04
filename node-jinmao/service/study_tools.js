@@ -301,7 +301,7 @@ async function getCourseMindMap(userId, courseId) {
   for (const ch of chapters) {
     const outline = await loadOutline(course, ch);
     const slides = (outline?.slides || []).map((s) => ({
-      page: (s.id || 0) + 1, // 大纲 slide id 为 0 基，页面展示为 1 基
+      page: s.id,
       title: extractSlideTitle(s.ppt),
     })).filter((s) => s.title);
     chapterNodes.push({
