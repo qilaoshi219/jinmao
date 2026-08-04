@@ -22,7 +22,15 @@
 
     <!-- 中间：搜索框 — 透明背景 + 聚焦蓝色边框 -->
     <div class="flex-1 max-w-[480px] min-w-0 mx-8">
-      <el-input placeholder="搜索教材..." size="small" clearable class="nerv-search-input">
+      <el-input
+        v-model="keyword"
+        placeholder="搜索教材..."
+        size="small"
+        clearable
+        class="nerv-search-input"
+        @keyup.enter="handleSearch"
+        @clear="handleSearch"
+      >
         <template #prefix>
           <svg class="w-[16px] h-[16px] text-gray-400 dark:text-gray-500"
                fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -114,10 +122,11 @@ const props = defineProps({
 });
 
 // ========== Emits ==========
-const emit = defineEmits(["toggle-theme", "logout"]);
+const emit = defineEmits(["toggle-theme", "logout", "search"]);
 
 // ========== 响应式状态 ==========
 const showUserMenu = ref(false);
+const keyword = ref("");
 
 // ========== 计算属性 ==========
 const userInitial = computed(() => {
@@ -130,6 +139,12 @@ const userName = computed(() => {
 });
 
 // ========== 方法 ==========
+/** 触发教材搜索（回车 / 点击清除），把关键词冒泡给父组件 */
+function handleSearch() {
+  console.log(TAG + " 搜索: " + (keyword.value || "清除搜索"));
+  emit("search", keyword.value);
+}
+
 function handleLogout() {
   showUserMenu.value = false;
   console.log(TAG + " 用户退出登录");

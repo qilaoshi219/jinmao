@@ -43,6 +43,7 @@
         :is-dark="isDark"
         @toggle-theme="toggleTheme"
         @logout="handleLogout"
+        @search="handleSearch"
       />
 
       <!-- ========== 主内容区 ========== -->
@@ -304,11 +305,11 @@
             </svg>
             <p class="text-black dark:text-white text-base font-medium mb-1
                       transition-colors duration-500">
-              还没有教材
+              {{ keyword ? '没有找到匹配的教材' : '还没有教材' }}
             </p>
             <p class="text-slate-500 dark:text-slate-400 text-sm
                       transition-colors duration-500">
-              点击"上传教材"按钮上传你的第一份教材
+              {{ keyword ? '换个关键词试试' : '点击"上传教材"按钮上传你的第一份教材' }}
             </p>
           </div>
 

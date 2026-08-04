@@ -360,6 +360,17 @@ export default {
     }
 
     /**
+     * 搜索教材（重置到第1页）
+     * @param {string} kw - 搜索关键词
+     */
+    function handleSearch(kw) {
+      console.log(TAG + " 搜索: " + (kw || "清除搜索"));
+      keyword.value = kw || "";
+      currentPage.value = 1;
+      loadCourses();
+    }
+
+    /**
      * 进入课程学习页
      * 仅当课程流水线已完成（或部分完成/失败）时才允许进入
      * @param {string|number} courseId - 教材 ID
@@ -733,6 +744,7 @@ export default {
       total,
       currentPage,
       pageSize,
+      keyword,
       uploadDialogVisible,
       isUploading,
       activeMenu,
@@ -765,6 +777,7 @@ export default {
       // 方法
       toggleTheme,
       loadCourses,
+      handleSearch,
       openUploadDialog,
       onUploadSuccess,
       onPageChange,
