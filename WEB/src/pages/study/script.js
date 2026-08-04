@@ -965,17 +965,17 @@ export default {
     // 3.8 侧边栏
     // ========================================================================
 
-    /** 折叠/展开左侧边栏 */
+    /** 折叠/展开左侧边栏（宽度与内容显隐由模板响应式绑定控制） */
     function toggleSidebar() {
       sidebarExpanded.value = !sidebarExpanded.value;
-      const sidebar = document.getElementById("left-sidebar");
-      const nav = document.getElementById("sidebar-nav");
-      if (sidebar) {
-        sidebar.style.width = sidebarExpanded.value ? "224px" : "40px";
-        if (nav) {
-          nav.style.display = sidebarExpanded.value ? "" : "none";
-        }
+    }
+
+    /** 左侧拖动手柄 mousedown：折叠状态下先展开再拖动，避免出现无内容的空栏 */
+    function onLeftHandleMouseDown(e) {
+      if (!sidebarExpanded.value) {
+        toggleSidebar();
       }
+      startResize('left', e);
     }
 
     // ========================================================================
@@ -2258,6 +2258,7 @@ export default {
 
       // 侧边栏
       startResize,
+      onLeftHandleMouseDown,
       sidebarExpanded,
       toggleSidebar,
 

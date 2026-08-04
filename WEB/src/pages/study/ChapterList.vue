@@ -11,8 +11,8 @@
 
 <template>
   <div class="flex-1 flex flex-col min-h-0">
-    <!-- 章节列表（navId 用于桌面端折叠时定位） -->
-    <nav :id="navId || undefined" class="flex-1 overflow-y-auto no-scrollbar py-1">
+    <!-- 章节列表 -->
+    <nav class="flex-1 overflow-y-auto no-scrollbar py-1">
       <!-- 加载中占位 -->
       <div v-if="courseLoading" class="px-3 py-4 text-center">
         <span class="text-[10px] text-[var(--color-text-secondary)]">章节加载中...</span>
@@ -171,8 +171,6 @@ defineProps({
   getChapterProgressBarWidth: { type: Function, required: true },
   /** 进度计数文字函数 */
   getChapterProgressCountText: { type: Function, required: true },
-  /** 列表容器 id（仅桌面端传 "sidebar-nav"，供折叠逻辑定位） */
-  navId: { type: String, default: "" },
 });
 
 defineEmits(["select", "generate-next"]);

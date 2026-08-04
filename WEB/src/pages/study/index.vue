@@ -62,19 +62,20 @@
 
       <!-- === 左侧边栏：课程目录 === -->
       <aside id="left-sidebar"
-             class="flex-col flex-shrink-0 bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)] transition-colors duration-500"
+             class="flex-col flex-shrink-0 overflow-hidden bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)] transition-all duration-500"
              :class="isMobileView ? 'hidden' : 'md:flex'"
-             style="width:224px;">
+             :style="{ width: sidebarExpanded ? '224px' : '40px' }">
         <!-- 标题 -->
-        <div class="flex items-center justify-between px-3 py-2.5 border-b border-[var(--color-border)]">
-          <div class="flex items-center gap-1.5">
+        <div class="flex items-center border-b border-[var(--color-border)] transition-colors duration-500"
+             :class="sidebarExpanded ? 'justify-between px-3 py-2.5' : 'justify-center py-2.5'">
+          <div v-show="sidebarExpanded" class="flex items-center gap-1.5">
             <span class="text-blue-500 dark:text-blue-400 font-mono text-xs select-none">◤</span>
             <span class="text-xs font-semibold text-black dark:text-white">课程目录</span>
             <span class="text-blue-500 dark:text-blue-400 font-mono text-xs select-none">◢</span>
           </div>
           <button @click="toggleSidebar"
                   class="flex items-center justify-center w-5 h-5 rounded-[10px] border border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)] hover:text-blue-500 dark:hover:text-blue-400 hover:border-blue-500 dark:hover:border-blue-400 transition-all duration-500 cursor-pointer"
-                  title="折叠目录">
+                  :title="sidebarExpanded ? '折叠目录' : '展开目录'">
             <svg v-show="sidebarExpanded" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
             </svg>
@@ -83,9 +84,9 @@
             </svg>
           </button>
         </div>
-        <!-- 章节列表（桌面端折叠时通过 nav-id 定位隐藏列表） -->
+        <!-- 章节列表（折叠时整体隐藏，包括底部状态与生成按钮） -->
         <ChapterList
-          nav-id="sidebar-nav"
+          v-show="sidebarExpanded"
           :chapters="chapters"
           :active-chapter="activeChapter"
           :chapter-loading="chapterLoading"
@@ -110,7 +111,7 @@
            class="flex-shrink-0 w-[6px] cursor-col-resize relative z-20 transition-colors duration-500 hover:bg-blue-500 dark:hover:bg-blue-400"
            :class="isMobileView ? 'hidden' : 'md:block'"
            style="background:var(--color-border);"
-           @mousedown="startResize('left', $event)">
+           @mousedown="onLeftHandleMouseDown">
         <div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-blue-500 dark:bg-blue-400 opacity-0 group-hover:opacity-100"></div>
       </div>
 
