@@ -284,3 +284,40 @@ export async function checkPdfPages(file) {
 
   return response.data;
 }
+
+/**
+ * 生成课程复习提纲
+ * POST /api/v1/courses/:courseId/review-outline
+ * @param {string|number} courseId - 课程 ID
+ * @returns {Promise} 后端返回 { code, message, data: { courseId, outline } }
+ */
+export async function generateReviewOutline(courseId) {
+  console.log(TAG + "[generateReviewOutline] 生成复习提纲，courseId: " + courseId);
+  const response = await apiClient.post("/courses/" + courseId + "/review-outline");
+  return response.data;
+}
+
+/**
+ * 生成章节测验
+ * POST /api/v1/courses/:courseId/chapters/:chapterId/quiz
+ * @param {string|number} courseId - 课程 ID
+ * @param {string|number} chapterId - 章节 ID
+ * @returns {Promise} 后端返回 { code, message, data: { courseId, chapterId, chapterName, questions } }
+ */
+export async function generateChapterQuiz(courseId, chapterId) {
+  console.log(TAG + "[generateChapterQuiz] 生成章节测验，chapterId: " + chapterId);
+  const response = await apiClient.post("/courses/" + courseId + "/chapters/" + chapterId + "/quiz");
+  return response.data;
+}
+
+/**
+ * 获取课程思维导图数据
+ * GET /api/v1/courses/:courseId/mindmap
+ * @param {string|number} courseId - 课程 ID
+ * @returns {Promise} 后端返回 { code, message, data: { courseId, courseName, chapters } }
+ */
+export async function getCourseMindMap(courseId) {
+  console.log(TAG + "[getCourseMindMap] 获取思维导图，courseId: " + courseId);
+  const response = await apiClient.get("/courses/" + courseId + "/mindmap");
+  return response.data;
+}

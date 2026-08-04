@@ -33,17 +33,28 @@
       </button>
       <!-- 中间：课程标题 -->
       <span class="text-xs text-[var(--color-text-secondary)] truncate max-w-[50%]">{{ courseInfo.name || '加载中...' }}</span>
-      <!-- 右侧：主题切换 -->
-      <button @click="toggleTheme"
-              class="flex items-center justify-center w-6 h-6 rounded-[10px] border border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)] hover:text-blue-500 hover:border-blue-500 dark:hover:text-blue-400 dark:hover:border-blue-400 transition-all duration-500 cursor-pointer"
-              title="切换主题">
-        <svg v-show="isDark" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="5" stroke-width="2"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <svg v-show="!isDark" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
+      <!-- 右侧：学习工具 -->
+      <div class="flex items-center gap-1.5">
+        <button v-for="tool in studyTools" :key="tool.key"
+                @click="tool.handler"
+                class="hidden md:inline-flex items-center px-2 py-1 text-xs rounded-[10px] border
+                       border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)]
+                       hover:text-blue-500 hover:border-blue-500
+                       dark:hover:text-blue-400 dark:hover:border-blue-400
+                       transition-all duration-500 cursor-pointer">
+          {{ tool.label }}
+        </button>
+        <button @click="toggleTheme"
+                class="flex items-center justify-center w-6 h-6 rounded-[10px] border border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)] hover:text-blue-500 hover:border-blue-500 dark:hover:text-blue-400 dark:hover:border-blue-400 transition-all duration-500 cursor-pointer"
+                title="切换主题">
+          <svg v-show="isDark" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="5" stroke-width="2"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <svg v-show="!isDark" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
     <!-- 文件补全横幅 -->
@@ -426,6 +437,19 @@
         />
       </div>
     </div>
+
+    <!-- 学习工具弹窗 -->
+    <ReviewOutlineDialog
+      v-model:visible="reviewOutlineVisible"
+      :course-id="courseId"
+      :course-name="courseInfo.name"
+    />
+    <ChapterQuizDialog
+      v-model:visible="chapterQuizVisible"
+      :course-id="courseId"
+      :chapter-id="activeChapter"
+      :chapter-name="currentChapterTitle"
+    />
   </div>
 </template>
 
