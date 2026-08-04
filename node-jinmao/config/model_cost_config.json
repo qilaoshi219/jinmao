@@ -26,6 +26,9 @@
           "grsai": {
             "gpt-image-2": {
               "per_image": 0.037
+            },
+            "gpt-image-2-vip": {
+              "per_image": 0.13
             }
           },
           "volcengine": {
@@ -61,6 +64,9 @@
           "grsai": {
             "gpt-image-2": {
               "per_image": 0.045
+            },
+            "gpt-image-2-vip": {
+              "per_image": 0.13
             }
           },
           "volcengine": {
@@ -96,6 +102,9 @@
           "grsai": {
             "gpt-image-2": {
               "per_image": 0.03
+            },
+            "gpt-image-2-vip": {
+              "per_image": 0.13
             }
           },
           "volcengine": {

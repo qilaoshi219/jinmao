@@ -17,7 +17,8 @@
             "deepseek-v4-flash": { "input_cache_miss": 1, "input_cache_hit": 0.02,  "output": 2 }
           },
           "grsai": {
-            "gpt-image-2": { "per_image": 0.037 }
+            "gpt-image-2": { "per_image": 0.037 },
+            "gpt-image-2-vip": { "per_image": 0.13 }
           },
           "volcengine": {
             "seed-tts-2.0": { "per_char": 0.0002 }
@@ -38,7 +39,8 @@
             "deepseek-v4-flash": { "input_cache_miss": 1.2, "input_cache_hit": 0.024, "output": 2.4 }
           },
           "grsai": {
-            "gpt-image-2": { "per_image": 0.045 }
+            "gpt-image-2": { "per_image": 0.045 },
+            "gpt-image-2-vip": { "per_image": 0.13 }
           },
           "volcengine": {
             "seed-tts-2.0": { "per_char": 0.00024 }
@@ -59,7 +61,8 @@
             "deepseek-v4-flash": { "input_cache_miss": 0.8, "input_cache_hit": 0.016, "output": 1.6 }
           },
           "grsai": {
-            "gpt-image-2": { "per_image": 0.030 }
+            "gpt-image-2": { "per_image": 0.030 },
+            "gpt-image-2-vip": { "per_image": 0.13 }
           },
           "volcengine": {
             "seed-tts-2.0": { "per_char": 0.00016 }

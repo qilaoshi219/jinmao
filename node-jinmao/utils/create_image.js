@@ -1,6 +1,7 @@
 // ==================== 文生图模块 ====================
-// 调用 Grsai gpt-image-2 API，输入纯文本图片描述，输出图片 URL
+// 调用 Grsai gpt-image-2 / gpt-image-2-vip API，输入纯文本图片描述，输出图片 URL
 // 交由调用脚本的程序进行落盘（如上传 MinIO 等）
+// 失败时自动在 gpt-image-2 与 gpt-image-2-vip 之间交替重试（共 3 轮，最多 6 次调用）
 //
 // 返回值格式：{ code: number, imageUrl?: string, message?: string }
 //   code 200 — 成功生成图片，imageUrl 包含图片链接
@@ -20,12 +21,35 @@ const { recordExternalCost } = require("./billing");
 const GENERATE_PATH = "/v1/api/generate";   // 提交文生图任务
 const RESULT_PATH = "/v1/api/result";       // 查询异步任务结果
 
-// 整体重试配置：整个 createImage 流程最多重试 3 次
-const MAX_RETRIES = 3;
+// 整体重试配置：每个「轮次」= gpt-image-2 + gpt-image-2-vip 各尝试 1 次
+// 共 MAX_RETRY_ROUNDS 轮，即最多 2 * MAX_RETRY_ROUNDS = 6 次调用
+const MAX_RETRY_ROUNDS = 3;
 // 重试基础延迟（毫秒）
 const RETRY_BASE_DELAY_MS = 2000;
 // 最大重试延迟（毫秒）
 const RETRY_MAX_DELAY_MS = 10000;
+
+// VIP 模型分辨率映射：gpt-image-2-vip 只接受像素值（不支持 "16:9" 这类比例）
+// 值取自 GRS API 文档的 2K 档；未知比例回退 2048x2048
+const VIP_ASPECT_RATIO_MAP = {
+    "1:1": "2048x2048",
+    "16:9": "2048x1152",
+    "9:16": "1152x2048",
+    "4:3": "2304x1728",
+    "3:4": "1728x2304",
+    "3:2": "2048x1360",
+    "2:3": "1360x2048",
+    "5:4": "2240x1792",
+    "4:5": "1792x2240",
+    "21:9": "2912x1248",
+    "9:21": "1248x2912",
+    "1:2": "1536x3072",
+    "2:1": "3072x1536",
+    "1:3": "1280x3840",
+    "3:1": "3840x1280",
+};
+// VIP 未知比例时的兜底分辨率
+const VIP_ASPECT_RATIO_FALLBACK = "2048x2048";
 
 // ==================== 工具函数 ====================
 
@@ -70,6 +94,23 @@ function isRetryableError(errorMessage) {
     if (msg.includes("参数") || msg.includes("400")) return false;
     // 默认：保守重试
     return true;
+}
+
+/**
+ * 将请求比例转换为 gpt-image-2-vip 支持的像素值分辨率
+ * VIP 模型只接受像素值（如 1024x1024、2048x2048），不支持 "16:9" 这类比例
+ * @param {string} aspectRatio - 原始比例/分辨率，如 "16:9"、"1024x1024"、"auto"
+ * @returns {string} VIP 模型可用的像素值分辨率
+ */
+function toVipAspectRatio(aspectRatio) {
+    // auto 或已是像素值（如 1024x1024）：原样透传
+    if (aspectRatio === "auto" || /^\d+x\d+$/i.test(aspectRatio)) {
+        return aspectRatio;
+    }
+    const mapped = VIP_ASPECT_RATIO_MAP[aspectRatio];
+    if (mapped) return mapped;
+    console.warn("[create_image][toVipAspectRatio] 未识别比例 " + aspectRatio + "，VIP 回退使用 " + VIP_ASPECT_RATIO_FALLBACK);
+    return VIP_ASPECT_RATIO_FALLBACK;
 }
 
 // ==================== 内部函数：单次图片生成尝试 ====================
@@ -237,8 +278,9 @@ async function attemptImageGeneration(prompt, requestBody) {
 // ==================== 核心函数：带重试的文生图 ====================
 
 /**
- * 调用 Grsai gpt-image-2 API 生成图片（异步模式 + 轮询获取结果）
- * 内置最多 3 次整体重试，遇到网络错误等服务端问题自动重试
+ * 调用 Grsai 文生图 API（gpt-image-2 / gpt-image-2-vip）生成图片（异步模式 + 轮询获取结果）
+ * 内置最多 3 轮交替重试（每轮 = gpt-image-2 + gpt-image-2-vip 各一次，共最多 6 次调用）
+ * 遇到网络错误等服务端问题自动按 gpt-image-2 → gpt-image-2-vip 交替重试
  *
  * @param {string} userId - 用户 ID（用于计费关联）
  * @param {string} prompt - 图片描述文本，如 "一只金色柴犬在樱花树下奔跑"
@@ -287,58 +329,72 @@ async function createImage(userId, prompt, options = {}) {
         return { code: 500, message: "Grsai API Key 未配置，请在 .env 文件中设置 GRSAI_API_KEY。" };
     }
 
-    // ========== 3. 构建请求体 ==========
-    const requestBody = {
-        model: config.GRSAI_MODEL,
-        prompt: prompt,
-        images: images,
-        aspectRatio: aspectRatio,
-        replyType: "async"
-    };
+    // ========== 3. 构建尝试计划 ==========
+    // 每轮 = gpt-image-2（普通）+ gpt-image-2-vip（VIP）各尝试一次
+    // 共 MAX_RETRY_ROUNDS 轮，最多 2 * MAX_RETRY_ROUNDS = 6 次调用
+    const vipModel = config.GRSAI_VIP_MODEL || "gpt-image-2-vip";
+    const attemptPlan = [];
+    for (let round = 0; round < MAX_RETRY_ROUNDS; round++) {
+        attemptPlan.push({ model: config.GRSAI_MODEL, isVip: false });
+        attemptPlan.push({ model: vipModel, isVip: true });
+    }
 
-    // ========== 4. 调用 API（带重试逻辑） ==========
+    // ========== 4. 调用 API（普通模型与 VIP 模型交替重试） ==========
     let lastResult = null;
-    let finalRetryCount = 0;
+    let lastAttempt = null;
+    let retriesPerformed = 0;
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    for (let attempt = 0; attempt < attemptPlan.length; attempt++) {
+        const currentAttempt = attemptPlan[attempt];
+        lastAttempt = currentAttempt;
+
         // 非首次尝试时：等待退避延迟
         if (attempt > 0) {
-            finalRetryCount = attempt;
+            retriesPerformed = attempt;
             const delay = getRetryDelay(attempt - 1);
-            console.log(TAG + " 第 " + attempt + " 次整体重试（共允许 " + MAX_RETRIES + " 次），等待 " + delay + "ms...");
+            console.log(TAG + " 第 " + attempt + " 次重试（共允许 " + (attemptPlan.length - 1) + " 次），等待 " + delay + "ms...");
             await sleep(delay);
         }
 
-        console.log(TAG + " ======== 第 " + (attempt + 1) + " 次尝试 ========");
+        // 构建请求体：VIP 尝试需将比例转换为像素值分辨率
+        const requestBody = {
+            model: currentAttempt.model,
+            prompt: prompt,
+            images: images,
+            aspectRatio: currentAttempt.isVip ? toVipAspectRatio(aspectRatio) : aspectRatio,
+            replyType: "async"
+        };
+
+        console.log(TAG + " ======== 第 " + (attempt + 1) + "/" + attemptPlan.length + " 次尝试（模型：" + requestBody.model + "，比例：" + requestBody.aspectRatio + "）========");
         const result = await attemptImageGeneration(prompt, requestBody);
         lastResult = result;
 
-        // 成功：直接返回
+        // 成功：直接返回（按实际成功的模型与分辨率计费）
         if (result.code === 200) {
             // ========== 计费记录：文生图成功 ==========
             recordExternalCost({
                 userId: userId,
                 provider: "grsai",
-                model: config.GRSAI_MODEL,
+                model: requestBody.model,
                 callTag: "create_image",
                 status: "success",
                 imageCount: 1,
-                imageResolution: aspectRatio,
-                retryCount: finalRetryCount,
+                imageResolution: requestBody.aspectRatio,
+                retryCount: attempt,
             }).catch(err => console.error(TAG + " 计费记录写入失败：" + err.message));
             return result;
         }
 
         // 失败：判断是否应该重试
         const errorMsg = result.errorMessage || result.message || "";
-        if (attempt < MAX_RETRIES && isRetryableError(errorMsg)) {
-            console.log(TAG + " 第 " + (attempt + 1) + " 次尝试失败（可重试），准备重试... 错误: " + errorMsg);
-            continue; // 进入下一次重试
+        if (attempt < attemptPlan.length - 1 && isRetryableError(errorMsg)) {
+            console.log(TAG + " 第 " + (attempt + 1) + " 次尝试失败（可重试），准备切换模型重试... 错误: " + errorMsg);
+            continue; // 进入下一次尝试（切换模型）
         }
 
         // 不可重试 或 已达最大重试次数
-        if (attempt >= MAX_RETRIES) {
-            console.error(TAG + " 已达到最大重试次数（" + MAX_RETRIES + " 次），放弃重试。");
+        if (attempt >= attemptPlan.length - 1) {
+            console.error(TAG + " 已达到最大尝试次数（" + attemptPlan.length + " 次），放弃重试。");
         } else {
             console.error(TAG + " 错误不可重试，放弃重试。");
         }
@@ -349,17 +405,18 @@ async function createImage(userId, prompt, options = {}) {
     // 无论什么原因失败，都记录到账单数据库中，方便后续排查问题
     const failureResult = lastResult || { code: 500, message: "文生图失败（未知原因）", errorMessage: "未知错误" };
     const billingErrorMessage = failureResult.errorMessage || failureResult.message || "未知错误";
+    const lastModel = (lastAttempt && lastAttempt.model) || config.GRSAI_MODEL;
 
     recordExternalCost({
         userId: userId,
         provider: "grsai",
-        model: config.GRSAI_MODEL,
+        model: lastModel,
         callTag: "create_image",
         status: "failed",
         imageCount: 0,                      // 失败时图片数量为 0（不计费但记录调用事实）
         imageResolution: aspectRatio,
         errorMessage: billingErrorMessage,  // 记录失败原因
-        retryCount: finalRetryCount,        // 记录尝试了多少次
+        retryCount: retriesPerformed,       // 记录实际重试了多少次
     }).catch(err => console.error(TAG + " 计费记录写入失败：" + err.message));
 
     console.error(TAG + " 文生图最终失败: " + failureResult.message);
