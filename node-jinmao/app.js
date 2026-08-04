@@ -351,8 +351,6 @@ const POSTbookRouter = require("./API/POSTbook");
 const bookRouter = require("./API/book");
 // 课程学习路由：章节幻灯片数据（PPT/音频/字幕 URL）
 const courseRouter = require("./API/course");
-// 学习工具路由：复习提纲 / 章节测验 / 思维导图
-const studyToolsRouter = require("./API/study_tools");
 // 学习进度路由：保存/获取用户学习进度记录（课程记忆功能）
 const progressRouter = require("./API/progress");
 // 统计数据路由：首页 4 项统计指标（学习时长/已完成章节/正确率/连续天数）
@@ -487,8 +485,6 @@ app.use("/api/v1", bookRouter);
 //   GET /api/v1/courses/:courseId/chapters/:chapterId/slides — 获取章节幻灯片数据（PPT/音频/字幕 URL）
 app.use("/api/v1", courseRouter);
 console.log("[app] ✅ 课程学习路由已注册: /api/v1/courses/*");
-app.use("/api/v1", studyToolsRouter);
-console.log("[app] ✅ 学习工具路由已注册: /api/v1/courses/*/review-outline、*/quiz、*/mindmap");
 
 // 学习进度路由挂载到 /api/v1 前缀
 // 实际端点：

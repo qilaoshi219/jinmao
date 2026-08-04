@@ -46,8 +46,6 @@ import { getProgress, saveProgress } from "../../api/progress"; // 学习进度�
 import { getAiConversations, getAiConversation, streamAiChat } from "../../api/ai"; // AI 助教问答 API
 import AiChatPanel from "./AiChatPanel.vue"; // AI 助教面板组件（桌面右栏/移动端面板复用）
 import ChapterList from "./ChapterList.vue"; // 章节列表组件（桌面左栏/移动端面板复用）
-import ReviewOutlineDialog from "./ReviewOutlineDialog.vue"; // 复习提纲弹窗
-import ChapterQuizDialog from "./ChapterQuizDialog.vue"; // 章节测验弹窗
 
 // ============================================================================
 // 一、常量定义
@@ -176,8 +174,6 @@ export default {
   components: {
     AiChatPanel,
     ChapterList,
-    ReviewOutlineDialog,
-    ChapterQuizDialog,
   },
   /**
    * 使用 inject('navigate') 导航，由 App.vue provide
@@ -272,8 +268,6 @@ export default {
     const mobileControlsVisible = ref(false);
     /** 移动端控制条自动隐藏定时器 */
     let mobileHideTimer = null;
-    /** 播放期间 UI 同步（字幕/时间/进度）节拍器 */
-    let uiSyncTimer = null;
 
     // ---- 控件显示 ----
     let hideTimer = null;
@@ -487,52 +481,6 @@ export default {
       const ch = chapters.value.find((c) => c.id === activeChapter.value);
       return ch ? ch.title : "";
     });
-
-    /** 当前课程 ID（从路由参数读取） */
-    const courseId = computed(() => studyParams?.value?.courseId || null);
-
-    // ========================================================================
-    // 3.15 学习工具（复习提纲 / 章节测验 / 思维导图）
-    // ========================================================================
-
-    /** 复习提纲弹窗可见性 */
-    const reviewOutlineVisible = ref(false);
-    /** 章节测验弹窗可见性 */
-    const chapterQuizVisible = ref(false);
-
-    /** 打开复习提纲弹窗 */
-    function openReviewOutline() {
-      if (!courseId.value) {
-        ElMessage.warning("课程尚未加载完成，请稍后再试");
-        return;
-      }
-      reviewOutlineVisible.value = true;
-    }
-
-    /** 打开章节测验弹窗 */
-    function openChapterQuiz() {
-      if (!courseId.value || !activeChapter.value) {
-        ElMessage.warning("请先进入一个章节再开始测验");
-        return;
-      }
-      chapterQuizVisible.value = true;
-    }
-
-    /** 打开思维导图页面 */
-    function openMindMap() {
-      if (!courseId.value) {
-        ElMessage.warning("课程尚未加载完成，请稍后再试");
-        return;
-      }
-      navigate("mindmap", { courseId: courseId.value });
-    }
-
-    /** 顶栏学习工具按钮列表 */
-    const studyTools = computed(() => [
-      { key: "outline", label: "复习提纲", handler: openReviewOutline },
-      { key: "quiz", label: "本章测验", handler: openChapterQuiz },
-      { key: "mindmap", label: "思维导图", handler: openMindMap },
-    ]);
 
     /** 音频总时长（秒） — 仅当前页面音频，保留用于 onAudioLoaded */
     const totalTime = ref(0);
@@ -1419,13 +1367,11 @@ export default {
       if (isPlaying.value) {
         audio.pause();
         isPlaying.value = false;
-        stopUiSync();
         console.log(TAG + " 暂停");
       } else {
         // 播放前先确保音频已加载
         audio.play().then(() => {
           isPlaying.value = true;
-          startUiSync();
           console.log(TAG + " 播放");
         }).catch((err) => {
           console.warn(TAG + " 音频播放失败: " + (err?.message || err));
@@ -1452,7 +1398,6 @@ export default {
       if (audio) {
         audio.pause();
         isPlaying.value = false;
-        stopUiSync();
       }
 
       if (seekOptions) {
@@ -1507,7 +1452,6 @@ export default {
         if (newAudio) {
           newAudio.play().then(() => {
             isPlaying.value = true;
-            startUiSync();
             // 进度条跳转：播放恢复后把音频定位到页内偏移
             if (seekOptions) {
               applyAudioSeek(newAudio, seekOptions.offset);
@@ -1680,8 +1624,8 @@ export default {
 
     // ---- 音频事件处理 ----
 
-    /** 根据音频当前播放位置同步 UI（当前时间、进度条、字幕） */
-    function syncAudioUi() {
+    /** 音频时间更新 */
+    function onAudioTimeUpdate() {
       const audio = audioRef.value;
       if (!audio) return;
 
@@ -1695,34 +1639,10 @@ export default {
       updateSubtitleFromTime(audio.currentTime);
     }
 
-    /**
-     * 播放期间以高频节拍器直接读取音频当前位置刷新字幕/时间/进度。
-     * 不依赖 timeupdate 事件（部分环境在非 1 倍速下该事件可能不按预期触发），
-     * 确保倍速播放时字幕始终跟随音频时钟同步。
-     */
-    function startUiSync() {
-      if (uiSyncTimer) return;
-      syncAudioUi();
-      uiSyncTimer = setInterval(syncAudioUi, 100);
-    }
-
-    function stopUiSync() {
-      if (uiSyncTimer) {
-        clearInterval(uiSyncTimer);
-        uiSyncTimer = null;
-      }
-    }
-
-    /** 音频时间更新（timeupdate 事件，与节拍器共用同一同步逻辑） */
-    function onAudioTimeUpdate() {
-      syncAudioUi();
-    }
-
     /** 音频播放结束 */
     function onAudioEnded() {
       console.log(TAG + " 音频播放结束");
       isPlaying.value = false;
-      stopUiSync();
 
       // 将当前页的时长累加到已播放时长中
       const currentSlideData = slides.value[currentPage.value - 1];
@@ -2374,7 +2294,6 @@ export default {
 
       // 清理定时器
       if (hideTimer) { clearTimeout(hideTimer); }
-      stopUiSync();
       // 暂停音频
       const audio = audioRef.value;
       if (audio) {
@@ -2409,15 +2328,6 @@ export default {
       courseInfo,
       courseLoading,
       chapterLoading,
-      courseId,
-
-      // 学习工具
-      reviewOutlineVisible,
-      chapterQuizVisible,
-      openReviewOutline,
-      openChapterQuiz,
-      openMindMap,
-      studyTools,
 
       // 幻灯片
       slides,
