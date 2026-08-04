@@ -2,7 +2,7 @@
 // 职责：加载全部模板片段 → 注册组件 → 挂载 Vue 应用 → 初始化主题与身份检查
 (function () {
   const TAG = '[AdminCMS]';
-  const TEMPLATE_NAMES = ['app', 'login', 'shell', 'codes', 'users', 'billing', 'stats', 'security', 'settings'];
+  const TEMPLATE_NAMES = ['app', 'login', 'shell', 'codes', 'users', 'billing', 'pricing', 'stats', 'security', 'settings'];
 
   // ===== 加载全部模板片段（任一失败则整体报错） =====
   async function loadTemplates() {
@@ -64,6 +64,7 @@
       'codes-tab': Object.assign({}, AdminTabs.codes, { template: tpls.codes }),
       'users-tab': Object.assign({}, AdminTabs.users, { template: tpls.users }),
       'billing-tab': Object.assign({}, AdminTabs.billing, { template: tpls.billing }),
+      'pricing-tab': Object.assign({}, AdminTabs.pricing, { template: tpls.pricing }),
       'stats-tab': Object.assign({}, AdminTabs.stats, { template: tpls.stats }),
       'security-tab': Object.assign({}, AdminTabs.security, { template: tpls.security }),
       'settings-tab': Object.assign({}, AdminTabs.settings, { template: tpls.settings }),

@@ -20,6 +20,7 @@ router.use("/:suffix/api/billing", require("./admin/billing"));   // 账单管�
 router.use("/:suffix/api/stats", require("./admin/stats"));       // 消费统计
 router.use("/:suffix/api/security", require("./admin/security")); // 安全防护
 router.use("/:suffix/api/config", require("./admin/config"));     // 系统设置
+router.use("/:suffix/api/pricing", require("./admin/pricing"));   // 价格调整
 
 // ==================== 导出路由 ====================
 module.exports = router;

@@ -667,6 +667,11 @@ console.log("[app] ✅ 管理员静态资源已挂载: /admin/static/*");
     console.log("========================================");
   });
 
+  // ==================== 定时调价调度 ====================
+  // 启动时立即应用已到期项（补上停机期间到点的调价），随后每 15 秒轮询一次
+  const { startPricingScheduler } = require("./utils/pricing_schedule");
+  startPricingScheduler();
+
   // ==================== HTTP Server 超时配置 ====================
   // Node.js HTTP Server 默认 120 秒超时。
   // 异步归一化重构后，上传 API 的同步部分（步骤 1-3）只需几秒，

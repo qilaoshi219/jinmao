@@ -45,6 +45,11 @@
     return res.json();
   }
 
+  async function apiDelete(url) {
+    const res = await fetch(url, { method: 'DELETE', headers: authHeaders() });
+    return res.json();
+  }
+
   // ===== 退出登录 =====
   function doLogout() {
     auth.token = null;
@@ -196,7 +201,7 @@
   // ===== 导出全局命名空间 =====
   window.AdminShared = {
     auth, isLoggedIn, currentSuffix, apiBase,
-    apiGet, apiPost, apiPut, doLogout, checkAdmin,
+    apiGet, apiPost, apiPut, apiDelete, doLogout, checkAdmin,
     formatTime, truncateStr, formatMoney,
     isDark, toggleTheme, initTheme,
     attackTypeOptions, attackTypeLabel, severityType, severityLabel, blockedLabel, blockedType,

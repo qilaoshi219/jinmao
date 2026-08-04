@@ -1,0 +1,181 @@
+<!-- ===== 价格调整 ===== -->
+
+<!-- 顶部说明卡 -->
+<el-card shadow="never" style="margin-bottom:20px;">
+  <template #header>
+    <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">价格调整说明</span>
+  </template>
+  <div style="font-size:13px;color:#6b7280;line-height:2;">
+    <p>1. 「保存」会直接写入配置文件并即时生效（计费每次调用实时读取，无需重启）。</p>
+    <p>2. 「定时调价」到点后自动覆盖对应侧配置（出售价/成本价），服务重启后依然生效，可随时取消。</p>
+    <p>3. 开启「分时计费」后按下方时段的起止时间匹配单价；<el-tag size="small" type="info" style="margin:0 4px;">default</el-tag> 段（00:00-24:00）为兜底时段，不可删除或改名。</p>
+    <p>服务器当前时间：<strong style="color:#409eff;font-size:14px;">{{ serverTimeText }}</strong></p>
+  </div>
+</el-card>
+
+<!-- ===== 出售价卡片 ===== -->
+<el-card shadow="never" style="margin-bottom:20px;">
+  <template #header>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">出售价（billing_pricing.json）</span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:13px;color:#6b7280;">分时计费</span>
+        <el-switch v-if="sale" v-model="sale.timeBasedPricing.enabled" />
+        <el-button type="primary" @click="saveSale" :loading="savingSale" :disabled="!sale">
+          {{ savingSale ? '保存中...' : '保存出售价' }}
+        </el-button>
+      </div>
+    </div>
+  </template>
+  <div v-if="!sale" v-loading="loading" style="min-height:120px;"></div>
+  <template v-else>
+    <div
+      v-for="(period, pi) in sale.timeBasedPricing.periods"
+      :key="'sale-' + pi"
+      style="border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:16px;transition:all 500ms ease;"
+      :style="{borderColor: isDark ? '#0f3460' : '#e2e8f0'}"
+    >
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <el-input v-model="period.name" placeholder="时段名称" :disabled="period.name === 'default'" style="width:180px;" />
+        <el-time-picker v-model="period.start" format="HH:mm" value-format="HH:mm" placeholder="开始时间" :disabled="period.name === 'default'" style="width:130px;" />
+        <span style="color:#6b7280;">至</span>
+        <el-time-picker v-model="period.end" format="HH:mm" value-format="HH:mm" placeholder="结束时间" :disabled="period.name === 'default'" style="width:130px;" />
+        <el-tag v-if="period.name === 'default'" size="small" type="info">兜底时段</el-tag>
+        <el-button
+          v-if="period.name !== 'default'"
+          size="small"
+          type="danger"
+          plain
+          style="margin-left:auto;"
+          @click="removePeriod('sale', pi)"
+        >删除时段</el-button>
+      </div>
+      <el-table :data="models" size="small" border>
+        <el-table-column label="模型" min-width="200">
+          <template #default="{ row }"><span style="font-family:monospace;">{{ row.key }}</span></template>
+        </el-table-column>
+        <el-table-column v-for="f in priceFields" :key="f.key" :label="f.label" min-width="180">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="period.providers.deepseek[row.key][f.key]"
+              :min="0"
+              :step="0.001"
+              :precision="6"
+              :controls="false"
+              style="width:100%;"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+    <el-button type="primary" plain @click="addPeriod('sale')">+ 添加时段</el-button>
+  </template>
+</el-card>
+
+<!-- ===== 成本价卡片 ===== -->
+<el-card shadow="never" style="margin-bottom:20px;">
+  <template #header>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">成本价（model_cost_config.json）</span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:13px;color:#6b7280;">分时计费</span>
+        <el-switch v-if="cost" v-model="cost.timeBasedPricing.enabled" />
+        <el-button type="primary" @click="saveCost" :loading="savingCost" :disabled="!cost">
+          {{ savingCost ? '保存中...' : '保存成本价' }}
+        </el-button>
+      </div>
+    </div>
+  </template>
+  <div v-if="!cost" v-loading="loading" style="min-height:120px;"></div>
+  <template v-else>
+    <div
+      v-for="(period, pi) in cost.timeBasedPricing.periods"
+      :key="'cost-' + pi"
+      style="border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:16px;transition:all 500ms ease;"
+      :style="{borderColor: isDark ? '#0f3460' : '#e2e8f0'}"
+    >
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <el-input v-model="period.name" placeholder="时段名称" :disabled="period.name === 'default'" style="width:180px;" />
+        <el-time-picker v-model="period.start" format="HH:mm" value-format="HH:mm" placeholder="开始时间" :disabled="period.name === 'default'" style="width:130px;" />
+        <span style="color:#6b7280;">至</span>
+        <el-time-picker v-model="period.end" format="HH:mm" value-format="HH:mm" placeholder="结束时间" :disabled="period.name === 'default'" style="width:130px;" />
+        <el-tag v-if="period.name === 'default'" size="small" type="info">兜底时段</el-tag>
+        <el-button
+          v-if="period.name !== 'default'"
+          size="small"
+          type="danger"
+          plain
+          style="margin-left:auto;"
+          @click="removePeriod('cost', pi)"
+        >删除时段</el-button>
+      </div>
+      <el-table :data="models" size="small" border>
+        <el-table-column label="模型" min-width="200">
+          <template #default="{ row }"><span style="font-family:monospace;">{{ row.key }}</span></template>
+        </el-table-column>
+        <el-table-column v-for="f in priceFields" :key="f.key" :label="f.label" min-width="180">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="period.providers.deepseek[row.key][f.key]"
+              :min="0"
+              :step="0.001"
+              :precision="6"
+              :controls="false"
+              style="width:100%;"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+    <el-button type="primary" plain @click="addPeriod('cost')">+ 添加时段</el-button>
+  </template>
+</el-card>
+
+<!-- ===== 定时调价卡片 ===== -->
+<el-card shadow="never">
+  <template #header>
+    <span style="font-weight:700;color:#000;transition:color 500ms;" :style="{color: isDark ? '#fff' : '#000'}">定时调价</span>
+  </template>
+  <div class="filter-row">
+    <el-date-picker
+      v-model="effectiveAt"
+      type="datetime"
+      value-format="YYYY-MM-DD HH:mm:ss"
+      placeholder="选择生效时间"
+      style="width:220px;"
+    />
+    <el-input v-model="scheduleNote" placeholder="备注（如：8月5日10点调价）" clearable style="width:280px;" />
+    <el-button type="primary" @click="createSchedule('sale')" :loading="schedulingSale">
+      {{ schedulingSale ? '提交中...' : '定时生效出售价' }}
+    </el-button>
+    <el-button type="primary" plain @click="createSchedule('cost')" :loading="schedulingCost">
+      {{ schedulingCost ? '提交中...' : '定时生效成本价' }}
+    </el-button>
+  </div>
+  <el-alert
+    type="info"
+    :closable="false"
+    show-icon
+    style="margin-top:16px;"
+    title="定时调价将按当前编辑框中的出售价/成本价生成快照，到点后整体覆盖对应侧配置。"
+  />
+  <el-table :data="scheduleList" stripe v-loading="loadingSchedule" empty-text="暂无待生效的定时调价" style="margin-top:16px;">
+    <el-table-column label="生效时间" min-width="180" align="center">
+      <template #default="{ row }">{{ formatTime(row.effectiveAt) }}</template>
+    </el-table-column>
+    <el-table-column label="范围" min-width="120" align="center">
+      <template #default="{ row }">
+        <el-tag v-if="row.sale" size="small" type="primary" style="margin-right:4px;">出售价</el-tag>
+        <el-tag v-if="row.cost" size="small" type="warning">成本价</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column prop="note" label="备注" min-width="180">
+      <template #default="{ row }">{{ row.note || '-' }}</template>
+    </el-table-column>
+    <el-table-column label="操作" width="100" align="center">
+      <template #default="{ row }">
+        <el-button size="small" type="danger" plain @click="cancelSchedule(row)">取消</el-button>
+      </template>
+    </el-table-column>
+  </el-table>
+</el-card>
