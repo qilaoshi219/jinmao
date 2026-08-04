@@ -19,19 +19,17 @@ if (!prisma.userDailyActivity) {
 
 /**
  * 记录用户当天的活动（upsert 模式，同一天只保留一条记录）
- * 用于计算连续学习天数；可传入当日学习时长增量（秒）累加到 study_duration
+ * 用于计算连续学习天数
  * @param {string} userId - 用户 ID（字符串类型，从 JWT payload 获取）
- * @param {number} [studyDuration] - 可选，当天学习时长增量（秒）
  * @returns {Promise<{ code: number, message?: string }>}
  *   - code 200: 记录成功（创建或已存在）
  *   - code 500: 数据库异常
  */
-async function recordDailyActivity(userId, studyDuration) {
-  console.log(TAG + "[recordDailyActivity] 记录用户 " + userId + " 的每日活动" + (studyDuration ? "（学习时长 +" + studyDuration + "s）" : ""));
+async function recordDailyActivity(userId) {
+  console.log(TAG + "[recordDailyActivity] 记录用户 " + userId + " 的每日活动");
 
   try {
     const uid = BigInt(userId);
-    const duration = Number(studyDuration) || 0;
 
     // 获取今天的日期（UTC 0点）
     const today = new Date();
@@ -49,12 +47,8 @@ async function recordDailyActivity(userId, studyDuration) {
       create: {
         userId: uid,
         activityDate: today,
-        studyDuration: duration,
       },
-      update: {
-        // 已存在则累加当天学习时长增量（无增量时保持原值）
-        ...(duration > 0 ? { studyDuration: { increment: duration } } : {}),
-      },
+      update: {}, // 已存在则不做任何更新（空 update）
     });
 
     console.log(TAG + "[recordDailyActivity] 用户 " + userId + " 今日活动记录已更新");

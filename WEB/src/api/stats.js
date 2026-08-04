@@ -28,26 +28,3 @@ export async function getStats() {
 
   return response.data;
 }
-
-/**
- * 获取最近 7 天学习周报
- * GET /api/v1/stats/weekly
- * @returns {Promise<{ code: number, data: { days: Array, summary: Object } }>}
- */
-export async function getWeeklyReport() {
-  console.log(TAG + "[getWeeklyReport] 获取学习周报");
-  const response = await apiClient.get("/stats/weekly");
-  return response.data;
-}
-
-/**
- * 获取学习时长/刷题量排行榜
- * GET /api/v1/stats/leaderboard
- * @param {Object} params - { type: "study"|"quiz", days: number }
- * @returns {Promise<{ code: number, data: Array<{ rank, userId, name, value }> }>}
- */
-export async function getLeaderboard(params = {}) {
-  console.log(TAG + "[getLeaderboard] 获取排行榜");
-  const response = await apiClient.get("/stats/leaderboard", { params });
-  return response.data;
-}

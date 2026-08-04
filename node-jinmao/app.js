@@ -355,8 +355,6 @@ const courseRouter = require("./API/course");
 const progressRouter = require("./API/progress");
 // 统计数据路由：首页 4 项统计指标（学习时长/已完成章节/正确率/连续天数）
 const statsRouter = require("./API/stats");
-// 扩展统计路由：学习周报 + 排行榜
-const statsExtraRouter = require("./API/stats_extra");
 // 文件代理路由：代理访问 MinIO 文件，前端通过 /api/v1/files/{path} 访问
 const filesRouter = require("./API/files");
 // 题库管理路由：/api/v1/quiz/textbooks
@@ -369,8 +367,6 @@ const quizSessionRouter = require("./API/quiz/session");
 const quizReportRouter = require("./API/quiz/report");
 // 错题本路由：/api/v1/quiz/wrongbook*
 const quizWrongbookRouter = require("./API/quiz/wrongbook");
-// 错题 AI 讲解路由：/api/v1/quiz/explain
-const quizExplainRouter = require("./API/quiz/explain");
 // 题库市场路由：/api/v1/quiz/market*
 const quizMarketRouter = require("./API/quiz/market");
 // 题库详情路由：/api/v1/quiz/textbooks/:id/stats + exams 刷题
@@ -498,8 +494,6 @@ console.log("[app] ✅ 学习进度路由已注册: /api/v1/progress");
 //   GET /api/v1/stats — 获取首页 4 项统计数据（需 Token）
 app.use("/api/v1", statsRouter);
 console.log("[app] ✅ 统计数据路由已注册: /api/v1/stats");
-app.use("/api/v1", statsExtraRouter);
-console.log("[app] ✅ 扩展统计路由已注册: /api/v1/stats/weekly、/api/v1/stats/leaderboard");
 
 // 文件代理路由挂载到 /api/v1 前缀
 // 实际端点：
@@ -513,7 +507,6 @@ app.use("/api/v1/quiz", quizImportRouter);
 app.use("/api/v1/quiz", quizSessionRouter);
 app.use("/api/v1/quiz", quizReportRouter);
 app.use("/api/v1/quiz", quizWrongbookRouter);
-app.use("/api/v1/quiz", quizExplainRouter);
 app.use("/api/v1/quiz", quizMarketRouter);
 app.use("/api/v1/quiz", quizDetailRouter);
 app.use("/api/v1/quiz", quizPublicExamRouter);

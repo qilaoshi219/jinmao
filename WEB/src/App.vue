@@ -38,12 +38,6 @@
   <!-- 已登录 + PDF 分割器页 -->
   <PdfSplitterPage v-else-if="currentPage === 'tools-pdf-splitter'" />
 
-  <!-- 已登录 + 学习周报页 -->
-  <WeeklyPage v-else-if="currentPage === 'weekly'" />
-
-  <!-- 已登录 + 排行榜页 -->
-  <LeaderboardPage v-else-if="currentPage === 'leaderboard'" />
-
   <!-- ===== 手机端页面 ===== -->
   <!-- 已登录 + 手机端首页 -->
   <MobileHomePage v-else-if="currentPage === 'mobile-home'" />
@@ -113,8 +107,6 @@ import ProfilePage from "./pages/profile/index.vue"; // 个人设置页面
 import RedeemPage from "./pages/redeem/index.vue"; // 兑换码领取页面
 import QuizImportPage from "./pages/quiz-import/index.vue"; // 文本粘贴导入题库页面
 import PdfSplitterPage from "./pages/tools/pdf-splitter/index.vue"; // PDF 分割器页面
-import WeeklyPage from "./pages/weekly/index.vue"; // 学习周报页面
-import LeaderboardPage from "./pages/leaderboard/index.vue"; // 排行榜页面
 import MobileHomePage from "./pages/mobile-home/index.vue"; // 手机端首页
 import MobileProfilePage from "./pages/mobile-profile/index.vue"; // 手机端个人中心
 import MobileQuizPage from "./pages/mobile-quiz/index.vue"; // 手机端刷题页
@@ -151,8 +143,6 @@ const PATH_TO_PAGE = {
   "/redeem": "redeem",
   "/quiz-import": "quiz-import",
   "/tools/pdf-splitter": "tools-pdf-splitter",
-  "/weekly": "weekly",
-  "/leaderboard": "leaderboard",
   "/mobile": "mobile-home",
   "/mobile/profile": "mobile-profile",
   "/mobile/quiz": "mobile-quiz",
@@ -181,8 +171,6 @@ const PAGE_TO_PATH = {
   redeem: "/redeem",
   "quiz-import": "/quiz-import",
   "tools-pdf-splitter": "/tools/pdf-splitter",
-  weekly: "/weekly",
-  leaderboard: "/leaderboard",
   "mobile-home": "/mobile",
   "mobile-profile": "/mobile/profile",
   "mobile-quiz": "/mobile/quiz",
@@ -361,8 +349,6 @@ function applyPageState(page, params) {
     page === "redeem" ||
     page === "quiz-import" ||
     page === "tools-pdf-splitter" ||
-    page === "weekly" ||
-    page === "leaderboard" ||
     page === "mobile-billing" ||
     page === "mobile-redeem" ||
     page === "mobile-settings" ||

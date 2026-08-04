@@ -244,17 +244,6 @@ export function submitWrongbookAnswer(sessionId, payload) {
     .then((res) => res.data);
 }
 
-/**
- * 生成错题 AI 讲解
- * @param {string|number} questionId - 题目 ID
- * @returns {Promise<{ code: number, data: { questionId, explanation } }>}
- */
-export async function explainQuestion(questionId) {
-  return apiClient
-    .post("/quiz/explain", { questionId })
-    .then((res) => res.data);
-}
-
 // ==================== 题库市场 ====================
 
 /**

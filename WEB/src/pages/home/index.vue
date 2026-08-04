@@ -32,8 +32,6 @@
       @navigate-billing="navigateToBilling"
       @navigate-profile="navigateToProfile"
       @navigate-redeem="navigateToRedeem"
-      @navigate-weekly="navigateToWeekly"
-      @navigate-leaderboard="navigateToLeaderboard"
     />
 
     <!-- ========== 右侧主区域 ========== -->

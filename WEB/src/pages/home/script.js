@@ -491,22 +491,6 @@ export default {
     }
 
     /**
-     * 导航到学习周报页面
-     */
-    function navigateToWeekly() {
-      console.log(TAG + " 导航到学习周报页面");
-      navigate("weekly");
-    }
-
-    /**
-     * 导航到排行榜页面
-     */
-    function navigateToLeaderboard() {
-      console.log(TAG + " 导航到排行榜页面");
-      navigate("leaderboard");
-    }
-
-    /**
      * 退出登录
      */
     function handleLogout() {
@@ -803,8 +787,6 @@ export default {
       navigateToBilling,
       navigateToProfile,
       navigateToRedeem,
-      navigateToWeekly,
-      navigateToLeaderboard,
       navigateToQuizImport,
       handleLogout,
 

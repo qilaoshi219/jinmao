@@ -159,36 +159,6 @@
 
       <!-- 次级菜单 -->
       <ul class="space-y-1">
-        <!-- 学习周报 -->
-        <li>
-          <button
-            class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px]
-                   text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50
-                   transition-colors duration-500"
-            @click="$emit('navigate-weekly')">
-            <svg class="w-[18px] h-[18px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-            </svg>
-            <span v-show="!collapsed" class="whitespace-nowrap">学习周报</span>
-          </button>
-        </li>
-
-        <!-- 排行榜 -->
-        <li>
-          <button
-            class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px]
-                   text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50
-                   transition-colors duration-500"
-            @click="$emit('navigate-leaderboard')">
-            <svg class="w-[18px] h-[18px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-            </svg>
-            <span v-show="!collapsed" class="whitespace-nowrap">排行榜</span>
-          </button>
-        </li>
-
         <!-- 笔记（骨架占位） -->
         <li>
           <button disabled
@@ -307,7 +277,7 @@ const props = defineProps({
 });
 
 // ========== Emits ==========
-const emit = defineEmits(["select", "upload", "navigate-billing", "navigate-profile", "navigate-redeem", "navigate-weekly", "navigate-leaderboard"]);
+const emit = defineEmits(["select", "upload", "navigate-billing", "navigate-profile", "navigate-redeem"]);
 
 // ========== 响应式收缩状态 ==========
 const collapsed = ref(false);
