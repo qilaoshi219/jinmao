@@ -122,6 +122,27 @@
                :style="mobileFullscreen ? { width: '70%' } : {}">
         <div id="ppt-area" class="flex-1 relative flex flex-col items-center justify-center min-h-0 bg-[var(--color-card)]">
 
+          <!-- ===== 学习工具横条（iframe 上方，6 按钮，本期仅开放思维导图） ===== -->
+          <div class="mindmap-bar relative z-30 flex items-center gap-1 w-full px-2 py-1.5 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] transition-colors duration-500 flex-shrink-0 overflow-x-auto no-scrollbar">
+            <!-- 思维导图：未生成=生成 / 生成中=loading / 已生成=查看 -->
+            <el-button size="small"
+                       class="mindmap-bar-btn flex-1 min-w-[74px]"
+                       :type="mindmapStatus === 'done' ? 'success' : 'primary'"
+                       :loading="isGeneratingMindmap || mindmapStatus === 'generating'"
+                       :disabled="!mindmapEnabled"
+                       @click="handleMindmapClick">
+              {{ mindmapButtonText }}
+            </el-button>
+            <!-- 未来功能占位按钮（禁用） -->
+            <el-button v-for="n in 5" :key="n"
+                       size="small"
+                       class="mindmap-bar-btn flex-1 min-w-[62px]"
+                       disabled
+                       title="即将上线">
+              敬请期待
+            </el-button>
+          </div>
+
           <!-- 战术网格 -->
           <div class="absolute inset-0 pointer-events-none" style="background-image:linear-gradient(var(--color-rail) 1px,transparent 1px),linear-gradient(90deg,var(--color-rail) 1px,transparent 1px);background-size:20px 20px;opacity:0.03;"></div>
           <!-- 角括号 -->
@@ -130,8 +151,8 @@
           <span class="absolute bottom-3 left-3 text-blue-500 dark:text-blue-400 font-mono text-xs select-none z-10">&#9699;</span>
           <span class="absolute bottom-3 right-3 text-blue-500 dark:text-blue-400 font-mono text-xs select-none z-10">&#9700;</span>
 
-          <!-- 页码指示器 -->
-          <div class="absolute top-3 right-10 z-20 font-mono text-xs tracking-wider px-2 py-0.5 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)] text-blue-500 dark:text-blue-400">
+          <!-- 页码指示器（top-12 避开上方工具横条） -->
+          <div class="absolute top-12 right-10 z-20 font-mono text-xs tracking-wider px-2 py-0.5 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)] text-blue-500 dark:text-blue-400">
             {{ currentPage }} / {{ totalPages }}
           </div>
 
@@ -451,5 +472,16 @@
   }
   .speed-select :deep(.el-input__wrapper:hover) {
     color: white;
+  }
+  /* 学习工具横条按钮：统一 10px 圆角 + 500ms 过渡 */
+  .mindmap-bar :deep(.el-button) {
+    border-radius: 10px;
+    transition: all 500ms ease;
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 11px;
+  }
+  .mindmap-bar :deep(.el-button + .el-button) {
+    margin-left: 4px;
   }
 </style>

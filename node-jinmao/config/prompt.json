@@ -5,5 +5,6 @@
     "elaboration_prompt_first": "./../config/elaboration_prompt_first.txt",
     "html_ppt_prompt": "./../config/html_ppt_prompt.txt",
     "cover_prompt": "./../config/cover_prompt.txt",
-    "title_prompt": "./../config/title_prompt.txt"
+    "title_prompt": "./../config/title_prompt.txt",
+    "mindmap_prompt": "./../config/mindmap_prompt.txt"
 }

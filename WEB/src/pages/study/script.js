@@ -44,6 +44,7 @@ import { useResize } from "../../composables/useResize";
 import { getBookDetail, getChapterSlides, generateNextChapter, getChapterGenerationProgress, getGenerateNextStatus, fixMissingFiles, getFixStatus } from "../../api/books";
 import { getProgress, saveProgress } from "../../api/progress"; // 学习进度保存/恢复 API
 import { getAiConversations, getAiConversation, streamAiChat } from "../../api/ai"; // AI 助教问答 API
+import { generateMindmap, getMindmapStatus } from "../../api/mindmap"; // 一键思维导图 API
 import AiChatPanel from "./AiChatPanel.vue"; // AI 助教面板组件（桌面右栏/移动端面板复用）
 import ChapterList from "./ChapterList.vue"; // 章节列表组件（桌面左栏/移动端面板复用）
 
@@ -404,6 +405,16 @@ export default {
     /** 当前章节是否已触发过补全检测（防止重复触发） */
     const fixCheckTriggered = ref(false);
 
+    // ---- 思维导图相关 ----
+    /** 思维导图状态：none（未生成）/ generating（生成中）/ done（已生成）/ failed（失败） */
+    const mindmapStatus = ref("none");
+    /** 思维导图生成请求进行中（按钮 loading，防重复点击） */
+    const isGeneratingMindmap = ref(false);
+    /** 思维导图状态轮询定时器引用 */
+    let mindmapPollTimer = null;
+    /** 思维导图状态轮询间隔（毫秒） */
+    const MINDMAP_POLL_INTERVAL = 3000;
+
     // ---- DOM 引用 ----
     const pptContainer = ref(null);
     const playerControls = ref(null);
@@ -471,6 +482,19 @@ export default {
       if (canGenerateNext) return "生成下一章";
       // 不可生成（全部内容已完毕 / 尚无章节）
       return "已经是最后一章了";
+    });
+
+    /** 思维导图按钮：是否可用（课程/章节加载完成且已选中章节时可用） */
+    const mindmapEnabled = computed(() => {
+      if (courseLoading.value || chapterLoading.value) return false;
+      return !!activeChapter.value;
+    });
+
+    /** 思维导图按钮：文案（生成中 / 已生成查看 / 未生成） */
+    const mindmapButtonText = computed(() => {
+      if (isGeneratingMindmap.value || mindmapStatus.value === "generating") return "生成中...";
+      if (mindmapStatus.value === "done") return "查看思维导图";
+      return "生成思维导图";
     });
 
     /** 当前章节标题 */
@@ -682,6 +706,7 @@ export default {
       }
 
       console.log(TAG + " 加载章节幻灯片，chapterId: " + chapterId);
+      resetMindmapState(); // 切章/重载时重置思维导图状态，停止旧轮询
       chapterLoading.value = true;
 
       try {
@@ -745,6 +770,7 @@ export default {
       } finally {
         chapterLoading.value = false;
       }
+      refreshMindmapStatus(); // 加载完成后查询当前章节思维导图状态（异步）
     }
 
     /**
@@ -1207,6 +1233,114 @@ export default {
         clearInterval(generateStatusTimer);
         generateStatusTimer = null;
         console.log(TAG + " 生成下一章状态轮询已停止");
+      }
+    }
+
+    // ===== 思维导图相关 =====
+
+    /**
+     * 刷新当前章节的思维导图状态（轮询单次请求）
+     * generating 时自动保持轮询；done/failed 时停止轮询并提示用户
+     */
+    async function refreshMindmapStatus() {
+      const courseId = studyParams?.value?.courseId;
+      const chapterId = activeChapter.value;
+      if (!courseId || !chapterId) return;
+
+      try {
+        const result = await getMindmapStatus(courseId, chapterId);
+        if (result.code === 0 && result.data) {
+          const prev = mindmapStatus.value;
+          mindmapStatus.value = result.data.status || "none";
+
+          if (result.data.status === "generating") {
+            startMindmapPolling(); // 切章回来后仍在生成中 → 恢复轮询
+          }
+
+          // 生成结束（done/failed）→ 停止轮询并提示
+          if (prev === "generating" && (result.data.status === "done" || result.data.status === "failed")) {
+            stopMindmapPolling();
+            if (result.data.status === "done") {
+              ElMessage.success("思维导图生成完成");
+            } else {
+              ElMessage.error(result.data.error || "思维导图生成失败，请重试");
+            }
+          }
+          console.log(TAG + " [思维导图状态] " + mindmapStatus.value);
+        }
+      } catch (error) {
+        // 轮询失败静默处理，下个周期重试
+        console.warn(TAG + " [思维导图状态] 查询失败: " + (error?.message || error));
+      }
+    }
+
+    /**
+     * 启动思维导图状态轮询（幂等：已在轮询时直接返回）
+     */
+    function startMindmapPolling() {
+      if (mindmapPollTimer) return;
+      console.log(TAG + " 启动思维导图状态轮询（间隔 " + MINDMAP_POLL_INTERVAL + "ms）");
+      refreshMindmapStatus(); // 立即刷新一次，保证状态及时
+      mindmapPollTimer = setInterval(refreshMindmapStatus, MINDMAP_POLL_INTERVAL);
+    }
+
+    /** 停止思维导图状态轮询 */
+    function stopMindmapPolling() {
+      if (mindmapPollTimer) {
+        clearInterval(mindmapPollTimer);
+        mindmapPollTimer = null;
+        console.log(TAG + " 思维导图状态轮询已停止");
+      }
+    }
+
+    /**
+     * 重置思维导图状态（切章/重新加载章节时调用）
+     * 停止轮询并清空状态，随后由调用方触发 refreshMindmapStatus 重新查询
+     */
+    function resetMindmapState() {
+      stopMindmapPolling();
+      mindmapStatus.value = "none";
+      isGeneratingMindmap.value = false;
+    }
+
+    /**
+     * 思维导图按钮点击：
+     * 已生成 → 进入查看页；未生成/失败 → 触发生成并启动轮询
+     */
+    async function handleMindmapClick() {
+      const courseId = studyParams?.value?.courseId;
+      const chapterId = activeChapter.value;
+      if (!courseId || !chapterId) {
+        ElMessage.warning("课程数据尚未加载完成");
+        return;
+      }
+      if (isGeneratingMindmap.value || mindmapStatus.value === "generating") return; // 防重复点击
+
+      // 已生成：进入查看页
+      if (mindmapStatus.value === "done") {
+        console.log(TAG + " [思维导图] 进入查看页，courseId: " + courseId + "，chapterId: " + chapterId);
+        navigate("mindmap", { courseId, chapterId });
+        return;
+      }
+
+      // 未生成/失败：触发生成
+      isGeneratingMindmap.value = true;
+      console.log(TAG + " [思维导图] 开始生成，courseId: " + courseId + "，chapterId: " + chapterId);
+      try {
+        const result = await generateMindmap(courseId, chapterId);
+        if (result.code === 0 && result.data?.status === "generating") {
+          mindmapStatus.value = "generating";
+          startMindmapPolling();
+          ElMessage.success("已开始生成思维导图，请稍候...");
+        } else {
+          ElMessage.warning(result.message || "思维导图生成失败");
+        }
+      } catch (error) {
+        // 402 余额不足等由全局拦截器统一提示，此处仅兜底未知错误
+        console.error(TAG + " [思维导图] 生成异常: " + (error?.message || error));
+        ElMessage.error("思维导图生成失败，请稍后重试");
+      } finally {
+        isGeneratingMindmap.value = false;
       }
     }
 
@@ -2216,6 +2350,9 @@ export default {
       // 停止文件补全状态轮询
       stopFixStatusPolling();
 
+      // 停止思维导图状态轮询
+      stopMindmapPolling();
+
       // 页面卸载前立即保存当前学习进度（不使用防抖，确保不丢失）
       if (saveProgressTimer) clearTimeout(saveProgressTimer);
       const courseId = studyParams?.value?.courseId;
@@ -2375,6 +2512,13 @@ export default {
       // 文件补全
       isFixingMissing,
       fixingBannerText,
+
+      // 思维导图
+      mindmapStatus,
+      isGeneratingMindmap,
+      mindmapEnabled,
+      mindmapButtonText,
+      handleMindmapClick,
     };
   },
 };
