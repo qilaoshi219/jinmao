@@ -16,6 +16,15 @@ const COST_CONFIG_PATH = path.join(__dirname, "..", "config", "model_cost_config
 const POLL_INTERVAL_MS = 15 * 1000;
 // 时段时间格式：HH:MM（24 小时制，结束时间允许 24:00）
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$|^24:00$/;
+// DeepSeek LLM：每时段必须包含两个模型且三字段齐全
+const DEEPSEEK_MODELS = ["deepseek-v4-pro", "deepseek-v4-flash"];
+const DEEPSEEK_FIELDS = ["input_cache_miss", "input_cache_hit", "output"];
+// 其它已知模型：各自必填的计费字段（时段中未出现的提供商/模型不做强制要求）
+const MODEL_REQUIRED_FIELDS = {
+  grsai: { "gpt-image-2": ["per_image"], "gpt-image-2-vip": ["per_image"] },
+  volcengine: { "seed-tts-2.0": ["per_char"] },
+  doc2x: { "doc2x-api-v2": ["per_page"] },
+};
 
 // ==================== 配置文件读写 ====================
 
@@ -76,19 +85,54 @@ function validateTimeBasedPricing(tbp) {
     if (!period.providers || typeof period.providers !== "object") {
       return "时段 " + period.name + " 缺少 providers 配置";
     }
+
+    // DeepSeek LLM：必填两个模型且三字段齐全、数值合法
     const deepseek = period.providers.deepseek;
     if (!deepseek || typeof deepseek !== "object") {
       return "时段 " + period.name + " 缺少 deepseek 配置";
     }
-    for (const modelKey of ["deepseek-v4-pro", "deepseek-v4-flash"]) {
+    for (const modelKey of DEEPSEEK_MODELS) {
       const price = deepseek[modelKey];
       if (!price || typeof price !== "object") {
         return "时段 " + period.name + " 缺少模型 " + modelKey + " 的价格";
       }
-      for (const field of ["input_cache_miss", "input_cache_hit", "output"]) {
+      for (const field of DEEPSEEK_FIELDS) {
+        if (!(field in price)) {
+          return "时段 " + period.name + " 模型 " + modelKey + " 缺少字段 " + field;
+        }
         const value = price[field];
         if (typeof value !== "number" || !isFinite(value) || value < 0) {
           return "时段 " + period.name + " 模型 " + modelKey + " 的 " + field + " 必须为大于等于 0 的数字";
+        }
+      }
+    }
+
+    // 其它提供商/模型：已知模型必填字段齐全，所有数值必须为 >=0 的有限数字
+    for (const providerName of Object.keys(period.providers)) {
+      if (providerName === "deepseek") continue;
+      const providerConfig = period.providers[providerName];
+      if (!providerConfig || typeof providerConfig !== "object") {
+        return "时段 " + period.name + " 的提供商 " + providerName + " 配置无效";
+      }
+      const requiredMap = MODEL_REQUIRED_FIELDS[providerName] || {};
+      for (const modelKey of Object.keys(providerConfig)) {
+        const price = providerConfig[modelKey];
+        if (!price || typeof price !== "object") {
+          return "时段 " + period.name + " 提供商 " + providerName + " 的模型 " + modelKey + " 价格无效";
+        }
+        const requiredFields = requiredMap[modelKey];
+        if (requiredFields) {
+          for (const field of requiredFields) {
+            if (!(field in price)) {
+              return "时段 " + period.name + " 提供商 " + providerName + " 的模型 " + modelKey + " 缺少字段 " + field;
+            }
+          }
+        }
+        for (const field of Object.keys(price)) {
+          const value = price[field];
+          if (typeof value !== "number" || !isFinite(value) || value < 0) {
+            return "时段 " + period.name + " 提供商 " + providerName + " 的模型 " + modelKey + " 的 " + field + " 必须为大于等于 0 的数字";
+          }
         }
       }
     }

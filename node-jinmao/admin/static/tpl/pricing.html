@@ -9,6 +9,7 @@
     <p>1. 「保存」会直接写入配置文件并即时生效（计费每次调用实时读取，无需重启）。</p>
     <p>2. 「定时调价」到点后自动覆盖对应侧配置（出售价/成本价），服务重启后依然生效，可随时取消。</p>
     <p>3. 开启「分时计费」后按下方时段的起止时间匹配单价；<el-tag size="small" type="info" style="margin:0 4px;">default</el-tag> 段（00:00-24:00）为兜底时段，不可删除或改名。</p>
+    <p>4. 覆盖模型：DeepSeek LLM（deepseek-v4-pro / deepseek-v4-flash）、Grsai 文生图（gpt-image-2 / gpt-image-2-vip）、火山引擎 TTS（seed-tts-2.0）、doc2x PDF 解析（doc2x-api-v2）。</p>
     <p>服务器当前时间：<strong style="color:#409eff;font-size:14px;">{{ serverTimeText }}</strong></p>
   </div>
 </el-card>
@@ -50,14 +51,20 @@
           @click="removePeriod('sale', pi)"
         >删除时段</el-button>
       </div>
-      <el-table :data="models" size="small" border>
-        <el-table-column label="模型" min-width="200">
-          <template #default="{ row }"><span style="font-family:monospace;">{{ row.key }}</span></template>
+      <el-table :data="priceItems(period)" size="small" border>
+        <el-table-column label="提供商" width="130">
+          <template #default="{ row }">{{ row.provider }}</template>
         </el-table-column>
-        <el-table-column v-for="f in priceFields" :key="f.key" :label="f.label" min-width="180">
+        <el-table-column label="模型" min-width="200">
+          <template #default="{ row }"><span style="font-family:monospace;">{{ row.model }}</span></template>
+        </el-table-column>
+        <el-table-column label="计费项" min-width="240">
+          <template #default="{ row }">{{ row.fieldLabel }}</template>
+        </el-table-column>
+        <el-table-column label="单价（元）" min-width="170">
           <template #default="{ row }">
             <el-input-number
-              v-model="period.providers.deepseek[row.key][f.key]"
+              v-model="row.price[row.fieldKey]"
               :min="0"
               :step="0.001"
               :precision="6"
@@ -109,14 +116,20 @@
           @click="removePeriod('cost', pi)"
         >删除时段</el-button>
       </div>
-      <el-table :data="models" size="small" border>
-        <el-table-column label="模型" min-width="200">
-          <template #default="{ row }"><span style="font-family:monospace;">{{ row.key }}</span></template>
+      <el-table :data="priceItems(period)" size="small" border>
+        <el-table-column label="提供商" width="130">
+          <template #default="{ row }">{{ row.provider }}</template>
         </el-table-column>
-        <el-table-column v-for="f in priceFields" :key="f.key" :label="f.label" min-width="180">
+        <el-table-column label="模型" min-width="200">
+          <template #default="{ row }"><span style="font-family:monospace;">{{ row.model }}</span></template>
+        </el-table-column>
+        <el-table-column label="计费项" min-width="240">
+          <template #default="{ row }">{{ row.fieldLabel }}</template>
+        </el-table-column>
+        <el-table-column label="单价（元）" min-width="170">
           <template #default="{ row }">
             <el-input-number
-              v-model="period.providers.deepseek[row.key][f.key]"
+              v-model="row.price[row.fieldKey]"
               :min="0"
               :step="0.001"
               :precision="6"

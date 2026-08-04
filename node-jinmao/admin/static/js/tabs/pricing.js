@@ -1,5 +1,5 @@
 // ==================== 管理后台：价格调整 Tab 组件 ====================
-// 职责：展示/编辑出售价与成本价（DeepSeek pro/flash 分时段单价）、
+// 职责：展示/编辑出售价与成本价（DeepSeek LLM / Grsai 文生图 / 火山 TTS / doc2x 分时段单价）、
 //       立即保存（写文件即时生效）、创建/取消定时调价
 window.AdminTabs = window.AdminTabs || {};
 AdminTabs.pricing = {
@@ -23,16 +23,67 @@ AdminTabs.pricing = {
     const schedulingSale = Vue.ref(false);
     const schedulingCost = Vue.ref(false);
 
-    // ===== 展示配置 =====
-    const priceFields = [
-      { key: 'input_cache_miss', label: '输入单价（缓存未命中）' },
-      { key: 'input_cache_hit', label: '输入单价（缓存命中）' },
-      { key: 'output', label: '输出单价' },
+    // ===== 展示配置：全部模型与计费项 =====
+    const modelDefs = [
+      {
+        provider: 'deepseek', providerLabel: 'DeepSeek',
+        key: 'deepseek-v4-pro', label: 'deepseek-v4-pro（大模型）',
+        fields: [
+          { key: 'input_cache_miss', label: '输入单价（缓存未命中，元/百万tokens）' },
+          { key: 'input_cache_hit', label: '输入单价（缓存命中，元/百万tokens）' },
+          { key: 'output', label: '输出单价（元/百万tokens）' },
+        ],
+      },
+      {
+        provider: 'deepseek', providerLabel: 'DeepSeek',
+        key: 'deepseek-v4-flash', label: 'deepseek-v4-flash（小模型）',
+        fields: [
+          { key: 'input_cache_miss', label: '输入单价（缓存未命中，元/百万tokens）' },
+          { key: 'input_cache_hit', label: '输入单价（缓存命中，元/百万tokens）' },
+          { key: 'output', label: '输出单价（元/百万tokens）' },
+        ],
+      },
+      {
+        provider: 'grsai', providerLabel: 'Grsai 文生图',
+        key: 'gpt-image-2', label: 'gpt-image-2',
+        fields: [{ key: 'per_image', label: '单价（元/张）' }],
+      },
+      {
+        provider: 'grsai', providerLabel: 'Grsai 文生图',
+        key: 'gpt-image-2-vip', label: 'gpt-image-2-vip',
+        fields: [{ key: 'per_image', label: '单价（元/张）' }],
+      },
+      {
+        provider: 'volcengine', providerLabel: '火山引擎 TTS',
+        key: 'seed-tts-2.0', label: 'seed-tts-2.0',
+        fields: [{ key: 'per_char', label: '单价（元/字符）' }],
+      },
+      {
+        provider: 'doc2x', providerLabel: 'doc2x PDF解析',
+        key: 'doc2x-api-v2', label: 'doc2x-api-v2',
+        fields: [{ key: 'per_page', label: '单价（元/页）' }],
+      },
     ];
-    const models = [
-      { key: 'deepseek-v4-pro', label: '大模型 pro' },
-      { key: 'deepseek-v4-flash', label: '小模型 flash' },
-    ];
+
+    // 将时段 providers 展平为「计费项」行（仅渲染时段中存在的模型）
+    function priceItems(period) {
+      const items = [];
+      const providers = period.providers || {};
+      for (const def of modelDefs) {
+        const price = providers[def.provider] && providers[def.provider][def.key];
+        if (!price) continue;
+        for (const f of def.fields) {
+          items.push({
+            provider: def.providerLabel,
+            model: def.label,
+            fieldLabel: f.label,
+            fieldKey: f.key,
+            price,
+          });
+        }
+      }
+      return items;
+    }
 
     // 服务器时区（Asia/Shanghai）实时时钟，用于与计划生效时间对照
     const serverTimeText = Vue.ref(nowText());
@@ -105,7 +156,7 @@ AdminTabs.pricing = {
     function addPeriod(side) {
       const tbp = sideRef(side).value.timeBasedPricing;
       const defaultPeriod = tbp.periods.find((p) => p.name === 'default');
-      const providers = cloneDeep(defaultPeriod ? defaultPeriod.providers : { deepseek: {} });
+      const providers = cloneDeep(defaultPeriod ? defaultPeriod.providers : {});
       tbp.periods.push({
         name: '新时段' + (tbp.periods.length + 1),
         start: '08:00',
@@ -210,7 +261,7 @@ AdminTabs.pricing = {
     return {
       loading, sale, cost, savingSale, savingCost,
       effectiveAt, scheduleNote, scheduleList, loadingSchedule, schedulingSale, schedulingCost,
-      priceFields, models, serverTimeText, isDark, formatTime,
+      modelDefs, priceItems, serverTimeText, isDark, formatTime,
       loadAll, loadSchedules, saveSale, saveCost,
       addPeriod, removePeriod, createSchedule, cancelSchedule,
     };
