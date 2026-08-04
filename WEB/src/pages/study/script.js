@@ -1661,6 +1661,12 @@ export default {
       const audio = audioRef.value;
       if (!audio) return;
 
+      // 翻页/换源后浏览器会把 playbackRate 重置为默认 1x，这里重新应用用户选择的倍速
+      const speed = parseFloat(playbackSpeed.value);
+      if (Number.isFinite(speed) && speed > 0) {
+        audio.playbackRate = speed;
+      }
+
       // 防御：无 Range 支持/流式响应时 audio.duration 可能是 Infinity 或 NaN，只采纳有限正时长
       const rawDuration = audio.duration;
       const duration = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 0;
@@ -1694,7 +1700,9 @@ export default {
     watch(playbackSpeed, (newSpeed) => {
       const audio = audioRef.value;
       if (audio) {
-        audio.playbackRate = parseFloat(newSpeed);
+        const speed = parseFloat(newSpeed);
+        audio.defaultPlaybackRate = speed; // 让后续换源加载的音频也继承该倍速
+        audio.playbackRate = speed;
         console.log(TAG + " 播放倍速: " + newSpeed + "x");
       }
     });
