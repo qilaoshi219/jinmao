@@ -135,7 +135,7 @@ router.put("/progress", authenticateToken, async (req, res) => {
 
   // 保存成功后记录每日活动（不阻塞响应，失败不影响主流程）
   if (result.code === 200) {
-    activityRepo.recordDailyActivity(req.userId).catch((err) => {
+    activityRepo.recordDailyActivity(req.userId, studyDuration).catch((err) => {
       console.error(TAG + "[PUT /progress] 记录每日活动失败（非关键）: " + err.message);
     });
   }

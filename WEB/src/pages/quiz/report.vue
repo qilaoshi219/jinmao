@@ -142,6 +142,25 @@
               得分: {{ currentItem.score?.toFixed(1) }} / {{ currentItem.maxScore?.toFixed(1) }}
             </span>
           </div>
+
+          <!-- AI 讲解（错题） -->
+          <div v-if="currentItem?.isCorrect === false" class="mt-3">
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :loading="explaining"
+              class="w-full rounded-[10px]"
+              @click="explainCurrent">
+              {{ explaining ? '讲解生成中...' : 'AI 讲解这道题' }}
+            </el-button>
+            <div v-if="explanation"
+                 class="mt-3 rounded-[10px] bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3">
+              <p class="text-xs whitespace-pre-wrap leading-relaxed text-black dark:text-white">
+                {{ explanation }}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

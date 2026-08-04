@@ -131,18 +131,37 @@
         </div>
 
         <!-- AI 评语（简答题） -->
-        <div v-if="currentItem?.questionType === 'ESSAY' && currentItem?.aiCommentary"
-             class="rounded-[10px] bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 text-xs">
-          <span class="font-medium text-blue-600 dark:text-blue-400">AI 评语：</span>
-          <span class="text-black dark:text-white">
-            {{ currentItem.aiCommentary }}
-          </span>
-          <span class="text-blue-500 ml-2">
-            得分: {{ currentItem.score?.toFixed(1) }} / {{ currentItem.maxScore?.toFixed(1) }}
-          </span>
+          <div v-if="currentItem?.questionType === 'ESSAY' && currentItem?.aiCommentary"
+               class="rounded-[10px] bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 text-xs">
+            <span class="font-medium text-blue-600 dark:text-blue-400">AI 评语：</span>
+            <span class="text-black dark:text-white">
+              {{ currentItem.aiCommentary }}
+            </span>
+            <span class="text-blue-500 ml-2">
+              得分: {{ currentItem.score?.toFixed(1) }} / {{ currentItem.maxScore?.toFixed(1) }}
+            </span>
+          </div>
+
+          <!-- AI 讲解（错题） -->
+          <div v-if="currentItem?.isCorrect === false" class="mt-3">
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :loading="explaining"
+              class="w-full rounded-[10px]"
+              @click="explainCurrent">
+              {{ explaining ? '讲解生成中...' : 'AI 讲解这道题' }}
+            </el-button>
+            <div v-if="explanation"
+                 class="mt-3 rounded-[10px] bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3">
+              <p class="text-xs whitespace-pre-wrap leading-relaxed text-black dark:text-white">
+                {{ explanation }}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
     <!-- 无数据 -->
     <div v-else class="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500">

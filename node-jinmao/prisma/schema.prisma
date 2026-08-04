@@ -183,6 +183,7 @@ model UserDailyActivity {
   id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt // 记录ID，主键自增
   userId       BigInt   @map("user_id") @db.UnsignedBigInt               // 用户ID，外键引用 User 表
   activityDate DateTime @map("activity_date") @db.Date                   // 活动日期（精确到天）
+  studyDuration Int     @default(0) @map("study_duration") @db.UnsignedInt // 当天学习时长增量（秒），用于周报按日统计
   createTime   DateTime @default(now()) @map("create_time")              // 创建时间
 
   user User @relation(fields: [userId], references: [id])               // 所属用户

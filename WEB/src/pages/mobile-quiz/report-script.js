@@ -1,8 +1,9 @@
 // ==================== 手机端刷题报告页面业务逻辑 ====================
 // 职责：加载报告详情、SSE 实时判题进度、分数计算、题目解析展示
 
-import { ref, computed, onMounted, onUnmounted, inject } from "vue";
-import { getQuizReportDetail, streamQuizReport } from "../../api/quiz";
+import { ref, computed, watch, onMounted, onUnmounted, inject } from "vue";
+import { ElMessage } from "element-plus";
+import { getQuizReportDetail, streamQuizReport, explainQuestion } from "../../api/quiz";
 
 // 日志前缀
 const TAG = "[MobileQuizReport]";
@@ -21,6 +22,8 @@ export default {
     const loading = ref(true);
     const report = ref(null);
     const expandedIdx = ref(-1);
+    const explaining = ref(false); // AI 讲解请求中
+    const explanation = ref(""); // AI 讲解内容
 
     // SSE 相关
     let reader = null;
@@ -56,6 +59,12 @@ export default {
     const currentItem = computed(() => {
       if (!report.value?.items || expandedIdx.value < 0) return null;
       return report.value.items[expandedIdx.value] || null;
+    });
+
+    // 切换展开题目时清空上次的讲解
+    watch(expandedIdx, () => {
+      explanation.value = "";
+      explaining.value = false;
     });
 
     // ========== 数据加载 ==========
@@ -154,6 +163,35 @@ export default {
       navigateBack();
     }
 
+    /**
+     * 为当前错题生成 AI 讲解
+     */
+    async function explainCurrent() {
+      const item = currentItem.value;
+      if (!item || explaining.value) return;
+
+      console.log(TAG + " 生成 AI 讲解，questionId:", item.questionId);
+      explaining.value = true;
+      explanation.value = "";
+      try {
+        const result = await explainQuestion(item.questionId);
+        if (result.code === 0 && result.data?.explanation) {
+          explanation.value = result.data.explanation;
+          console.log(TAG + " AI 讲解生成成功");
+        } else {
+          ElMessage.error(result.message || "AI 讲解生成失败，请稍后再试");
+        }
+      } catch (error) {
+        const msg = error?.response?.data?.message || error?.message || "AI 讲解生成失败";
+        // 402 余额不足由全局拦截器提示，这里不重复弹窗
+        if (error?.response?.status !== 402) {
+          ElMessage.error(msg);
+        }
+      } finally {
+        explaining.value = false;
+      }
+    }
+
     // ========== 生命周期 ==========
     onMounted(() => {
       console.log(TAG + " 报告页已挂载");
@@ -178,6 +216,9 @@ export default {
       scorePercent,
       scoreColorClass,
       currentItem,
+      explaining,
+      explanation,
+      explainCurrent,
       goBack,
     };
   },
