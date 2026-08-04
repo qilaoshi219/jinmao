@@ -41,7 +41,7 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted, inject, nextTic
 import { ElMessage } from "element-plus";
 import { useTheme } from "../../composables/useTheme";
 import { useResize } from "../../composables/useResize";
-import { getBookDetail, getChapterSlides, generateNextChapter, getChapterGenerationProgress, getGenerateNextStatus, fixMissingFiles, getFixStatus, getFavoriteStatus, addFavorite, removeFavorite } from "../../api/books";
+import { getBookDetail, getChapterSlides, generateNextChapter, getChapterGenerationProgress, getGenerateNextStatus, fixMissingFiles, getFixStatus } from "../../api/books";
 import { getProgress, saveProgress } from "../../api/progress"; // 学习进度保存/恢复 API
 import { getAiConversations, getAiConversation, streamAiChat } from "../../api/ai"; // AI 助教问答 API
 import AiChatPanel from "./AiChatPanel.vue"; // AI 助教面板组件（桌面右栏/移动端面板复用）
@@ -533,63 +533,6 @@ export default {
       { key: "quiz", label: "本章测验", handler: openChapterQuiz },
       { key: "mindmap", label: "思维导图", handler: openMindMap },
     ]);
-
-    // ========================================================================
-    // 3.15.1 收藏 + 结业证书
-    // ========================================================================
-
-    /** 是否已收藏 */
-    const isFavorite = ref(false);
-    /** 收藏切换中 */
-    const favoriteLoading = ref(false);
-
-    /** 加载当前课程收藏状态 */
-    async function loadFavoriteStatus() {
-      if (!courseId.value) return;
-      try {
-        const result = await getFavoriteStatus(courseId.value);
-        if (result.code === 200) {
-          isFavorite.value = !!result.data?.favorite;
-        }
-      } catch (error) {
-        console.warn(TAG + " 收藏状态加载失败: " + (error?.message || error));
-      }
-    }
-
-    /** 切换收藏状态 */
-    async function toggleFavorite() {
-      if (!courseId.value || favoriteLoading.value) return;
-      favoriteLoading.value = true;
-      try {
-        const result = isFavorite.value
-          ? await removeFavorite(courseId.value)
-          : await addFavorite(courseId.value);
-        if (result.code === 200) {
-          isFavorite.value = result.data?.favorite ?? !isFavorite.value;
-          ElMessage.success(isFavorite.value ? "已收藏课程" : "已取消收藏");
-        } else {
-          ElMessage.error(result.message || "操作失败");
-        }
-      } catch (error) {
-        ElMessage.error(error?.response?.data?.message || "操作失败，请稍后再试");
-      } finally {
-        favoriteLoading.value = false;
-      }
-    }
-
-    /** 打开结业证书页面 */
-    function openCertificate() {
-      if (!courseId.value) {
-        ElMessage.warning("课程尚未加载完成，请稍后再试");
-        return;
-      }
-      navigate("certificate", { courseId: courseId.value });
-    }
-
-    // 课程加载完成后同步收藏状态
-    watch(courseId, (val) => {
-      if (val) loadFavoriteStatus();
-    });
 
     /** 音频总时长（秒） — 仅当前页面音频，保留用于 onAudioLoaded */
     const totalTime = ref(0);
@@ -2475,12 +2418,6 @@ export default {
       openChapterQuiz,
       openMindMap,
       studyTools,
-
-      // 收藏 + 结业证书
-      isFavorite,
-      favoriteLoading,
-      toggleFavorite,
-      openCertificate,
 
       // 幻灯片
       slides,

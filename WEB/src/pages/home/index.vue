@@ -34,8 +34,6 @@
       @navigate-redeem="navigateToRedeem"
       @navigate-weekly="navigateToWeekly"
       @navigate-leaderboard="navigateToLeaderboard"
-      @navigate-reviews="navigateToReviews"
-      @navigate-favorites="navigateToFavorites"
     />
 
     <!-- ========== 右侧主区域 ========== -->

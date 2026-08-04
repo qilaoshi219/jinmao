@@ -35,7 +35,6 @@ model User {
   bio         String?   @db.VarChar(200)                                   // 个性签名
 
   courses          Course[]               // 课程列表
-  favorites        CourseFavorite[]       // 收藏的课程
   studyRecords     UserStudyRecord[]    // 用户学习记录
   dailyActivities  UserDailyActivity[]  // 用户每日活动记录
   quizTextbooks    QuizTextbook[]       // 题库列表
@@ -76,7 +75,6 @@ model Course {
   user               User     @relation(fields: [userId], references: [id])       // 所属用户
   studyRecords       UserStudyRecord[]                                            // 该课程的学习记录（Prisma 虚拟关系）
   aiConversations    AiConversation[]                                              // AI 助教对话（Prisma 虚拟关系）
-  favorites          CourseFavorite[]                                              // 收藏记录（Prisma 虚拟关系）
 
   @@map("Course")
 }
@@ -106,21 +104,6 @@ model Chapter {
   aiConversations AiConversation[]                                            // AI 助教对话（Prisma 虚拟关系）
 
   @@map("Chapter")
-}
-
-// ==================== 课程收藏表 CourseFavorite ====================
-// 记录用户收藏的课程，联合唯一约束 (userId, courseId)
-model CourseFavorite {
-  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt // 记录ID，主键自增
-  userId     BigInt   @map("user_id") @db.UnsignedBigInt               // 用户ID，外键引用 User 表
-  courseId   BigInt   @map("course_id") @db.UnsignedBigInt             // 课程ID，外键引用 Course 表
-  createTime DateTime @default(now()) @map("create_time")              // 收藏时间
-
-  user   User   @relation(fields: [userId], references: [id])     // 所属用户
-  course Course @relation(fields: [courseId], references: [id])   // 所属课程
-
-  @@unique([userId, courseId]) // 同一用户同一课程只能收藏一次
-  @@map("CourseFavorite")
 }
 
 // ==================== AI 助教对话表 AiConversation ====================

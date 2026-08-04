@@ -189,21 +189,6 @@
           </button>
         </li>
 
-        <!-- 记忆曲线复习 -->
-        <li>
-          <button
-            class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px]
-                   text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50
-                   transition-colors duration-500"
-            @click="$emit('navigate-reviews')">
-            <svg class="w-[18px] h-[18px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <span v-show="!collapsed" class="whitespace-nowrap">记忆曲线</span>
-          </button>
-        </li>
-
         <!-- 笔记（骨架占位） -->
         <li>
           <button disabled
@@ -218,13 +203,12 @@
           </button>
         </li>
 
-        <!-- 收藏 -->
+        <!-- 收藏（骨架占位） -->
         <li>
-          <button
+          <button disabled
             class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px]
-                   text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50
-                   transition-colors duration-500"
-            @click="$emit('navigate-favorites')">
+                   text-gray-400 dark:text-gray-600 cursor-not-allowed
+                   transition-colors duration-500">
             <svg class="w-[18px] h-[18px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
@@ -323,7 +307,7 @@ const props = defineProps({
 });
 
 // ========== Emits ==========
-const emit = defineEmits(["select", "upload", "navigate-billing", "navigate-profile", "navigate-redeem", "navigate-weekly", "navigate-leaderboard", "navigate-reviews", "navigate-favorites"]);
+const emit = defineEmits(["select", "upload", "navigate-billing", "navigate-profile", "navigate-redeem", "navigate-weekly", "navigate-leaderboard"]);
 
 // ========== 响应式收缩状态 ==========
 const collapsed = ref(false);
