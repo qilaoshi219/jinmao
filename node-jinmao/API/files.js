@@ -149,6 +149,12 @@ const ABSOLUTE_FILES_REGEX = /https?:\/\/[^\/"'\s>]+\/api\/v1\/files\//gi;
  *  导致浏览器将相对路径 /api/v1/files/... 解析为 https://域名/api/v1/files/... */
 const BASE_TAG_REGEX = /<base\s+[^>]*href\s*=\s*["']https?:\/\/[^"']*["'][^>]*>/gi;
 
+/** 思维导图暗黑主题兜底样式（深色模式下节点文字浅色，不依赖 markmap CDN 规则） */
+const MINDMAP_THEME_STYLE = "<style>body.markmap-dark .markmap{--markmap-text-color:#eee;--markmap-link-color:#999;--markmap-code-color:#ddd}</style>";
+
+/** 思维导图主题脚本：优先 ?theme=dark/light，其次读父页面 html 的 dark class（同源 iframe），最后跟随系统偏好 */
+const MINDMAP_THEME_SCRIPT = "<script>(function(){var dark=false;var theme=new URLSearchParams(location.search).get('theme');if(theme==='dark')dark=true;else if(theme==='light')dark=false;else if(window.parent&&window.parent!==window){try{dark=window.parent.document.documentElement.classList.contains('dark');}catch(e){dark=!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);}}else{dark=!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);}document.body.classList.toggle('markmap-dark',dark);document.body.style.background=dark?'#141414':'#ffffff';})();</script>";
+
 /**
  * 规范化 HTML 文件中的绝对图片 URL 为相对路径
  * 将 AI 生成的绝对 URL（如 https://domain:30080/api/v1/files/...）
@@ -194,6 +200,24 @@ function normalizeFileUrls(htmlContent) {
   return result;
 }
 
+/**
+ * 为旧版思维导图 HTML 注入暗黑主题逻辑（深色文字修复，无需重新生成）
+ * 仅处理 MindMap/mindmap.html，且内容缺少 markmap-dark 时注入样式 + 脚本
+ * @param {string} html - 原始 HTML 内容
+ * @returns {string} 注入后的 HTML
+ */
+function injectMindmapTheme(html) {
+  if (html.includes("markmap-dark")) return html; // 新版文件已自带，跳过
+  let result = html;
+  if (result.includes("</head>")) {
+    result = result.replace("</head>", MINDMAP_THEME_STYLE + "</head>");
+  }
+  if (result.includes("</body>")) {
+    result = result.replace("</body>", MINDMAP_THEME_SCRIPT + "</body>");
+  }
+  return result;
+}
+
 // 使用通配符 /* 匹配任意深度的文件路径
 router.get("/*", async (req, res) => {
   // req.params[0] 在 Express router.get("/*") 中可能带前导 /，统一 strip 掉
@@ -233,7 +257,11 @@ router.get("/*", async (req, res) => {
       fileStream.on("data", (chunk) => chunks.push(chunk));
       fileStream.on("end", () => {
         const rawContent = Buffer.concat(chunks).toString("utf-8");
-        const normalizedContent = normalizeFileUrls(rawContent);
+        let normalizedContent = normalizeFileUrls(rawContent);
+        // 旧版思维导图 HTML 注入暗黑主题（深色模式下节点文字浅色，无需重新生成）
+        if (filePath.includes("MindMap/mindmap.html")) {
+          normalizedContent = injectMindmapTheme(normalizedContent);
+        }
         res.send(normalizedContent);
         console.log(TAG + " 文件代理成功（HTML 已规范化）: " + filePath + " (" + contentType + ")");
       });
