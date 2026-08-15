@@ -135,7 +135,7 @@ console.log(TAG + " MinIO 客户端已初始化: endpoint=" + (process.env.MINIO
  *                 message: { type: string, example: "文件读取失败。" }
  */
 // ==================== URL 规范化正则（用于修复幻灯片 HTML 中的图片绝对 URL） ====================
-// AI 生成的幻灯片 HTML 可能包含绝对 URL（如 https://jinmao.ckstu.top:30080/api/v1/files/...），
+// AI 生成的幻灯片 HTML 可能包含绝对 URL（如 https://your-domain.com:30080/api/v1/files/...），
 // 导致浏览器用 HTTPS 协议直连 30080 端口（该端口仅 HTTP），报 ERR_SSL_PROTOCOL_ERROR。
 // 此处将所有指向本服务的绝对 URL（/api/v1/files/）替换为相对路径，确保走同域代理。
 //
@@ -168,9 +168,9 @@ function normalizeFileUrls(htmlContent) {
   let matchCount = 0;
 
   // Step 0：检测并移除 <base> 标签 —— 这是最隐蔽的 bug 来源：
-  //   如果 HTML 中有 <base href="https://jinmao.ckstu.top:30080/">，
+  //   如果 HTML 中有 <base href="https://your-domain.com:30080/">，
   //   即使所有 <img src="/api/v1/files/..."> 都是相对路径，
-  //   浏览器也会将其解析为 https://jinmao.ckstu.top:30080/api/v1/files/... → ERR_SSL_PROTOCOL_ERROR
+  //   浏览器也会将其解析为 https://your-domain.com:30080/api/v1/files/... → ERR_SSL_PROTOCOL_ERROR
   let result = htmlContent.replace(BASE_TAG_REGEX, (match) => {
     console.log(TAG + " [诊断] ⚠️ 检测到 <base> 标签，已移除: " + match);
     return ""; // 移除整个 <base> 标签

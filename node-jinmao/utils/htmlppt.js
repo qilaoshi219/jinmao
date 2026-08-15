@@ -334,12 +334,12 @@ function cleanAndValidateHtml(rawHtml) {
 
     // ========== URL 规范化：将 AI 可能生成的绝对 URL 转为相对路径 ==========
     // AI 模型有时会"聪明地"把相对路径 /api/v1/files/... 补全为绝对 URL，
-    // 如 https://jinmao.ckstu.top:30080/api/v1/files/...，导致浏览器用错误协议访问。
+    // 如 https://your-domain.com:30080/api/v1/files/...，导致浏览器用错误协议访问。
     // 同时移除 DeepSeek 可能添加的 <base> 标签（导致相对路径被浏览器解析为绝对地址）
     const originalLength = resultHtml.length;
 
     // Step 1：检测并移除 <base> 标签
-    //   如果 HTML 中有 <base href="https://jinmao.ckstu.top:30080/">，
+    //   如果 HTML 中有 <base href="https://your-domain.com:30080/">，
     //   即使所有 <img src="/api/v1/files/..."> 都是相对路径，
     //   浏览器也会将其解析为 HTTPS 绝对地址 → ERR_SSL_PROTOCOL_ERROR
     resultHtml = resultHtml.replace(
