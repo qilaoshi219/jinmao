@@ -73,3 +73,6 @@ node-jinmao/data/
 # ===== 根目录空壳文件（node 项目在 node-jinmao/ 与 WEB/ 内） =====
 /package.json
 /package-lock.json
+
+# ===== 内部工具（不随开源仓库分发） =====
+handover.ps1
