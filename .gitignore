@@ -69,3 +69,7 @@ node-jinmao/data/
 *.rar
 *.7z
 *.tar.gz
+
+# ===== 根目录空壳文件（node 项目在 node-jinmao/ 与 WEB/ 内） =====
+/package.json
+/package-lock.json
