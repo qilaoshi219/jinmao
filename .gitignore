@@ -76,3 +76,6 @@ node-jinmao/data/
 
 # ===== 内部工具（不随开源仓库分发） =====
 handover.ps1
+
+# ===== 临时扫描报告 =====
+.publish_scan.txt
