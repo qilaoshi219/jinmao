@@ -40,3 +40,32 @@ pages/
 # ===== IDE 配置 =====
 .idea/
 .vscode/
+
+# ===== 开源整理：内部运维 / 敏感信息（不进开源仓库） =====
+.trae/
+服务器磁盘清理排查报告.md
+ftp_upload.ps1
+ftp_upload_prod.ps1
+deploy.ps1
+sync_wsl.ps1
+
+# ===== 开源整理：内部备忘录与部署指南（只保留 部署说明.md） =====
+待办.md
+IDEA.md
+新功能构思.md
+测试报告.md
+测试命令.md
+WSL部署指南.md
+宝塔部署指南.md
+双环境部署指南.md
+
+# ===== 运行时状态（每台机器独立，禁止入库） =====
+node-jinmao/.schema_hash
+node-jinmao/.migration_version
+node-jinmao/data/
+
+# ===== 打包产物 =====
+*.zip
+*.rar
+*.7z
+*.tar.gz
